@@ -7,9 +7,12 @@
 
 use crate::diff::LineRange;
 use crate::language::LanguageSupport;
+use references::collect_referenced_names;
 use serde::Serialize;
 use std::collections::HashMap;
 use tree_sitter::StreamingIterator;
+
+mod references;
 
 /// The kind of symbol a definition node represents, expressed in
 /// language-neutral terms so callers don't need to match on
@@ -442,129 +445,6 @@ fn build_symbol(
     })
 }
 
-/// Runs `reference_query` (already compiled by `with_definition_nodes`,
-/// once per file rather than once per definition) over the subtree rooted
-/// at `node`, returning the deduplicated names it captures (called
-/// function/method names, referenced type names). Sorted for determinism
-/// — tree-sitter's match order is not a meaningful signal here, and
-/// downstream consumers (`deps.rs`, rendering) benefit from a stable
-/// order.
-///
-/// Reads every capture whose name starts with `reference.` (see the doc
-/// comment on [`LanguageSupport::reference_query`]) rather than a single
-/// named capture, since each language's query alternation captures a
-/// different sub-node depending on which branch matched (the callee
-/// identifier for a call, the identifier itself for a type reference).
-///
-/// `_` and single-character identifiers are dropped before insertion
-/// (`is_noise_name`): they are near-universal across unrelated files
-/// (Python/Go's conventional throwaway `_`, one-letter loop/receiver
-/// variables reused as call targets like `x()`), so a name-only resolver
-/// (ADR 0003) matches them against dozens of unrelated definitions instead
-/// of the one actually referenced — pure noise in the "Depends on" output
-/// rather than a useful, if imprecise, match.
-fn collect_referenced_names(
-    node: tree_sitter::Node,
-    source: &[u8],
-    reference_query: &tree_sitter::Query,
-) -> Vec<String> {
-    let reference_capture_indices: std::collections::HashSet<u32> = reference_query
-        .capture_names()
-        .iter()
-        .enumerate()
-        .filter(|(_, name)| name.starts_with("reference."))
-        .map(|(index, _)| index as u32)
-        .collect();
-
-    let mut cursor = tree_sitter::QueryCursor::new();
-    let mut matches = cursor.matches(reference_query, node, source);
-
-    let mut names = std::collections::BTreeSet::new();
-    while let Some(m) = matches.next() {
-        for capture in m.captures {
-            if !reference_capture_indices.contains(&capture.index) {
-                continue;
-            }
-            if let Ok(text) = capture.node.utf8_text(source)
-                && !is_noise_name(text)
-            {
-                names.insert(text.to_string());
-            }
-        }
-    }
-
-    collect_macro_body_names(node, source, &mut names);
-
-    names.into_iter().collect()
-}
-
-/// Rust macro bodies parse as raw `token_tree` tokens, so the
-/// `call_expression`/`type_identifier` patterns in `reference_query` never
-/// match inside them — identifiers there are collected by this walk
-/// instead (ADR 0063). `macro_invocation` is a Rust-only node kind, so
-/// the walk is inert for the other grammars (same cross-grammar
-/// reasoning as [`symbol_kind`]). Attribute arguments are `token_tree`s
-/// under an `attribute` node, not a `macro_invocation`, and are
-/// deliberately not walked.
-fn collect_macro_body_names(
-    node: tree_sitter::Node,
-    source: &[u8],
-    names: &mut std::collections::BTreeSet<String>,
-) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "macro_invocation" {
-            let mut invocation_cursor = child.walk();
-            for part in child.children(&mut invocation_cursor) {
-                if part.kind() == "token_tree" {
-                    collect_token_tree_names(part, source, names);
-                }
-            }
-        } else {
-            collect_macro_body_names(child, source, names);
-        }
-    }
-}
-
-/// Collects `identifier` tokens at any nesting depth of a macro body's
-/// `token_tree`, skipping an identifier immediately followed by a `!`
-/// token — that is a *nested* macro's name, a macro reference rather
-/// than a symbol reference.
-fn collect_token_tree_names(
-    token_tree: tree_sitter::Node,
-    source: &[u8],
-    names: &mut std::collections::BTreeSet<String>,
-) {
-    let mut cursor = token_tree.walk();
-    let children: Vec<tree_sitter::Node> = token_tree.children(&mut cursor).collect();
-    for (index, child) in children.iter().enumerate() {
-        match child.kind() {
-            "token_tree" => collect_token_tree_names(*child, source, names),
-            "identifier" => {
-                let names_a_nested_macro = children
-                    .get(index + 1)
-                    .is_some_and(|next| next.kind() == "!");
-                if !names_a_nested_macro
-                    && let Ok(text) = child.utf8_text(source)
-                    && !is_noise_name(text)
-                {
-                    names.insert(text.to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Whether `name` is too generic to be worth resolving: the bare `_`
-/// placeholder, or any single-character identifier. Both appear constantly
-/// across unrelated definitions in most codebases, so under v1's name-only
-/// resolution (ADR 0003) they produce many spurious matches rather than
-/// useful ones — see `collect_referenced_names`'s doc comment.
-fn is_noise_name(name: &str) -> bool {
-    name.chars().count() <= 1
-}
-
 /// Maps a captured definition node to a language-neutral [`SymbolKind`].
 /// Node kind strings are unique across the grammars this module supports
 /// (Rust, Go, Python, TypeScript/TSX), so a single flat match is sufficient
@@ -988,5 +868,5 @@ fn go_receiver_type_name(node: tree_sitter::Node, source: &[u8]) -> Option<Strin
 }
 
 #[cfg(test)]
-#[path = "extract_tests/mod.rs"]
+#[path = "../extract_tests/mod.rs"]
 mod tests;
