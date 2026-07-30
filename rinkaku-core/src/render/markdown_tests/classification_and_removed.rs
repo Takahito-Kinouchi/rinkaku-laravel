@@ -32,6 +32,7 @@ fn should_append_new_marker_to_tree_and_definition_when_symbol_is_added() {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![],
@@ -83,6 +84,7 @@ fn should_render_diff_block_and_marker_when_symbol_is_signature_changed() {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![],
@@ -139,6 +141,7 @@ fn should_render_line_based_diff_block_when_multiline_signature_changed() {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![],
@@ -201,6 +204,7 @@ fn should_render_container_comment_above_diff_lines_when_signature_changed_symbo
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![],
@@ -253,6 +257,7 @@ fn should_render_unmarked_tree_and_definition(#[case] classification: Option<Cla
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![],
@@ -312,6 +317,7 @@ fn should_append_marker_to_fan_in_line_before_used_by() {
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![],
+        test_coverage: vec![],
     };
 
     let markdown = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
@@ -356,6 +362,7 @@ fn should_render_removed_symbols_section_between_definitions_and_tests() {
             symbol_count: 1,
         }],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![RemovedSymbol {
@@ -416,6 +423,7 @@ fn should_render_removed_symbols_section_alone_when_graph_is_empty() {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![RemovedSymbol {
@@ -458,6 +466,7 @@ fn should_deduplicate_identical_removed_symbol_lines() {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![
@@ -520,6 +529,7 @@ fn should_omit_removed_symbols_section_when_removed_is_empty() {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![],
@@ -562,6 +572,7 @@ fn should_widen_fence_when_previous_signature_contains_a_backtick_run() {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![],
         removed: vec![],

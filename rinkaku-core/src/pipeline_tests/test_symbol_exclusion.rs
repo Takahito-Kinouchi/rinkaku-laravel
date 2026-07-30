@@ -109,6 +109,7 @@ fn should_add_two_numbers() {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![FileSizeEntry {
             path: "src/lib.rs".to_string(),
@@ -292,6 +293,7 @@ mod tests {
             symbol_count: 1,
         }],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![FileSizeEntry {
             path: "src/lib.rs".to_string(),

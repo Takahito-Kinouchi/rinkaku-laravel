@@ -150,11 +150,17 @@ impl SectionKind {
 ///   `Normal`/`Watch` files contribute to neither — those two bands are
 ///   shown per-file only, not aggregated, since they are not
 ///   "attention-worthy" the way `Warn`/`Split` are.
+/// - `test_count`: (ADR 0059) a leaf symbol's `Report.test_coverage` entry
+///   count, see `symbol_badges`. Deliberately **not** aggregated upward the
+///   way `fan_in` is: summing an `Option<usize>` across a subtree has no
+///   agreed meaning yet, and nothing renders a directory/file-level
+///   coverage total today — add aggregation only per an ADR amendment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Badges {
     pub changed_symbols: usize,
     pub contract_changes: usize,
     pub fan_in: usize,
+    pub test_count: Option<usize>,
     pub own_file_size_band: Option<FileSizeBand>,
     pub own_file_line_count: Option<usize>,
     pub file_size_warn_count: usize,
@@ -275,6 +281,14 @@ pub fn build_tree(report: &Report) -> Tree {
         .map(|fan_in| (fan_in.id.as_str(), fan_in.used_by.len()))
         .collect();
 
+    // ADR 0059: `report.test_coverage` keyed by id, same shape and
+    // threading pattern as `fan_in_by_id` above.
+    let test_count_by_id: HashMap<&str, usize> = report
+        .test_coverage
+        .iter()
+        .map(|coverage| (coverage.id.as_str(), coverage.test_count))
+        .collect();
+
     // ADR 0028 amendment: built from `file_size_bands` (every analyzed
     // file), not `file_size_warnings` (the Warn/Split subset) — so a
     // file row can always show its line count, not only when it crosses
@@ -285,8 +299,13 @@ pub fn build_tree(report: &Report) -> Tree {
         .map(|entry| (entry.path.as_str(), (entry.band, entry.line_count)))
         .collect();
 
-    let mut production = TreeBuilder::new(fan_in_by_id.clone(), file_size_by_path.clone(), true);
-    let mut tests = TreeBuilder::new(fan_in_by_id, file_size_by_path, false);
+    let mut production = TreeBuilder::new(
+        fan_in_by_id.clone(),
+        test_count_by_id.clone(),
+        file_size_by_path.clone(),
+        true,
+    );
+    let mut tests = TreeBuilder::new(fan_in_by_id, test_count_by_id, file_size_by_path, false);
 
     // A mixed file (some non-test symbols alongside some test symbols)
     // always stays in `production` untouched — only a *whole* test file
@@ -335,6 +354,9 @@ struct TreeBuilder<'a> {
     /// `report.files` — built once in `build_tree` rather than per-symbol,
     /// since `report.fan_ins` doesn't change during one `build_tree` call.
     fan_in_by_id: HashMap<&'a str, usize>,
+    /// `report.test_coverage` keyed by id (ADR 0059), same threading
+    /// pattern and rationale as `fan_in_by_id` above.
+    test_count_by_id: HashMap<&'a str, usize>,
     /// `report.file_size_bands` keyed by path (ADR 0028 amendment):
     /// covers every analyzed file, not only `Warn`/`Split` as the
     /// pre-amendment `file_size_warnings`-derived map did.
@@ -378,12 +400,14 @@ struct FileBuilder {
 impl<'a> TreeBuilder<'a> {
     fn new(
         fan_in_by_id: HashMap<&'a str, usize>,
+        test_count_by_id: HashMap<&'a str, usize>,
         file_size_by_path: HashMap<&'a str, (FileSizeBand, usize)>,
         group_test_symbols: bool,
     ) -> Self {
         Self {
             root: DirBuilder::default(),
             fan_in_by_id,
+            test_count_by_id,
             file_size_by_path,
             group_test_symbols,
         }
@@ -493,6 +517,7 @@ impl<'a> TreeBuilder<'a> {
             roots: self.root.into_nodes(
                 String::new(),
                 &self.fan_in_by_id,
+                &self.test_count_by_id,
                 &self.file_size_by_path,
                 self.group_test_symbols,
             ),
@@ -539,6 +564,7 @@ impl DirBuilder {
         self,
         prefix: String,
         fan_in_by_id: &HashMap<&str, usize>,
+        test_count_by_id: &HashMap<&str, usize>,
         file_size_by_path: &HashMap<&str, (FileSizeBand, usize)>,
         group_test_symbols: bool,
     ) -> Vec<TreeNode> {
@@ -557,6 +583,7 @@ impl DirBuilder {
                     &prefix,
                     child,
                     fan_in_by_id,
+                    test_count_by_id,
                     file_size_by_path,
                     group_test_symbols,
                 ));
@@ -569,6 +596,7 @@ impl DirBuilder {
                     &prefix,
                     file,
                     fan_in_by_id,
+                    test_count_by_id,
                     file_size_by_path,
                     group_test_symbols,
                 ));
@@ -590,6 +618,7 @@ fn build_dir_node(
     prefix: &str,
     mut dir: DirBuilder,
     fan_in_by_id: &HashMap<&str, usize>,
+    test_count_by_id: &HashMap<&str, usize>,
     file_size_by_path: &HashMap<&str, (FileSizeBand, usize)>,
     group_test_symbols: bool,
 ) -> TreeNode {
@@ -613,6 +642,7 @@ fn build_dir_node(
     let children = dir.into_nodes(
         path.clone(),
         fan_in_by_id,
+        test_count_by_id,
         file_size_by_path,
         group_test_symbols,
     );
@@ -636,6 +666,7 @@ fn build_file_node(
     prefix: &str,
     file: FileBuilder,
     fan_in_by_id: &HashMap<&str, usize>,
+    test_count_by_id: &HashMap<&str, usize>,
     file_size_by_path: &HashMap<&str, (FileSizeBand, usize)>,
     group_test_symbols: bool,
 ) -> TreeNode {
@@ -674,7 +705,7 @@ fn build_file_node(
     let mut children: Vec<TreeNode> = production_symbols
         .into_iter()
         .map(|(symbol_ref, _)| {
-            let symbol_badges = symbol_badges(&symbol_ref, fan_in_by_id);
+            let symbol_badges = symbol_badges(&symbol_ref, fan_in_by_id, test_count_by_id);
             badges.merge(symbol_badges);
             TreeNode {
                 kind: NodeKind::Symbol(symbol_ref),
@@ -688,7 +719,9 @@ fn build_file_node(
         .collect();
 
     let test_symbols: Vec<SymbolRef> = test_symbols.into_iter().map(|(s, _)| s).collect();
-    if let Some(test_group) = build_test_group_node(&path, test_symbols, fan_in_by_id) {
+    if let Some(test_group) =
+        build_test_group_node(&path, test_symbols, fan_in_by_id, test_count_by_id)
+    {
         badges.merge(test_group.badges);
         children.insert(test_group_insert_at, test_group);
     }
@@ -734,8 +767,16 @@ fn test_group_insert_index(
 /// `fan_in_by_id` is `report.fan_ins` keyed by id (see `build_tree`): a
 /// symbol not present there (fan-in < 2, or a removed symbol — never a
 /// graph node) contributes zero fan-in, same as `FanIn`'s own >= 2
-/// threshold.
-fn symbol_badges(symbol_ref: &SymbolRef, fan_in_by_id: &HashMap<&str, usize>) -> Badges {
+/// threshold. `test_count_by_id` is `report.test_coverage` keyed by id
+/// (ADR 0059), same lookup shape, but kept as `Option` rather than
+/// defaulted to zero (unlike `fan_in`): `0` is itself the renderable
+/// "untested" signal, so collapsing "no entry" into it would make that
+/// signal indistinguishable from "coverage does not apply here".
+fn symbol_badges(
+    symbol_ref: &SymbolRef,
+    fan_in_by_id: &HashMap<&str, usize>,
+    test_count_by_id: &HashMap<&str, usize>,
+) -> Badges {
     Badges {
         changed_symbols: if symbol_ref.removed { 0 } else { 1 },
         contract_changes: if symbol_ref.removed
@@ -749,6 +790,7 @@ fn symbol_badges(symbol_ref: &SymbolRef, fan_in_by_id: &HashMap<&str, usize>) ->
             .get(symbol_ref.id.as_str())
             .copied()
             .unwrap_or(0),
+        test_count: test_count_by_id.get(symbol_ref.id.as_str()).copied(),
         // File size is a per-file attribute (ADR 0028), not a per-symbol
         // one, so a symbol never contributes to any of the file-size
         // fields.
@@ -776,6 +818,7 @@ fn build_test_group_node(
     file_path: &str,
     test_symbols: Vec<SymbolRef>,
     fan_in_by_id: &HashMap<&str, usize>,
+    test_count_by_id: &HashMap<&str, usize>,
 ) -> Option<TreeNode> {
     if test_symbols.is_empty() {
         return None;
@@ -786,7 +829,7 @@ fn build_test_group_node(
     let children: Vec<TreeNode> = test_symbols
         .into_iter()
         .map(|symbol_ref| {
-            let symbol_badges = symbol_badges(&symbol_ref, fan_in_by_id);
+            let symbol_badges = symbol_badges(&symbol_ref, fan_in_by_id, test_count_by_id);
             badges.merge(symbol_badges);
             TreeNode {
                 kind: NodeKind::Symbol(symbol_ref),

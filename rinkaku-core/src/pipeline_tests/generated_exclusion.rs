@@ -217,6 +217,7 @@ func Foo() int { return 2 }
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![FileSizeEntry {
             path: "models/user.go".to_string(),
@@ -292,6 +293,7 @@ fn foo(a: i32) -> i32 {
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![FileSizeEntry {
             path: "src/lib.rs".to_string(),
@@ -377,6 +379,7 @@ index e69de29..4b825dc 100644
         },
         tests: vec![],
         fan_ins: vec![],
+        test_coverage: vec![],
         file_size_warnings: vec![],
         file_size_bands: vec![FileSizeEntry {
             path: "src/lib.rs".to_string(),
