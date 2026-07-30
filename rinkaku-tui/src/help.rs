@@ -94,6 +94,33 @@ fn tree_focus_bindings(locale: Locale) -> Vec<KeyBinding> {
             keys: "j / k / ↓ / ↑",
             description: rust_i18n::t!("help.binding.move_cursor", locale = tag).into_owned(),
         },
+        // ADR 0026 amendment: `Ctrl-d`/`Ctrl-u`/`gg`/`G` move the tree
+        // cursor the same way they scroll the right pane/source pane
+        // (`right_focus_bindings`/`source_screen_bindings` below) — the
+        // tree pane just has no separate scroll offset of its own to move
+        // (`App::handle_scroll_key`'s own doc comment).
+        KeyBinding {
+            keys: "ctrl-d / ctrl-u",
+            description: rust_i18n::t!("help.binding.scroll_tree_half_page", locale = tag)
+                .into_owned(),
+        },
+        KeyBinding {
+            keys: "gg / G",
+            description: rust_i18n::t!("help.binding.jump_tree_top_bottom", locale = tag)
+                .into_owned(),
+        },
+        // ADR 0057 amendment: tree search reuses Source view's own `/`/
+        // `n`/`N` bindings and descriptions (`source_screen_bindings`
+        // below) — same gesture, different search target.
+        KeyBinding {
+            keys: "/",
+            description: rust_i18n::t!("help.binding.start_search", locale = tag).into_owned(),
+        },
+        KeyBinding {
+            keys: "n / N",
+            description: rust_i18n::t!("help.binding.jump_next_prev_match", locale = tag)
+                .into_owned(),
+        },
         KeyBinding {
             keys: "enter",
             description: rust_i18n::t!("help.binding.expand_collapse_open", locale = tag)

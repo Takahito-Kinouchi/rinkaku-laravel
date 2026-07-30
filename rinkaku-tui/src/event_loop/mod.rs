@@ -11,8 +11,9 @@
 mod goto;
 mod scroll_sync;
 
-use crate::app::{App, BlastRadiusSelection, InputKey, Screen};
+use crate::app::{App, BlastRadiusSelection, Focus, InputKey, Screen};
 use crate::locale::Locale;
+use crate::nav::row_search_texts;
 use crate::review::PrContext;
 use crate::review::ports::{BrowserOpener, ClipboardSink, ReviewSubmitter};
 use crate::review_flow::{
@@ -169,6 +170,16 @@ pub(crate) fn run_app(
     // near-impossible edge case, but guarded rather than defaulting to a
     // zero step) falls back to [`DEFAULT_SCROLL_VIEWPORT_HEIGHT`].
     let mut last_scroll_viewport_height: Option<usize> = None;
+    // The tree pane's own last-drawn inner height
+    // (`ui::DrawOutcome::tree_viewport_height`), tracked separately from
+    // `last_scroll_viewport_height` above for the same reason
+    // `last_help_scroll_viewport_height` is (ADR 0026 amendment): the tree
+    // pane is a different box than the right pane/source pane, and the two
+    // are never the active `Ctrl-d`/`Ctrl-u`/`gg`/`G` target in the same
+    // frame (gated on opposite arms of `Focus`), but sizing a tree-focused
+    // press against a stale right-pane height would silently move the
+    // cursor the wrong distance.
+    let mut last_tree_viewport_height: Option<usize> = None;
     // The `?` help overlay's own last-drawn inner height, tracked
     // separately from `last_scroll_viewport_height` above: the overlay can
     // be open on top of either screen, and its box is a different size
@@ -224,6 +235,9 @@ pub(crate) fn run_app(
         app = clamp_right_pane_scroll_after_draw(app, outcome.clamped_right_pane_scroll);
         if outcome.scroll_viewport_height.is_some() {
             last_scroll_viewport_height = outcome.scroll_viewport_height;
+        }
+        if outcome.tree_viewport_height.is_some() {
+            last_tree_viewport_height = outcome.tree_viewport_height;
         }
         app = clamp_help_scroll_after_draw(app, outcome.clamped_help_scroll);
         if outcome.help_scroll_viewport_height.is_some() {
@@ -314,15 +328,16 @@ pub(crate) fn run_app(
                 // gated on load success.
                 app = dispatch_search_confirm(app, source_content.as_ref());
             } else if matches!(input_key, InputKey::SearchNext | InputKey::SearchPrev) {
-                // ADR 0057: `App::handle_key` already advances/retreats
-                // `SearchState`'s current match (no external data needed
-                // for that step); this loop's own job is folding the
-                // resulting match line into `Screen::Source::scroll_top`,
-                // the same split `InputKey::Source`'s own back-fill above
-                // uses between "what changed" (`App`) and "how that maps
-                // onto the viewport" (`run_app`).
+                // ADR 0057 (tree search by amendment): `App::handle_key`
+                // already advances/retreats `SearchState`'s current match
+                // (no external data needed for that step); this loop's own
+                // job is folding the resulting match into
+                // `Screen::Source::scroll_top` or the tree cursor, the same
+                // split `InputKey::Source`'s own back-fill above uses
+                // between "what changed" (`App`) and "how that maps onto
+                // the viewport" (`run_app`).
                 app = app.handle_key(input_key);
-                app = jump_source_scroll_to_current_match(app);
+                app = jump_search_match_into_view(app);
             } else if let InputKey::OpenPrInBrowser = input_key {
                 // ADR 0050: needs `review_ports.pr_context`/`.browser`,
                 // neither of which `App::handle_key` has access to (mirrors
@@ -401,9 +416,17 @@ pub(crate) fn run_app(
                 // `App::handle_scroll_key`'s own `help_open` branches) —
                 // `last_help_scroll_viewport_height` is this loop's mirror
                 // of `last_scroll_viewport_height` for that surface.
+                //
+                // ADR 0026 amendment: `Focus::Tree` on `Screen::Entry` sizes
+                // against `last_tree_viewport_height` instead — the tree
+                // pane `App::handle_scroll_key` now moves the cursor in
+                // (ADR 0026's own right-pane/source-pane cases fall through
+                // to `last_scroll_viewport_height` unchanged).
                 app = app.handle_key(input_key);
                 let viewport_height = if app.help_open() {
                     last_help_scroll_viewport_height.unwrap_or(DEFAULT_SCROLL_VIEWPORT_HEIGHT)
+                } else if matches!(app.screen(), Screen::Entry) && app.focus() == Focus::Tree {
+                    last_tree_viewport_height.unwrap_or(DEFAULT_SCROLL_VIEWPORT_HEIGHT)
                 } else {
                     last_scroll_viewport_height.unwrap_or(DEFAULT_SCROLL_VIEWPORT_HEIGHT)
                 };
@@ -603,43 +626,75 @@ fn should_recompute_diff_pane_content(app: &App) -> bool {
 /// [`App::with_source_scroll_top`] (already a no-op on [`Screen::Entry`],
 /// per that method's own doc comment) rather than inlined at each of this
 /// module's three call sites (`SearchConfirm`, `SearchNext`, `SearchPrev`)
-/// sharing the exact same "match line -> scroll target" mapping.
-fn jump_source_scroll_to_current_match(app: App) -> App {
-    match app.search().current_match() {
-        Some(line) => app.with_source_scroll_top(line),
-        None => app,
+/// sharing the exact same "match line/row -> jump target" mapping.
+///
+/// ADR 0057 amendment (tree search): on [`Screen::Entry`], the "jump
+/// target" is the tree cursor ([`App::with_nav_cursor`]) rather than a
+/// scroll offset — the two screens can never both be active at once, so
+/// branching on `app.screen()` here is one function covering both, not two
+/// parallel ones.
+fn jump_search_match_into_view(app: App) -> App {
+    match app.screen() {
+        Screen::Source { .. } => match app.search().current_match() {
+            Some(line) => app.with_source_scroll_top(line),
+            None => app,
+        },
+        Screen::Entry => match app.search().current_match() {
+            Some(index) => app.with_nav_cursor(index),
+            None => app,
+        },
     }
 }
 
-/// Applies [`InputKey::SearchConfirm`] against `source_content` — extracted
-/// from `run_app`'s inline dispatch so this branch is unit-testable without
-/// a live terminal (mirrors `jump_source_scroll_to_current_match`'s own
-/// "small wrapper, pulled out for the shared/testable step" precedent).
+/// Applies [`InputKey::SearchConfirm`] — extracted from `run_app`'s inline
+/// dispatch so this branch is unit-testable without a live terminal
+/// (mirrors [`jump_search_match_into_view`]'s own "small wrapper, pulled
+/// out for the shared/testable step" precedent).
 ///
-/// When `source_content` is not a loaded `Ok` view (the Source screen open
+/// On [`Screen::Source`]: confirms against `source_content`'s lines. When
+/// `source_content` is not a loaded `Ok` view (the Source screen open
 /// against a file that failed to read — e.g. deleted mid-review, or a
 /// permission error), confirming cancels the search instead of leaving it
 /// composing: `App::handle_key`'s own `SearchConfirm` arm is a documented
 /// no-op (it has no lines to match against), and letting Enter do nothing
 /// here trapped the reviewer in the minibuffer with no way out except Esc.
+///
+/// On [`Screen::Entry`] (ADR 0057 amendment, tree search): confirms
+/// against [`row_search_texts`] of the tree's *currently visible* rows
+/// (`App::nav`/`App::tree`, no external content needed — unlike the Source
+/// branch, everything this needs already lives on `App`) — a match under a
+/// collapsed ancestor (e.g. a `TestGroup`, collapsed by default per
+/// `Nav::new_collapsing_test_groups`) is not found; expanding into
+/// collapsed subtrees on a match is explicit future work, mirroring how
+/// ADR 0057 itself deferred Diff-pane search rather than trying to solve
+/// every case in one pass.
 fn dispatch_search_confirm(
     app: App,
     source_content: Option<&Result<source::HighlightedSourceView, String>>,
 ) -> App {
-    if let Some(Ok(highlighted)) = source_content {
-        let from_line = match app.screen() {
-            Screen::Source { scroll_top, .. } => *scroll_top,
-            Screen::Entry => 0,
-        };
-        let search = app
-            .search()
-            .clone()
-            .confirm(&highlighted.view.lines, from_line);
-        let app = app.with_search(search);
-        jump_source_scroll_to_current_match(app)
-    } else {
-        let search = app.search().clone().cancel();
-        app.with_search(search)
+    match app.screen() {
+        Screen::Source { scroll_top, .. } => {
+            if let Some(Ok(highlighted)) = source_content {
+                let from_line = *scroll_top;
+                let search = app
+                    .search()
+                    .clone()
+                    .confirm(&highlighted.view.lines, from_line);
+                let app = app.with_search(search);
+                jump_search_match_into_view(app)
+            } else {
+                let search = app.search().clone().cancel();
+                app.with_search(search)
+            }
+        }
+        Screen::Entry => {
+            let rows = app.nav().rows(app.tree());
+            let texts = row_search_texts(&rows);
+            let from_index = app.nav().cursor();
+            let search = app.search().clone().confirm(&texts, from_index);
+            let app = app.with_search(search);
+            jump_search_match_into_view(app)
+        }
     }
 }
 

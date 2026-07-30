@@ -98,16 +98,20 @@ impl App {
             return self;
         }
 
-        // Source-view search composing (ADR 0057) takes over the key space
-        // next, mirroring the review overlay's own priority just above —
-        // checked ahead of the help overlay for the identical reason: a
-        // reviewer mid-query must never have a stray `?` yank focus away
-        // into the help overlay instead of typing a literal `?` into their
-        // search. Only reachable while composing (`crate::input_translate::
-        // translate_key` only emits `SearchChar`/`SearchBackspace`/
-        // `SearchCancel` for other keys while composing, and only on
-        // `Screen::Source`), so every other key this function processes is
-        // unaffected by this branch existing.
+        // Search composing (ADR 0057, tree search by amendment) takes over
+        // the key space next, mirroring the review overlay's own priority
+        // just above — checked ahead of the help overlay for the identical
+        // reason: a reviewer mid-query must never have a stray `?` yank
+        // focus away into the help overlay instead of typing a literal `?`
+        // into their search. Only reachable while composing
+        // (`crate::input_translate::translate_key` only emits `SearchChar`/
+        // `SearchBackspace`/`SearchCancel` for other keys while composing,
+        // and only on `Screen::Source` or `Screen::Entry` + `Focus::Tree`),
+        // so every other key this function processes is unaffected by this
+        // branch existing. Screen-agnostic on purpose — the two search
+        // targets (Source-view lines, tree rows) share this exact composing
+        // shape, so there is nothing screen-specific left to check once
+        // `SearchMode::Composing` is already active.
         if matches!(
             self.search.mode(),
             crate::search::SearchMode::Composing { .. }
@@ -356,30 +360,40 @@ impl App {
                     DiffViewMode::Split => DiffViewMode::Unified,
                 };
             }
-            // ADR 0057: `/` starts composing a search query — the
-            // composing-mode branch above this match takes over from the
+            // ADR 0057 (extended to `Screen::Entry` + `Focus::Tree` by
+            // amendment, tree search): `/` starts composing a search query —
+            // the composing-mode branch above this match takes over from the
             // next key onward, so this arm only needs to flip the mode on.
-            (Screen::Source { .. }, _, InputKey::SearchStart) => {
+            // Entry-screen tree search is `Focus::Tree`-only — `Focus::Right`
+            // falls through to that screen's own arms/catch-all below
+            // unchanged, leaving `/` reserved for a possible future Diff-pane
+            // search (ADR 0057's own Alternatives) rather than colliding
+            // with it now.
+            (Screen::Source { .. }, _, InputKey::SearchStart)
+            | (Screen::Entry, Focus::Tree, InputKey::SearchStart) => {
                 self.search = self.search.clone().start();
             }
             // `n`/`N` jump the confirmed query's current match, wrapping —
             // a no-op with no confirmed matches (`SearchState::next`/`prev`'s
-            // own doc comment). Applying the jump to `scroll_top` itself
-            // happens in `crate::event_loop::run_app`, the same "App has no
-            // notion of the pane's rendered height/content" split ADR 0026's
-            // hunk-jump arms already use — this arm only advances which
-            // match is current.
-            (Screen::Source { .. }, _, InputKey::SearchNext) => {
+            // own doc comment). Applying the jump to `scroll_top`/the tree
+            // cursor itself happens in `crate::event_loop::run_app`, the
+            // same "App has no notion of the pane's rendered height/content"
+            // split ADR 0026's hunk-jump arms already use — this arm only
+            // advances which match is current.
+            (Screen::Source { .. }, _, InputKey::SearchNext)
+            | (Screen::Entry, Focus::Tree, InputKey::SearchNext) => {
                 self.search = self.search.clone().next();
             }
-            (Screen::Source { .. }, _, InputKey::SearchPrev) => {
+            (Screen::Source { .. }, _, InputKey::SearchPrev)
+            | (Screen::Entry, Focus::Tree, InputKey::SearchPrev) => {
                 self.search = self.search.clone().prev();
             }
             // Esc while a confirmed search is active (`crate::input_translate::
             // translate_key`'s own doc comment on why this arrives as
-            // `SearchCancel` rather than `Back` in that case): clears the
-            // search without leaving the screen.
-            (Screen::Source { .. }, _, InputKey::SearchCancel) => {
+            // `SearchCancel` rather than `Back`/`FocusLeft` in that case):
+            // clears the search without leaving the screen/pane.
+            (Screen::Source { .. }, _, InputKey::SearchCancel)
+            | (Screen::Entry, Focus::Tree, InputKey::SearchCancel) => {
                 self.search = self.search.clone().cancel();
             }
             // Every other key is a no-op while the source view is open —
@@ -403,8 +417,15 @@ impl App {
             (Screen::Entry, Focus::Right, InputKey::Down) => {
                 self.right_pane_scroll = self.right_pane_scroll.saturating_add(1);
             }
+            // A confirmed tree search holds row *indices* frozen at confirm
+            // time, so every arm that reshapes the visible row list must
+            // cancel it, per ADR 0057 decision 2's "cancel means stop
+            // searching altogether". Recomputing the matches against the new
+            // rows was rejected: it would silently relocate the reviewer's
+            // current match to a row they never chose.
             (Screen::Entry, Focus::Tree, InputKey::Select) => {
                 self.nav = self.nav.handle(Action::ToggleExpand, &self.tree);
+                self.search = self.search.clone().cancel();
             }
             // Gated on `Focus::Tree`, matching `InputKey::Open`'s own focus
             // requirement (finding: Space used to fire regardless of focus,
@@ -451,6 +472,7 @@ impl App {
                     | Some(NodeKind::Section(_))
                     | Some(NodeKind::TestGroup { .. }) => {
                         self.nav = self.nav.handle(Action::ToggleExpand, &self.tree);
+                        self.search = self.search.clone().cancel();
                     }
                     // File and symbol rows behave identically (dogfooding
                     // fix, `Self::Open`'s own doc comment): switch to the
@@ -474,9 +496,11 @@ impl App {
             }
             (Screen::Entry, _, InputKey::ExpandAll) => {
                 self.nav = self.nav.handle(Action::ExpandAll, &self.tree);
+                self.search = self.search.clone().cancel();
             }
             (Screen::Entry, _, InputKey::CollapseAll) => {
                 self.nav = self.nav.handle(Action::CollapseAll, &self.tree);
+                self.search = self.search.clone().cancel();
             }
             (Screen::Entry, _, InputKey::ToggleOrder) => {
                 self.order_mode = match self.order_mode {
@@ -484,6 +508,7 @@ impl App {
                     OrderMode::AlphaNumeric => OrderMode::Topological,
                 };
                 crate::order::order_tree(&mut self.tree, &self.ranks, self.order_mode);
+                self.search = self.search.clone().cancel();
             }
             (Screen::Entry, _, InputKey::Source) => {
                 let rows = self.nav.rows(&self.tree);
@@ -505,6 +530,7 @@ impl App {
                         symbol_id: symbol_ref.id.clone(),
                         scroll_top: 0,
                     };
+                    self.search = self.search.clone().cancel();
                 }
             }
             (Screen::Entry, _, InputKey::ToggleDiff) => {
@@ -713,11 +739,10 @@ impl App {
             // above this match already intercepts it and opens the popup
             // otherwise. A no-op either way: nothing to confirm yet.
             (Screen::Entry, _, InputKey::OpenUpdatePrompt) => {}
-            // ADR 0057: search is Source-screen-only —
-            // `crate::input_translate::translate_key` never emits any of
-            // these six variants while `Screen::Entry`, so this arm is a
-            // no-op stub kept only for match exhaustiveness, mirroring
-            // `OpenPrInBrowser`'s own precedent just above.
+            // The `Focus::Tree` half of these variants is handled by the
+            // dedicated arms above (ADR 0057 amendment, tree search); this
+            // arm is the `Focus::Right` fallthrough, where search is not
+            // offered and every variant is a no-op.
             (
                 Screen::Entry,
                 _,
@@ -847,8 +872,13 @@ impl App {
     /// - On [`Screen::Entry`] + [`Focus::Right`], acts on
     ///   [`Self::right_pane_scroll`], the same field plain `j`/`k`
     ///   already updates while Right-focused.
-    /// - On [`Screen::Entry`] + [`Focus::Tree`], a no-op — Tree-focused
-    ///   motion belongs on the tree cursor, not on any pane's scroll.
+    /// - On [`Screen::Entry`] + [`Focus::Tree`] (ADR 0026 amendment): acts
+    ///   on `self.nav`'s cursor via [`crate::nav::Action::CursorPageDown`]/
+    ///   [`crate::nav::Action::CursorPageUp`]/[`crate::nav::Action::CursorTop`]/
+    ///   [`crate::nav::Action::CursorBottom`] — the tree pane has no scroll
+    ///   offset of its own to move (it windows around the cursor at draw
+    ///   time, `crate::ui::entry::draw_tree_pane`'s own doc comment), so
+    ///   "half-page"/"top"/"bottom" here mean moving the cursor itself.
     ///
     /// `usize::MAX` is used as the "scroll to bottom" sentinel
     /// ([`InputKey::ScrollToBottom`]'s doc comment): the clamp-at-draw
@@ -865,7 +895,10 @@ impl App {
     /// `Focus::Right` branch and silently scroll the right pane *behind*
     /// the overlay while it looked closed to the reviewer.
     pub fn handle_scroll_key(mut self, key: InputKey, viewport_height: usize) -> Self {
-        let step = viewport_height / 2;
+        // Floored at 1 so a viewport too short to have a half page still
+        // moves by a row, matching vim's own `Ctrl-d`/`Ctrl-u`; without it
+        // these keys are silently inert on 3-4 row terminals.
+        let step = (viewport_height / 2).max(1);
         if self.help_open {
             match key {
                 InputKey::ScrollHalfPageDown => {
@@ -937,10 +970,28 @@ impl App {
             (Screen::Entry, Focus::Right, InputKey::ScrollToBottom) => {
                 self.right_pane_scroll = usize::MAX;
             }
-            // Tree focus on the entry view, or any non-scroll key on the
-            // source screen — deliberate no-op. `crate::run_app` only
-            // calls this for the four scroll variants, so the non-scroll
-            // case is defensive.
+            // Tree focus on the entry view (ADR 0026 amendment): the tree
+            // pane has no scroll offset of its own — it windows around the
+            // cursor at draw time (`crate::ui::entry::draw_tree_pane`'s own
+            // doc comment) — so these four variants move `self.nav`'s
+            // cursor instead of any pane's scroll state. `step` (half of
+            // `viewport_height`, computed once at the top of this method)
+            // is the same half-page size the right pane/source pane use.
+            (Screen::Entry, Focus::Tree, InputKey::ScrollHalfPageDown) => {
+                self.nav = self.nav.handle(Action::CursorPageDown(step), &self.tree);
+            }
+            (Screen::Entry, Focus::Tree, InputKey::ScrollHalfPageUp) => {
+                self.nav = self.nav.handle(Action::CursorPageUp(step), &self.tree);
+            }
+            (Screen::Entry, Focus::Tree, InputKey::ScrollToTop) => {
+                self.nav = self.nav.handle(Action::CursorTop, &self.tree);
+            }
+            (Screen::Entry, Focus::Tree, InputKey::ScrollToBottom) => {
+                self.nav = self.nav.handle(Action::CursorBottom, &self.tree);
+            }
+            // Any non-scroll key on the source screen — deliberate no-op.
+            // `crate::run_app` only calls this for the four scroll
+            // variants, so this arm is defensive.
             _ => {}
         }
         self
