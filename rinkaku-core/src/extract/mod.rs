@@ -7,11 +7,13 @@
 
 use crate::diff::LineRange;
 use crate::language::LanguageSupport;
+use hcl::{build_hcl_locals_symbols, hcl_block_name, hcl_block_type};
 use references::collect_referenced_names;
 use serde::Serialize;
 use std::collections::HashMap;
 use tree_sitter::StreamingIterator;
 
+mod hcl;
 mod references;
 
 /// The kind of symbol a definition node represents, expressed in
@@ -42,6 +44,10 @@ pub enum SymbolKind {
     Class,
     Interface,
     TypeAlias,
+    /// A named HCL block or `locals` attribute (ADR 0066): the name
+    /// carries the Terraform-specific role (`aws_instance.web`,
+    /// `var.region`), so one language-neutral kind suffices.
+    Block,
 }
 
 /// A changed symbol's contract impact (ADR 0014), classified by comparing
@@ -420,6 +426,10 @@ fn build_symbols(
     reference_query: &tree_sitter::Query,
     lang: &dyn LanguageSupport,
 ) -> Vec<ExtractedSymbol> {
+    if node.kind() == "block" && hcl_block_type(node, source).as_deref() == Some("locals") {
+        return build_hcl_locals_symbols(node, source, reference_query, lang);
+    }
+
     build_symbol(node, source, reference_query, lang)
         .into_iter()
         .collect()
@@ -478,7 +488,7 @@ fn build_symbol(
 /// `type_spec` needs to inspect its `type` field to tell a struct from an
 /// interface — the definition query captures `type_spec` for both (see
 /// `language/go.rs`), so the node kind alone is ambiguous for Go.
-fn symbol_kind(node: tree_sitter::Node, _source: &[u8]) -> Option<SymbolKind> {
+fn symbol_kind(node: tree_sitter::Node, source: &[u8]) -> Option<SymbolKind> {
     match node.kind() {
         // Rust.
         "function_item" | "function_signature_item" => Some(SymbolKind::Function),
@@ -506,6 +516,15 @@ fn symbol_kind(node: tree_sitter::Node, _source: &[u8]) -> Option<SymbolKind> {
         // style arrow-function bindings (see the TypeScript definition
         // query); other declarators are never captured.
         "variable_declarator" => Some(SymbolKind::Function),
+        // HCL (ADR 0066): every definition is a `block`; the block-type
+        // keyword decides whether it is reported. `locals` blocks are
+        // expanded per attribute in `build_symbols` instead.
+        "block" => match hcl_block_type(node, source).as_deref() {
+            Some("resource" | "data" | "module" | "variable" | "output" | "provider") => {
+                Some(SymbolKind::Block)
+            }
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -519,6 +538,10 @@ fn symbol_kind(node: tree_sitter::Node, _source: &[u8]) -> Option<SymbolKind> {
 /// its own `name` field too, so the generic path already covers it — kept
 /// as a fallthrough rather than a special case.
 fn definition_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    if node.kind() == "block" {
+        return hcl_block_name(node, source);
+    }
+
     node.child_by_field_name("name")
         .and_then(|n| n.utf8_text(source).ok())
         .map(|s| s.to_string())
@@ -592,6 +615,17 @@ fn slice_signature(node: tree_sitter::Node, source: &[u8]) -> String {
             | "method_definition"
     ) {
         node.child_by_field_name("body")
+    } else if node.kind() == "block" {
+        match hcl_block_type(node, source).as_deref() {
+            // variable/output bodies (type, default, value, ...) are
+            // the contract itself (ADR 0066) — keep the whole block.
+            Some("variable" | "output") => None,
+            _ => {
+                let mut cursor = node.walk();
+                node.children(&mut cursor)
+                    .find(|child| child.kind() == "block_start")
+            }
+        }
     } else {
         None
     };
@@ -706,13 +740,11 @@ fn collect_comment_ranges(
     }
 }
 
-/// Whether `node` is a tree-sitter comment node under any of the four
+/// Whether `node` is a tree-sitter comment node under any of the five
 /// grammars this module supports: Rust splits line/block comments into two
-/// distinct kinds (`line_comment`, `block_comment`); Go, Python, and
-/// TypeScript each use a single `comment` kind for both forms (verified
-/// against each grammar directly — Go's grammar has no such split and
-/// Python/TypeScript comments are line-oriented `#`/`//`/`/* */` all
-/// captured under the same node kind).
+/// distinct kinds (`line_comment`, `block_comment`); Go, HCL, Python, and
+/// TypeScript each use a single `comment` kind (verified against each grammar
+/// directly).
 fn is_comment_node(node: tree_sitter::Node) -> bool {
     matches!(node.kind(), "line_comment" | "block_comment" | "comment")
 }
