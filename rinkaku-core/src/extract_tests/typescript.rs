@@ -29,6 +29,7 @@ function foo(a: number): number {
         range: LineRange { start: 1, end: 3 },
         container: None,
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -58,6 +59,7 @@ function foo(a: number, c: number): number {
         range: LineRange { start: 1, end: 3 },
         container: None,
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -88,6 +90,7 @@ const arrow = (a: number): number => {
         range: LineRange { start: 1, end: 3 },
         container: None,
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -139,15 +142,15 @@ interface Shape {
         range: LineRange { start: 1, end: 4 },
         container: None,
         // The interface's own name is a `type_identifier` (self-
-        // reference, filtered later by deps.rs); `area`/`perimeter`
-        // are its method signature names (ADR 0012 decision 2);
-        // `number` is TypeScript's built-in `predefined_type`, a
-        // distinct node kind the reference query does not capture.
-        referenced_names: vec![
-            "Shape".to_string(),
-            "area".to_string(),
-            "perimeter".to_string(),
-        ],
+        // reference, filtered later by deps.rs); `number` is
+        // TypeScript's built-in `predefined_type`, a distinct node
+        // kind the reference query does not capture.
+        // `area`/`perimeter` are its method signature names (ADR
+        // 0012 decision 2), captured under `@reference.method` (ADR
+        // 0068) since a method signature name may denote a symbol
+        // nested inside a container (a class method).
+        referenced_names: vec!["Shape".to_string()],
+        referenced_method_names: vec!["area".to_string(), "perimeter".to_string()],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -186,8 +189,45 @@ interface Repo {
         container: None,
         // "id" (a `property_signature` name) is deliberately
         // excluded; only "save" (a `method_signature` name) is
-        // included alongside the interface's own name.
-        referenced_names: vec!["Repo".to_string(), "save".to_string()],
+        // captured, under `@reference.method` (ADR 0068) alongside
+        // the interface's own name in `referenced_names`.
+        referenced_names: vec!["Repo".to_string()],
+        referenced_method_names: vec!["save".to_string()],
+        dependencies: vec![],
+        omitted_dependency_matches: 0,
+        is_test: false,
+        classification: None,
+        previous_signature: None,
+    }];
+    let actual = extract_changed_symbols(source, &lang, &changed_ranges);
+
+    assert_eq!(expected, actual);
+}
+
+#[test]
+fn should_drop_stoplisted_interface_method_name_from_referenced_method_names() {
+    // Pins ADR 0068's disclosed tradeoff (tracked in issue #230):
+    // routing interface method specs through the ADR 0064 stoplist
+    // costs the spec-to-implementation edge for names like `get`.
+    let source = "\
+interface Cache {
+    get(key: string): string;
+    store(key: string, value: string): void;
+}
+";
+    let lang = TypeScriptSupport;
+    let changed_ranges = vec![LineRange { start: 1, end: 1 }];
+
+    let expected = vec![ExtractedSymbol {
+        id: String::new(),
+        name: "Cache".to_string(),
+        kind: SymbolKind::Interface,
+        signature: "interface Cache {\n    get(key: string): string;\n    store(key: string, value: string): void;\n}"
+            .to_string(),
+        range: LineRange { start: 1, end: 4 },
+        container: None,
+        referenced_names: vec!["Cache".to_string()],
+        referenced_method_names: vec!["store".to_string()],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -219,6 +259,7 @@ type Point = {
         range: LineRange { start: 1, end: 4 },
         container: None,
         referenced_names: vec!["Point".to_string()],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -251,6 +292,7 @@ enum Color {
         range: LineRange { start: 1, end: 5 },
         container: None,
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -286,6 +328,7 @@ class Circle {
         range: LineRange { start: 1, end: 7 },
         container: None,
         referenced_names: vec!["Circle".to_string()],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -323,6 +366,7 @@ class Circle {
         range: LineRange { start: 1, end: 8 },
         container: None,
         referenced_names: vec!["Circle".to_string()],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -357,6 +401,7 @@ class Circle {
         range: LineRange { start: 4, end: 6 },
         container: Some("class Circle".to_string()),
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -391,6 +436,7 @@ class Circle {
         range: LineRange { start: 4, end: 6 },
         container: Some("class Circle".to_string()),
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -427,6 +473,7 @@ class Circle {
         range: LineRange { start: 6, end: 8 },
         container: Some("class Circle".to_string()),
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -492,6 +539,7 @@ function foo(a: number): number {
         range: LineRange { start: 1, end: 3 },
         container: None,
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -528,6 +576,7 @@ abstract class Shape {
         range: LineRange { start: 3, end: 3 },
         container: Some("class Shape".to_string()),
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -562,6 +611,7 @@ abstract class Shape {
         range: LineRange { start: 1, end: 4 },
         container: None,
         referenced_names: vec!["Shape".to_string()],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -607,6 +657,7 @@ class Circle {
         // a member expression, not a bare identifier, so it is
         // not captured; only the class's own self-reference is.
         referenced_names: vec!["Circle".to_string()],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
@@ -639,6 +690,7 @@ const Component = () => {
         range: LineRange { start: 1, end: 3 },
         container: None,
         referenced_names: vec![],
+        referenced_method_names: vec![],
         dependencies: vec![],
         omitted_dependency_matches: 0,
         is_test: false,
