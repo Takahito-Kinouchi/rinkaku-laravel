@@ -37,6 +37,17 @@ fn symbol(name: &str, referenced_names: Vec<&str>) -> ExtractedSymbol {
     }
 }
 
+fn symbol_with_container(
+    name: &str,
+    container: &str,
+    referenced_names: Vec<&str>,
+) -> ExtractedSymbol {
+    ExtractedSymbol {
+        container: Some(container.to_string()),
+        ..symbol(name, referenced_names)
+    }
+}
+
 /// Builds a `ResolvedSymbol` candidate at `path`, with a signature
 /// derived from the path so mismatched ordering is easy to spot in
 /// a failing assertion.
@@ -44,6 +55,7 @@ fn candidate(path: &str) -> ResolvedSymbol {
     ResolvedSymbol {
         signature: format!("fn helper() // {path}"),
         path: path.to_string(),
+        container: None,
     }
 }
 
@@ -59,6 +71,7 @@ fn should_populate_dependencies_when_referenced_name_resolves() {
             vec![ResolvedSymbol {
                 signature: "fn helper()".to_string(),
                 path: "src/util.rs".to_string(),
+                container: None,
             }],
         )]),
     };
@@ -69,6 +82,7 @@ fn should_populate_dependencies_when_referenced_name_resolves() {
             dependencies: vec![ResolvedSymbol {
                 signature: "fn helper()".to_string(),
                 path: "src/util.rs".to_string(),
+                container: None,
             }],
             ..symbol("foo", vec!["helper"])
         }],
@@ -94,6 +108,7 @@ fn should_exclude_self_reference_from_dependencies() {
             vec![ResolvedSymbol {
                 signature: "struct Point".to_string(),
                 path: "src/lib.rs".to_string(),
+                container: None,
             }],
         )]),
     };
@@ -101,6 +116,36 @@ fn should_exclude_self_reference_from_dependencies() {
     let expected = vec![FileReport {
         path: "src/lib.rs".to_string(),
         symbols: vec![symbol("Point", vec!["Point"])],
+    }];
+    let actual = resolve_dependencies(files, &resolver);
+
+    assert_eq!(expected, actual);
+}
+
+#[test]
+fn should_exclude_self_reference_when_symbol_and_candidate_containers_match() {
+    // Guards the (name, container, path) key against a regression where a
+    // contained symbol's self-reference (e.g. a recursive method) would
+    // survive exclusion because own_key and the candidate disagree on
+    // container.
+    let files = vec![FileReport {
+        path: "a.py".to_string(),
+        symbols: vec![symbol_with_container("area", "class Circle", vec!["area"])],
+    }];
+    let resolver = FakeResolver {
+        matches: HashMap::from([(
+            "area",
+            vec![ResolvedSymbol {
+                signature: "def area(self):".to_string(),
+                path: "a.py".to_string(),
+                container: Some("class Circle".to_string()),
+            }],
+        )]),
+    };
+
+    let expected = vec![FileReport {
+        path: "a.py".to_string(),
+        symbols: vec![symbol_with_container("area", "class Circle", vec!["area"])],
     }];
     let actual = resolve_dependencies(files, &resolver);
 
@@ -128,6 +173,7 @@ fn should_exclude_dependency_already_reported_elsewhere_in_the_diff() {
             vec![ResolvedSymbol {
                 signature: "fn helper()".to_string(),
                 path: "src/util.rs".to_string(),
+                container: None,
             }],
         )]),
     };
@@ -145,7 +191,7 @@ fn should_keep_dependency_when_a_same_named_symbol_exists_elsewhere_in_the_diff(
     // "src/b.rs::helper". Excluding by name alone would wrongly
     // drop this dependency just because a same-named, unrelated
     // symbol happens to also be part of the diff; exclusion must
-    // be keyed on (name, path), not name alone.
+    // be keyed on (name, container, path), not name alone.
     let files = vec![
         FileReport {
             path: "src/a.rs".to_string(),
@@ -162,6 +208,7 @@ fn should_keep_dependency_when_a_same_named_symbol_exists_elsewhere_in_the_diff(
             vec![ResolvedSymbol {
                 signature: "fn helper()".to_string(),
                 path: "src/b.rs".to_string(),
+                container: None,
             }],
         )]),
     };
@@ -174,6 +221,7 @@ fn should_keep_dependency_when_a_same_named_symbol_exists_elsewhere_in_the_diff(
                     dependencies: vec![ResolvedSymbol {
                         signature: "fn helper()".to_string(),
                         path: "src/b.rs".to_string(),
+                        container: None,
                     }],
                     ..symbol("foo", vec!["helper"])
                 },
@@ -185,6 +233,51 @@ fn should_keep_dependency_when_a_same_named_symbol_exists_elsewhere_in_the_diff(
             symbols: vec![],
         },
     ];
+    let actual = resolve_dependencies(files, &resolver);
+
+    assert_eq!(expected, actual);
+}
+
+#[test]
+fn should_keep_dependency_when_diff_symbol_shares_name_and_path_but_differs_in_container() {
+    // The diff adds "class Baz { fn Foo() }" to "a.py", and "use_foo"
+    // (also in this diff) references "Foo". The actual dependency
+    // target is the unrelated top-level "class Foo" in the same file,
+    // not the new "Foo" method under "class Baz". A (name, path) key
+    // cannot tell these apart since both share name "Foo" and path
+    // "a.py"; only adding container to the key does.
+    let files = vec![FileReport {
+        path: "a.py".to_string(),
+        symbols: vec![
+            symbol("use_foo", vec!["Foo"]),
+            symbol_with_container("Foo", "class Baz", vec![]),
+        ],
+    }];
+    let resolver = FakeResolver {
+        matches: HashMap::from([(
+            "Foo",
+            vec![ResolvedSymbol {
+                signature: "class Foo".to_string(),
+                path: "a.py".to_string(),
+                container: None,
+            }],
+        )]),
+    };
+
+    let expected = vec![FileReport {
+        path: "a.py".to_string(),
+        symbols: vec![
+            ExtractedSymbol {
+                dependencies: vec![ResolvedSymbol {
+                    signature: "class Foo".to_string(),
+                    path: "a.py".to_string(),
+                    container: None,
+                }],
+                ..symbol("use_foo", vec!["Foo"])
+            },
+            symbol_with_container("Foo", "class Baz", vec![]),
+        ],
+    }];
     let actual = resolve_dependencies(files, &resolver);
 
     assert_eq!(expected, actual);
@@ -377,18 +470,22 @@ fn should_accumulate_omitted_matches_across_multiple_referenced_names() {
                     ResolvedSymbol {
                         signature: "fn other() // src/pkg/f.rs".to_string(),
                         path: "src/pkg/f.rs".to_string(),
+                        container: None,
                     },
                     ResolvedSymbol {
                         signature: "fn other() // src/pkg/g.rs".to_string(),
                         path: "src/pkg/g.rs".to_string(),
+                        container: None,
                     },
                     ResolvedSymbol {
                         signature: "fn other() // src/pkg/h.rs".to_string(),
                         path: "src/pkg/h.rs".to_string(),
+                        container: None,
                     },
                     ResolvedSymbol {
                         signature: "fn other() // src/pkg/i.rs".to_string(),
                         path: "src/pkg/i.rs".to_string(),
+                        container: None,
                     },
                 ],
             ),
