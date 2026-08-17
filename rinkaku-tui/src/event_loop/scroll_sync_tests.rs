@@ -11,7 +11,7 @@ use super::{
     clamp_right_pane_scroll_after_draw, jump_scroll_target, should_apply_hunk_jump,
     sync_target_for_scroll,
 };
-use crate::app::{self, App, InputKey};
+use crate::app::{self, App, DiffViewMode, InputKey};
 use crate::event_loop::tests::{empty_report, report_with_one_symbol};
 use crate::locale::Locale;
 use crate::{diff_shape, diff_view};
@@ -301,7 +301,7 @@ fn should_return_none_when_scroll_did_not_change_this_key() {
     // which symbol the unchanged offset happens to point at.
     let app = app_focused_on_diff_pane_with_scroll(&report, 1);
 
-    let actual = sync_target_for_scroll(&app, &report, &content, 1);
+    let actual = sync_target_for_scroll(&app, &report, &content, 1, DiffViewMode::Unified);
 
     assert_eq!(None, actual);
 }
@@ -313,7 +313,7 @@ fn should_return_none_when_tree_is_focused_even_if_scroll_changed() {
     let app = App::new(&report).with_right_pane_scroll(3);
     assert_eq!(app::Focus::Tree, app.focus());
 
-    let actual = sync_target_for_scroll(&app, &report, &content, 0);
+    let actual = sync_target_for_scroll(&app, &report, &content, 0, DiffViewMode::Unified);
 
     assert_eq!(None, actual);
 }
@@ -328,7 +328,7 @@ fn should_return_none_when_right_pane_is_not_diff_even_if_focus_is_right() {
         .with_right_pane_scroll(3);
     assert_eq!(app::RightPane::Detail, app.right_pane());
 
-    let actual = sync_target_for_scroll(&app, &report, &content, 0);
+    let actual = sync_target_for_scroll(&app, &report, &content, 0, DiffViewMode::Unified);
 
     assert_eq!(None, actual);
 }
@@ -341,7 +341,7 @@ fn should_return_bar_when_scroll_moved_into_bars_hunk() {
     // (line 1) into bar's hunk body (line 4).
     let app = app_focused_on_diff_pane_with_scroll(&report, 4);
 
-    let actual = sync_target_for_scroll(&app, &report, &content, 1);
+    let actual = sync_target_for_scroll(&app, &report, &content, 1, DiffViewMode::Unified);
 
     assert_eq!(Some("lib.rs::bar".to_string()), actual);
 }
@@ -354,7 +354,7 @@ fn should_return_none_when_scroll_moved_but_stayed_within_the_current_symbols_hu
     // still inside foo's own hunk — nothing to sync.
     let app = app_focused_on_diff_pane_with_scroll(&report, 1);
 
-    let actual = sync_target_for_scroll(&app, &report, &content, 0);
+    let actual = sync_target_for_scroll(&app, &report, &content, 0, DiffViewMode::Unified);
 
     assert_eq!(None, actual);
 }
@@ -392,7 +392,7 @@ fn should_return_none_when_scroll_moved_into_a_hunk_intersecting_no_symbol() {
     // header(3), body(4)).
     let app = app_focused_on_diff_pane_with_scroll(&report, 4);
 
-    let actual = sync_target_for_scroll(&app, &report, &content, 1);
+    let actual = sync_target_for_scroll(&app, &report, &content, 1, DiffViewMode::Unified);
 
     assert_eq!(None, actual);
 }
@@ -489,6 +489,7 @@ fn should_sync_tree_cursor_when_scroll_moves_into_a_different_symbols_hunk() {
         &diff_hunks,
         last_diff_focus,
         scroll_before_dispatch,
+        DiffViewMode::Unified,
     );
 
     assert_eq!(Some("lib.rs::bar"), effects.app.selected_symbol_id());
@@ -522,6 +523,7 @@ fn should_not_bounce_scroll_back_on_the_next_key_after_a_sync() {
         &diff_hunks,
         last_diff_focus,
         scroll_before_first_key,
+        DiffViewMode::Unified,
     );
     assert_eq!(Some("lib.rs::bar"), first.app.selected_symbol_id());
     assert_eq!(4, first.app.right_pane_scroll());
@@ -543,6 +545,7 @@ fn should_not_bounce_scroll_back_on_the_next_key_after_a_sync() {
         &diff_hunks,
         first.last_diff_focus,
         scroll_before_second_key,
+        DiffViewMode::Unified,
     );
 
     assert_eq!(4, second.app.right_pane_scroll());
@@ -571,7 +574,14 @@ fn should_resync_scroll_to_current_symbols_hunk_when_diff_pane_is_reentered_with
     // `run_app`'s loop passes in after a Diff -> Detail -> Diff toggle
     // with the cursor untouched, per the fix.
     let app = app.with_right_pane_scroll(0);
-    let effects = apply_diff_pane_selection_effects(app, &report, &diff_hunks, None, 0);
+    let effects = apply_diff_pane_selection_effects(
+        app,
+        &report,
+        &diff_hunks,
+        None,
+        0,
+        DiffViewMode::Unified,
+    );
 
     // bar's hunk starts at line 3 (same layout as every other test in
     // this file); landing at 0 would show foo's hunk under a pinned
@@ -609,6 +619,7 @@ fn dispatch_draw_and_fold(
         diff_hunks,
         last_diff_focus,
         scroll_before_dispatch,
+        DiffViewMode::Unified,
     );
     let app = effects.app;
     let diff_pane_content = effects.diff_pane_content;
@@ -654,14 +665,89 @@ fn should_scroll_into_the_second_symbols_hunk_when_cursor_moves_past_a_wide_firs
     );
 
     assert_eq!(Some("lib.rs::bar"), app.selected_symbol_id());
-    let expected_scroll = diff_shape::section_start_line_for_symbol(
+    let expected_scroll = diff_shape::scroll_target_line_for_symbol(
         &diff_shape::build_diff_pane_content(
             &report,
             &diff_hunks,
             app.selected_diff_target(&report).as_ref(),
         ),
         rinkaku_core::diff::LineRange { start: 10, end: 11 },
+        DiffViewMode::Unified,
     )
     .expect("bar's hunk start must resolve");
     assert_eq!(expected_scroll, app.right_pane_scroll());
+}
+
+/// `report_with_two_symbols`'s two symbols packed into a *single* hunk —
+/// the shape a whole new file (`@@ -0,0 +1,n @@`) always takes, and the one
+/// a hunk with generous context routinely takes for adjacent definitions.
+fn diff_hunks_with_one_shared_hunk() -> Vec<diff_view::FileHunks> {
+    use diff_view::{DiffLine, DiffLineKind, Hunk};
+
+    vec![diff_view::FileHunks {
+        path: "lib.rs".to_string(),
+        hunks: vec![Hunk {
+            header: "@@ -0,0 +1,11 @@".to_string(),
+            new_range: Some((1, 11)),
+            lines: (1..=11)
+                .map(|line_number| DiffLine {
+                    kind: DiffLineKind::Added,
+                    content: format!("line {line_number}"),
+                })
+                .collect(),
+        }],
+    }]
+}
+
+#[test]
+fn should_scroll_to_the_second_symbols_own_row_when_both_symbols_share_one_hunk() {
+    // ADR 0074's end-to-end regression pin. Under ADR 0072's whole-hunk
+    // rule both symbols resolved to the shared hunk's header row, so
+    // moving the tree cursor from `foo` to `bar` left the pane exactly
+    // where it was — the diff pane stopped following the signature list
+    // for every file whose changes arrive as one hunk.
+    let report = report_with_two_symbols();
+    let diff_hunks = diff_hunks_with_one_shared_hunk();
+    let app = App::new(&report).handle_key(InputKey::Down);
+    assert_eq!(Some("lib.rs::foo"), app.selected_symbol_id());
+    let last_diff_focus = app.selected_diff_focus(&report);
+
+    let app = dispatch_draw_and_fold(
+        app,
+        &report,
+        &diff_hunks,
+        last_diff_focus,
+        InputKey::Down,
+        160,
+        10,
+    );
+
+    // `bar` covers new-side lines 10-11; row 0 is the `@@` header and rows
+    // 1..=11 are new-side lines 1..=11, so bar's first row is row 10.
+    assert_eq!(Some("lib.rs::bar"), app.selected_symbol_id());
+    assert_eq!(10, app.right_pane_scroll());
+}
+
+#[test]
+fn should_sync_tree_cursor_to_the_second_symbol_when_scroll_moves_within_one_shared_hunk() {
+    // The mirror image of the test above: with only whole-hunk resolution,
+    // every row of a shared hunk resolved to its first symbol, so scrolling
+    // through `bar`'s half of the hunk left the tree cursor stuck on `foo`.
+    let report = report_with_two_symbols();
+    let diff_hunks = diff_hunks_with_one_shared_hunk();
+    let app = app_focused_on_diff_pane_with_scroll(&report, 0);
+    let last_diff_focus = app.selected_diff_focus(&report);
+    assert_eq!(Some("lib.rs::foo"), app.selected_symbol_id());
+
+    let app = app.with_right_pane_scroll(10);
+    let effects = apply_diff_pane_selection_effects(
+        app,
+        &report,
+        &diff_hunks,
+        last_diff_focus,
+        0,
+        DiffViewMode::Unified,
+    );
+
+    assert_eq!(Some("lib.rs::bar"), effects.app.selected_symbol_id());
 }
