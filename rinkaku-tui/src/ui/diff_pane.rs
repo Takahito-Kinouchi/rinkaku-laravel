@@ -9,7 +9,7 @@ use super::scroll::{
 };
 use super::style::{expand_tabs_text, pane_border_style, styled_content_spans};
 use crate::app::{App, DiffTarget, DiffViewMode, Focus};
-use crate::diff_shape::AttributedHunk;
+use crate::diff_shape::{self, AttributedHunk, DiffPaneContent};
 use crate::diff_view::{DiffLine, DiffLineKind};
 use crate::highlight::{self, HighlightedFile, TokenSpan};
 use crate::row_view::{BadgeContext, push_badge_spans};
@@ -194,16 +194,28 @@ pub(crate) fn draw_diff_pane(
     let split_fits = area.width >= MIN_SPLIT_VIEW_WIDTH;
     let render_split = split_requested && split_fits;
 
-    let unified_lines = if render_split {
+    let mut unified_lines = if render_split {
         Vec::new()
     } else {
         diff_pane_lines(hunks, highlighted_file, annotation_markers, path)
     };
-    let split_rows = if render_split {
+    let mut split_rows = if render_split {
         diff_pane_split_rows(hunks, highlighted_file, annotation_markers, path)
     } else {
         (Vec::new(), Vec::new())
     };
+
+    let view_mode = if render_split {
+        DiffViewMode::Split
+    } else {
+        DiffViewMode::Unified
+    };
+    let marked_rows = range_bar_lines(app, report, diff_content, view_mode);
+    if render_split {
+        mark_range_bar_lines(&mut split_rows.1, &marked_rows);
+    } else {
+        mark_range_bar_lines(&mut unified_lines, &marked_rows);
+    }
 
     let ranges = crate::diff_shape::changed_line_ranges(
         &hunks
@@ -256,6 +268,44 @@ pub(crate) fn draw_diff_pane(
         area,
         focused,
     ))
+}
+
+/// The logical-line offsets (the same unit [`crate::diff_shape::marked_body_rows`]
+/// returns and `Body::Single`/`Body::Split`'s slices are indexed by) the
+/// range bar should paint, or an empty `Vec` when the selection has nothing
+/// to mark — a file/directory row carries no [`crate::app::DiffFocus`]
+/// (`App::selected_diff_focus` itself returns `None` there), which mirrors
+/// [`crate::event_loop::scroll_sync::auto_scroll_for_diff_focus`]'s own
+/// "nothing to auto-scroll to" case: that function leaves the pane's scroll
+/// position untouched rather than jumping to line 0, so a file-row selection
+/// draws no bar here either, keeping the two in the same "no principled
+/// target" state instead of inventing one only the bar would show.
+///
+/// Cheap by construction: [`crate::diff_shape::marked_body_rows`] walks
+/// `diff_content`, which is already scoped to the one selected file
+/// (`DiffPaneContent`'s own doc comment) and already walked once per frame
+/// by [`diff_pane_lines`]/[`diff_pane_split_rows`] — this adds no new
+/// O(diff-size) work beyond what `draw_diff_pane` already does
+/// unconditionally.
+fn range_bar_lines(
+    app: &App,
+    report: &Report,
+    diff_content: &DiffPaneContent,
+    view_mode: DiffViewMode,
+) -> Vec<usize> {
+    let Some(focus) = app.selected_diff_focus(report) else {
+        return Vec::new();
+    };
+    let Some(range) = report
+        .files
+        .iter()
+        .find(|file| file.path == focus.path)
+        .and_then(|file| file.symbols.iter().find(|s| s.id == focus.symbol_id))
+        .map(|symbol| symbol.range)
+    else {
+        return Vec::new();
+    };
+    diff_shape::marked_body_rows(diff_content, range, view_mode)
 }
 
 /// Whether the row currently under the cursor is a present (non-removed)
@@ -383,6 +433,51 @@ fn prefix_annotation_marker(line: Line<'static>, has_annotation: bool) -> Line<'
     // themselves — so this rebuilt `Line` must carry the same base style
     // forward, or every span here silently loses its foreground/background.
     Line::from(spans).style(line.style)
+}
+
+/// The range bar's own span: a bold yellow `┃`, painted into the gutter
+/// column [`prefix_annotation_marker`] already reserves on every hunk body
+/// row (ADR 0048) — the range bar never touches a hunk header or separator
+/// row, both of which carry no such column ([`crate::diff_shape::marked_body_rows`]'s
+/// own doc comment on why it excludes them).
+fn range_bar_span() -> Span<'static> {
+    Span::styled(
+        "┃",
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+/// Paints the range bar (bold yellow `┃`) into `lines[row]`'s gutter column
+/// for every `row` in `marked_rows`, so the selected symbol's whole line
+/// range reads as one continuous bar rather than a single target line —
+/// this feature's whole point: auto-scroll alone gives no feedback once the
+/// whole diff already fits on screen and no scroll ever happens.
+///
+/// The annotation marker (ADR 0048's cyan `*`) wins on a row that carries
+/// both: an annotation is a reviewer's own persistent note, so it stays
+/// visible even where the range bar would otherwise paint over it — the
+/// reverse priority of the two glyphs' shared gutter column.
+///
+/// Indices past `lines`' end are skipped rather than treated as an error —
+/// `marked_rows`' own callers only ever pass offsets
+/// [`crate::diff_shape::marked_body_rows`] resolved against this exact same
+/// content, so this only guards against a defensive mismatch, not an
+/// expected case.
+fn mark_range_bar_lines(lines: &mut [Line<'static>], marked_rows: &[usize]) {
+    for &row in marked_rows {
+        let Some(line) = lines.get_mut(row) else {
+            continue;
+        };
+        let Some(gutter) = line.spans.first_mut() else {
+            continue;
+        };
+        if gutter.content.as_ref() == "*" {
+            continue;
+        }
+        *gutter = range_bar_span();
+    }
 }
 
 /// Split-view (ADR 0044) counterpart of [`diff_pane_lines`]: the same
