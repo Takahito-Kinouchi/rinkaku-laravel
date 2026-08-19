@@ -699,3 +699,36 @@ fn should_treat_removed_symbols_file_as_production_never_moved_to_tests_section(
 
     assert_eq!(expected, actual);
 }
+
+#[test]
+fn should_give_a_real_top_level_tests_dir_a_path_distinct_from_the_section_sentinel() {
+    // Regression: a repository's real top-level `__tests__/` directory
+    // (Jest/Vitest's standard convention) must not share its
+    // `TreeNode::path` with the enclosing Section's sentinel path —
+    // `crate::nav` keys collapse state by path, so a shared path made
+    // collapsing the directory collapse the whole section.
+    let report = Report {
+        origin: rinkaku_core::render::ReportOrigin::Diff,
+        files: vec![FileReport {
+            path: "__tests__/app.test.ts".to_string(),
+            symbols: vec![symbol(
+                "__tests__/app.test.ts::t1",
+                "t1",
+                SymbolKind::Function,
+            )],
+        }],
+        ..empty_report()
+    };
+
+    let actual = build_tree(&report);
+
+    let section = &actual.roots[0];
+    assert_eq!(
+        NodeKind::Section(SectionKind::Tests),
+        section.kind,
+        "the whole-test file must land in the trailing Tests section"
+    );
+    let dir = &section.children[0];
+    assert_eq!("__tests__", dir.path);
+    assert_ne!(crate::tree::TESTS_SECTION_PATH, dir.path.as_str());
+}

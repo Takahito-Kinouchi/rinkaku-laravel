@@ -95,9 +95,15 @@ pub enum SectionKind {
 /// The synthetic path a [`NodeKind::Section`] node carries on
 /// [`TreeNode::path`] — doubles as `crate::nav::Nav`'s collapse-state key
 /// (which is generic over `TreeNode::path`, so a section needs *some*
-/// stable path to participate) and the row label. `__tests__` cannot
-/// collide with a real slash-joined file path.
-pub const TESTS_SECTION_PATH: &str = "__tests__";
+/// stable path to participate). Contains `::` so it cannot collide with a
+/// real file path (same reasoning as [`TEST_GROUP_PATH_SUFFIX`]) — the
+/// previous value, `__tests__`, *did* collide: a repository with a
+/// top-level `__tests__/` directory (Jest/Vitest's standard convention)
+/// produced a `Dir` node whose path equaled the section's, so collapsing
+/// that directory inside the Tests section collapsed the whole section
+/// instead, and the two rows fought over one `crate::nav` collapse-state
+/// entry.
+pub const TESTS_SECTION_PATH: &str = "::tests-section";
 
 impl SectionKind {
     pub fn label(self) -> &'static str {
