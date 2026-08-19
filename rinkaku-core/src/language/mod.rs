@@ -160,6 +160,10 @@ static REGISTRY: &[RegistryEntry] = &[
         suffixes: &[".vue"],
         support: || &vue::VueSupport,
     },
+    RegistryEntry {
+        suffixes: &[".svelte"],
+        support: || &svelte::SvelteSupport,
+    },
 ];
 
 pub mod go;
@@ -167,6 +171,7 @@ pub mod hcl;
 pub mod php;
 pub mod python;
 pub mod rust;
+pub mod svelte;
 pub mod typescript;
 pub mod vue;
 
@@ -255,6 +260,14 @@ mod tests {
 
         let support = actual.expect("expected Some(&dyn LanguageSupport) for .vue path");
         assert_eq!("vue", support.name());
+    }
+
+    #[test]
+    fn should_return_svelte_support_when_path_has_svelte_extension() {
+        let actual = language_for_path("src/lib/Button.svelte");
+
+        let support = actual.expect("expected Some(&dyn LanguageSupport) for .svelte path");
+        assert_eq!("svelte", support.name());
     }
 
     #[rstest]

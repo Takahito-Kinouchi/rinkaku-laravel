@@ -12,8 +12,9 @@ rinkaku は PR の diff を「変更されたシンボルのシグネチャと�
 
 - **PHP 対応**: 関数・メソッド・class / interface / trait / enum の抽出、
   PHPUnit 規約（`tests/`, `Tests/`, `*Test.php`）でのテスト判定（ADR 0075）
-- **Vue SFC 対応**: `<script>` ブロック以外を空白マスクして TypeScript 文法で
-  解析する行・オフセット保存方式（ADR 0075）
+- **Vue SFC / Svelte 対応**: `<script>` ブロック以外を空白マスクして
+  TypeScript 文法で解析する行・オフセット保存方式（ADR 0075）。Inertia
+  (Vue) と Svelte のフロントエンドを同じ機構でカバー
 - **依存関係インデックスの並列化**: 起動時のスキャンを全 CPU コアで実行
   （ADR 0076）
 - **依存関係スキャンの範囲限定と高速化**: モノレポでは変更があった

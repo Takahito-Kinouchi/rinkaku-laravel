@@ -26,6 +26,9 @@
 //! - [`vue`] — Vue SFC `LanguageSupport`: `source_for_parse` masking
 //!   (script-only parsing at original file lines), template-only changes
 //!   surfacing nothing, and multi-script-block extraction.
+//! - [`svelte`] — Svelte `LanguageSupport`: the same masking shared via
+//!   `vue::mask_non_script`, covering instance + `context="module"`
+//!   script blocks and markup-only changes surfacing nothing.
 //! - [`typescript`] — TypeScript / TSX `LanguageSupport`: interface, type
 //!   alias, enum, arrow-function const bindings, abstract class/method
 //!   signatures, class field arrow-function body stripping, and TS/TSX
@@ -57,6 +60,7 @@ mod php;
 mod python;
 mod rust;
 mod rust_references;
+mod svelte;
 mod tidy_lines;
 mod typescript;
 mod vue;

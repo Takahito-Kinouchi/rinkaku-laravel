@@ -85,6 +85,16 @@ Grammar availability differs sharply between the two:
   variant parses pure-code files to the same tree while also handling
   template-style files, so the stricter variant only removes capability.
 
+## Addendum (2026-08-19): Svelte
+
+Svelte components have the same markup-plus-`<script>` shape, so
+`SvelteSupport` (`language/svelte.rs`) reuses `vue::mask_non_script`
+and the TypeScript grammar/queries verbatim — the masking already keeps
+every `<script ...>` block, which covers Svelte's instance script and
+`<script context="module">`/`<script module>` alike. No new decision
+was needed; this records that the Vue mechanism is deliberately shared
+rather than duplicated.
+
 ## Consequences
 
 - `LanguageSupport` grows one defaulted method (`source_for_parse`).

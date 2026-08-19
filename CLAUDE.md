@@ -16,7 +16,7 @@ surface of a change without reading every implementation line.
 - Dependency expansion: 1-hop references via tree-sitter tags queries
   (v1). LSP-based resolvers (pyright, gopls, etc.) are pluggable later
   via a `Resolver` trait.
-- Built-in languages: Rust, Go, Python, TypeScript, PHP, Vue (SFC), and HCL (Terraform), each implemented
+- Built-in languages: Rust, Go, Python, TypeScript, PHP, Vue (SFC), Svelte, and HCL (Terraform), each implemented
   as a `LanguageSupport` trait impl (grammar crate + tags query +
   signature-slicing rule), making language support additive.
 - Output: Markdown or JSON, designed to be fed to LLMs.
