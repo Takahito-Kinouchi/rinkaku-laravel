@@ -33,6 +33,11 @@ impl LanguageSupport for SvelteSupport {
         typescript::REFERENCE_QUERY
     }
 
+    // `index_prefilter_patterns` (ADR 0080) is not overridden, for the
+    // same reason as `VueSupport`: it shares `DEFINITION_QUERY` with
+    // `TypeScriptSupport`, whose doc comment on this method explains why
+    // the bare-name default is kept.
+
     /// Vitest's conventions, mirroring the Vue impl's: `.test.svelte`/
     /// `.spec.svelte` suffixes or a `__tests__/` directory anywhere in
     /// the path.

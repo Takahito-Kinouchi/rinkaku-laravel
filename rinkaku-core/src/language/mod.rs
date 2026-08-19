@@ -3,7 +3,8 @@
 //! `LanguageSupport` is the port through which the extraction pipeline
 //! (`extract.rs`) reaches into a concrete tree-sitter grammar. It is kept
 //! deliberately small: only the methods `extract.rs` (and, for
-//! `reference_query`, `deps.rs`) actually call are declared here.
+//! `reference_query`/`index_prefilter_patterns`, `deps.rs`) actually call
+//! are declared here.
 
 /// A language's tree-sitter-backed support: grammar plus the queries used to
 /// locate definition nodes and the identifiers they reference.
@@ -36,6 +37,33 @@ pub trait LanguageSupport {
     /// definition index later, which has the same net effect without
     /// needing a per-language exclusion list.
     fn reference_query(&self) -> &str;
+
+    /// Patterns `TagsResolver::new`'s aho-corasick prefilter (`deps.rs`)
+    /// matches, as substrings, against a whitespace-normalized copy of a
+    /// candidate file's content — every maximal run of whitespace
+    /// collapsed to a single space (`deps::normalize_whitespace`) — before
+    /// deciding whether the file is worth parsing at all when looking for
+    /// a definition named `name`. Defaults to `name` itself, unchanged:
+    /// safe for every language, since a definition's name always appears
+    /// literally in its own declaration.
+    ///
+    /// Contract (zero recall loss, ADR 0080): an override MUST return a
+    /// pattern set that matches the normalized content of every file in
+    /// which this language's [`definition_query`](LanguageSupport::definition_query)
+    /// could capture a definition named `name` — checked separately for
+    /// every node kind the query captures. When completeness cannot be
+    /// proven for some captured node kind (e.g. TypeScript's
+    /// arrow-function `variable_declarator`s, which have no single fixed
+    /// keyword introducing the name), the bare `name` must remain in the
+    /// returned set, since it alone is always safe. A false positive (a
+    /// pattern that happens to match a file with no such definition) only
+    /// costs parse time it did not need to spend; a false negative (a real
+    /// definition whose file matches no pattern) is a correctness bug — a
+    /// real dependency silently disappearing from "Depends on:" with no
+    /// error or warning.
+    fn index_prefilter_patterns(&self, name: &str) -> Vec<String> {
+        vec![name.to_string()]
+    }
 
     /// Whether `path` is, by convention, a test file in its entirety (ADR
     /// 0009), e.g. Go's `*_test.go`, Python's `test_*.py`/`*_test.py`, or
@@ -299,5 +327,41 @@ mod tests {
         let actual = language_for_path("nomad/job.hcl");
 
         assert!(actual.is_none());
+    }
+
+    /// A minimal `LanguageSupport` impl exercising only the trait's
+    /// defaults, so `index_prefilter_patterns`'s default can be pinned
+    /// independently of any concrete language's override.
+    struct DefaultOnlySupport;
+
+    impl LanguageSupport for DefaultOnlySupport {
+        fn name(&self) -> &'static str {
+            "default-only"
+        }
+
+        fn grammar(&self) -> tree_sitter::Language {
+            tree_sitter_rust::LANGUAGE.into()
+        }
+
+        fn definition_query(&self) -> &str {
+            ""
+        }
+
+        fn reference_query(&self) -> &str {
+            ""
+        }
+
+        fn is_test_path(&self, _path: &str) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn should_return_bare_name_when_index_prefilter_patterns_not_overridden() {
+        let support = DefaultOnlySupport;
+
+        let actual = support.index_prefilter_patterns("helper");
+
+        assert_eq!(vec!["helper".to_string()], actual);
     }
 }

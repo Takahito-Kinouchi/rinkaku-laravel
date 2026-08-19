@@ -13,6 +13,13 @@
 //! - `prefilter` — `should_parse_file`'s aho-corasick substring prefilter
 //!   (index/skip/incidental-hit/empty-names cases), previously the
 //!   `mod prefilter_tests` nested module
+//! - `prefilter_patterns` — `LanguageSupport::index_prefilter_patterns`
+//!   overrides (ADR 0080): per-language recall (free function and
+//!   class/impl/receiver member shapes, plus irregular-whitespace
+//!   variants) through a full `TagsResolver::new` build, precision
+//!   (caller-only content rejected at the `should_parse_file` level,
+//!   since `resolve()` can't tell "never parsed" from "parsed but
+//!   empty"), and `normalize_whitespace` unit tests
 //! - `parallel_determinism` — the rayon-parallel indexing keeps each
 //!   name's candidate list in input-file order, byte-identical across
 //!   repeated calls
@@ -34,6 +41,7 @@ use crate::language::rust::RustSupport;
 mod generated_lockfile_path;
 mod parallel_determinism;
 mod prefilter;
+mod prefilter_patterns;
 mod resolve_dependencies;
 mod tags_resolver_exclusions;
 mod tags_resolver_from_entries;

@@ -34,6 +34,12 @@ impl LanguageSupport for VueSupport {
         typescript::REFERENCE_QUERY
     }
 
+    // `index_prefilter_patterns` (ADR 0080) is not overridden: it shares
+    // `DEFINITION_QUERY` with `TypeScriptSupport`, whose doc comment on
+    // this same method explains why the bare-name default is kept
+    // (arrow-function `variable_declarator`s and `method_definition`s
+    // have no single fixed keyword to anchor a pattern to).
+
     /// Vitest/Jest's conventions, mirroring the TypeScript impl's:
     /// `.test.vue`/`.spec.vue` suffixes or a `__tests__/` directory
     /// anywhere in the path.

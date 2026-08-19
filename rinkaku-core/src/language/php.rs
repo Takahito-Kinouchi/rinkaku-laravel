@@ -96,6 +96,37 @@ impl LanguageSupport for PhpSupport {
         !path.ends_with(".blade.php")
     }
 
+    /// Declaration-anchored prefilter patterns (ADR 0080). Every node kind
+    /// `DEFINITION_QUERY` captures introduces its name directly after a
+    /// fixed keyword, with nothing else able to sit between the keyword
+    /// and the name — verified against `tree-sitter-php`'s grammar
+    /// (`common/define-grammar.js`):
+    /// - `function_definition`/`method_declaration`: `keyword('function')`
+    ///   then `optional($.reference_modifier)` (the by-ref `&`, e.g.
+    ///   `function &foo`) then `field('name', ...)` — visibility
+    ///   (`public`/`private`/`protected`), `static`, `abstract`, and
+    ///   `final` modifiers on `method_declaration` all precede the
+    ///   `function` keyword itself, never sit between it and the name.
+    /// - `class_declaration`: `repeat($._modifier)` (`final`/`abstract`/
+    ///   `readonly`) then `keyword('class')` then `field('name', ...)`
+    ///   directly.
+    /// - `interface_declaration`/`trait_declaration`/`enum_declaration`:
+    ///   their keyword (`interface`/`trait`/`enum`) is followed directly
+    ///   by `field('name', ...)`, with no modifiers permitted at all.
+    ///
+    /// Every one of the six patterns below is therefore a complete proof
+    /// for its node kind — no bare-name fallback is needed.
+    fn index_prefilter_patterns(&self, name: &str) -> Vec<String> {
+        vec![
+            format!("function {name}"),
+            format!("function &{name}"),
+            format!("class {name}"),
+            format!("interface {name}"),
+            format!("trait {name}"),
+            format!("enum {name}"),
+        ]
+    }
+
     /// PHPUnit's conventions: suites live under a `tests/` (commonly
     /// capitalized `Tests/` in Symfony-style projects) directory, and a
     /// test class file ends in `Test.php` wherever it lives.
@@ -111,6 +142,7 @@ impl LanguageSupport for PhpSupport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use rstest::rstest;
 
     #[test]
@@ -149,6 +181,23 @@ mod tests {
 
         let actual = support.is_test_path(path);
 
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_return_declaration_anchored_patterns_for_index_prefilter() {
+        let support = PhpSupport;
+
+        let actual = support.index_prefilter_patterns("helper");
+
+        let expected = vec![
+            "function helper".to_string(),
+            "function &helper".to_string(),
+            "class helper".to_string(),
+            "interface helper".to_string(),
+            "trait helper".to_string(),
+            "enum helper".to_string(),
+        ];
         assert_eq!(expected, actual);
     }
 }

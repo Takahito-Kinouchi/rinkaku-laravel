@@ -64,6 +64,19 @@ impl LanguageSupport for PythonSupport {
         REFERENCE_QUERY
     }
 
+    /// Declaration-anchored prefilter patterns (ADR 0080). Both node kinds
+    /// `DEFINITION_QUERY` captures introduce their name directly after a
+    /// fixed keyword — verified against `tree-sitter-python`'s grammar
+    /// (`grammar.js`): `function_definition` is `optional('async') 'def'
+    /// field('name', ...)`, with `async` preceding `def` rather than
+    /// sitting between `def` and the name, so `def {name}` still matches
+    /// after whitespace normalization even for `async def {name}`;
+    /// `class_definition` is `'class' field('name', ...)` directly, with
+    /// no modifier of any kind permitted before the name.
+    fn index_prefilter_patterns(&self, name: &str) -> Vec<String> {
+        vec![format!("def {name}"), format!("class {name}")]
+    }
+
     /// pytest's own file-discovery convention (`test_*.py` / `*_test.py`,
     /// see the pytest docs' "Conventions for Python test discovery") plus a
     /// `tests/` directory anywhere in the path — the latter catches
@@ -163,6 +176,16 @@ mod tests {
 
         let actual = support.is_test_path(path);
 
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_return_declaration_anchored_patterns_for_index_prefilter() {
+        let support = PythonSupport;
+
+        let actual = support.index_prefilter_patterns("helper");
+
+        let expected = vec!["def helper".to_string(), "class helper".to_string()];
         assert_eq!(expected, actual);
     }
 }

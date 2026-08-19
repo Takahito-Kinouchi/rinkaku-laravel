@@ -40,6 +40,23 @@ impl LanguageSupport for HclSupport {
         REFERENCE_QUERY
     }
 
+    // `index_prefilter_patterns` (ADR 0080) is deliberately NOT overridden
+    // here: `DEFINITION_QUERY` captures every top-level `block` uniformly,
+    // with the recognized-block-type dispatch and symbol naming
+    // (`resource "T" "N"` → `T.N`, `variable "N"` → `var.N`, ...) done in
+    // `extract.rs` by reading block-type/label text, not by distinct
+    // tree-sitter node kinds each introduced by their own fixed keyword —
+    // there is no single "keyword + name" shape to anchor on the way
+    // PHP's `function`/`class`/... or Rust's `fn`/`struct`/... are. The
+    // trait's bare-name default is already exactly right for HCL: this
+    // language's zero-recall-loss story instead comes from
+    // `TagsResolver::new`'s dotted-name component expansion (ADR 0066
+    // decision 5) — a reference like `var.region` never appears literally
+    // in `variable "region" { ... }`, only its `region` component does,
+    // and that expansion now runs every dotted name's components through
+    // `index_prefilter_patterns` too (still just the bare component for
+    // HCL, unchanged from before this ADR).
+
     /// Terraform's native test convention: `*.tftest.hcl` files hold
     /// `run` blocks and mock providers, and are only read by
     /// `terraform test`.

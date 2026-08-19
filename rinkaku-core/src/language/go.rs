@@ -92,6 +92,47 @@ impl LanguageSupport for GoSupport {
         REFERENCE_QUERY
     }
 
+    /// Declaration-anchored prefilter patterns (ADR 0080) — verified
+    /// against `tree-sitter-go`'s grammar (`grammar.js`):
+    /// - `function_declaration`: `'func' field('name', ...)` directly, no
+    ///   modifier possible in between (Go has no function visibility
+    ///   keyword; exported/unexported is spelled through the identifier's
+    ///   own casing). `func {name}` also matches a generic function's
+    ///   `func {name}[T any](...)`, since the pattern match is a substring
+    ///   check — `func {name}` is already a prefix of that text.
+    /// - `type_spec` (restricted here to struct/interface types, see
+    ///   `DEFINITION_QUERY`'s own doc comment): the literal `type` keyword
+    ///   belongs to the enclosing `type_declaration`, not to `type_spec`
+    ///   itself, but it always appears directly before `type_spec`'s own
+    ///   `field('name', ...)` in the file's text (`'type' choice($.type_spec,
+    ///   ...)`), so `type {name}` is still a valid substring proof.
+    /// - `method_declaration`: `'func' field('receiver', parameter_list)
+    ///   field('name', field_identifier) ...` — Go permits exactly one
+    ///   receiver (there is no repetition or choice in the grammar rule),
+    ///   so the receiver's closing `)` is always immediately followed by
+    ///   the method name, giving `) {name}(` as an anchor once the name's
+    ///   own trailing parameter list is accounted for. This assumes
+    ///   gofmt-conformant spacing between the name and its parameter
+    ///   list's `(` (true of effectively all real-world Go source); a
+    ///   contrived file inserting whitespace there (`func (r *Repo) Save
+    ///   (x int) {}`) is syntactically legal but would defeat this one
+    ///   pattern — a narrow, accepted gap, the same kind of imprecision
+    ///   `should_parse_file`'s own doc comment (`deps.rs`) already accepts
+    ///   elsewhere for this coarse, substring-only prefilter.
+    fn index_prefilter_patterns(&self, name: &str) -> Vec<String> {
+        vec![
+            format!("func {name}"),
+            format!("type {name}"),
+            format!(") {name}("),
+            // Whitespace between a method name and its parameter list is
+            // legal (if never gofmt-emitted); the matcher runs over
+            // whitespace-normalized content where every run collapses to
+            // one space, so this second anchor makes the method coverage
+            // complete rather than gofmt-conventional.
+            format!(") {name} ("),
+        ]
+    }
+
     /// Go's own toolchain convention: a `_test.go`-suffixed file is
     /// excluded from normal builds and only compiled when running tests
     /// (`go help test`), so it is unambiguously test-only regardless of
@@ -154,6 +195,21 @@ mod tests {
 
         let actual = support.is_test_path(path);
 
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_return_declaration_anchored_patterns_for_index_prefilter() {
+        let support = GoSupport;
+
+        let actual = support.index_prefilter_patterns("Helper");
+
+        let expected = vec![
+            "func Helper".to_string(),
+            "type Helper".to_string(),
+            ") Helper(".to_string(),
+            ") Helper (".to_string(),
+        ];
         assert_eq!(expected, actual);
     }
 }

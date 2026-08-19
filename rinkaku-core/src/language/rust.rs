@@ -99,6 +99,29 @@ impl LanguageSupport for RustSupport {
         REFERENCE_QUERY
     }
 
+    /// Declaration-anchored prefilter patterns (ADR 0080). Every node kind
+    /// `DEFINITION_QUERY` captures introduces its name directly after a
+    /// fixed keyword — verified against `tree-sitter-rust`'s grammar
+    /// (`grammar.js`): `function_item`/`function_signature_item` are
+    /// `optional(visibility_modifier) optional(function_modifiers) 'fn'
+    /// field('name', ...)`, with visibility (`pub`, `pub(crate)`, ...) and
+    /// modifiers (`async`/`const`/`unsafe`/`default`) both preceding the
+    /// `fn` keyword itself, never sitting between it and the name;
+    /// `struct_item`/`enum_item`/`trait_item` are likewise
+    /// `optional(visibility_modifier) 'struct'|'enum'|'trait'
+    /// field('name', ...)` directly. Generic parameters
+    /// (`field('type_parameters', ...)`) follow the name, so `fn {name}<`
+    /// still matches via `fn {name}` as a plain prefix of the pattern
+    /// match, needing no separate case.
+    fn index_prefilter_patterns(&self, name: &str) -> Vec<String> {
+        vec![
+            format!("fn {name}"),
+            format!("struct {name}"),
+            format!("enum {name}"),
+            format!("trait {name}"),
+        ]
+    }
+
     /// Covers Rust's `tests/` integration-test convention and ADR 0028
     /// split test files (`#[cfg(test)] #[path = "foo_tests/mod.rs"] mod
     /// tests;`): the split file carries no `#[cfg(test)]` wrapper, so its
@@ -412,6 +435,21 @@ mod tests {
 
         let actual = support.is_test_path(path);
 
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_return_declaration_anchored_patterns_for_index_prefilter() {
+        let support = RustSupport;
+
+        let actual = support.index_prefilter_patterns("helper");
+
+        let expected = vec![
+            "fn helper".to_string(),
+            "struct helper".to_string(),
+            "enum helper".to_string(),
+            "trait helper".to_string(),
+        ];
         assert_eq!(expected, actual);
     }
 

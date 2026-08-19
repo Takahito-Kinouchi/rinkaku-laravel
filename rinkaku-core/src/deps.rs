@@ -19,11 +19,12 @@
 //!   ([`crate::extract::extract_all_symbols`]) even though most files in
 //!   a real repository define nothing any changed symbol actually
 //!   references. `TagsResolver::new`'s `reference_names` parameter fixes
-//!   this: files are prefiltered by a substring search
-//!   (`aho-corasick`, run once over all reference names instead of once
-//!   per name) before parsing, skipping the ones that cannot contain a
-//!   match at all — see `should_parse_file` for why this cannot miss a
-//!   real match (no recall loss).
+//!   this: files are prefiltered by a substring search (`aho-corasick`,
+//!   run once per language actually present rather than once per name)
+//!   before parsing, skipping the ones that cannot contain a match at
+//!   all — see `should_parse_file` and
+//!   [`LanguageSupport::index_prefilter_patterns`] for why this cannot
+//!   miss a real match (no recall loss).
 //!
 //! Remaining `--deps 1` overhead in `--base` mode is mostly the
 //! `git show`/`git ls-files` subprocess cost of *reading* every indexed
@@ -33,20 +34,33 @@
 //! Not addressed here, since it is `main.rs`'s file-reading strategy
 //! rather than this module's indexing logic.
 //!
-//! Measured effect (see the PR description for the full numbers,
-//! `git archive`-extracted files so `git show` cost is excluded): on a
-//! same-language repository with all-generic-noise filtered
-//! `reference_names` (no `Vec`/`Option`/`String`/... — see below),
-//! ~88% fewer files were parsed and indexing was ~8x faster. But when
+//! Known limitation, and how ADR 0080 narrowed it: the original
+//! prefilter matched `reference_names` as plain substrings anywhere in a
+//! file's raw content — safe (a definition's name always appears
+//! literally in its own declaration) but coarse. On a same-language
+//! repository with all-generic-noise filtered `reference_names` (no
+//! `Vec`/`Option`/`String`/...), that plain-substring version still cut
+//! ~88% of files from parsing (~8x faster indexing) — but when
 //! `reference_names` includes common standard-library-style names (as a
 //! typical Rust diff's referenced names often do — `Vec`, `Option`,
-//! `Some`, `Ok`, `String`, ...), the prefilter's effect shrinks sharply:
-//! one real-world diff still had 93% of files pass the prefilter, since
-//! those names appear in nearly every file. `should_parse_file` is a
-//! substring match over raw content, not scoped to actual definition
-//! sites, so it cannot narrow this further without risking false
-//! negatives (see its own doc comment) — accepted as a known limitation
-//! rather than solved here.
+//! `Some`, `Ok`, `String`, ...), or, more sharply, a helper *called* from
+//! nearly every file in a monorepo (PHP/Laravel's `format_price`-style
+//! utilities are the motivating case), a plain-substring match degrades
+//! toward matching almost every file — one measured real-world diff saw
+//! 93% of files pass. ADR 0080 replaces the plain name with
+//! [`LanguageSupport::index_prefilter_patterns`]: for languages where a
+//! definition's name is provably introduced by a fixed keyword
+//! (PHP's `function`/`class`/..., Python's `def`/`class`, Rust's
+//! `fn`/`struct`/..., Go's `func`/`type`/...), the prefilter now matches
+//! *declaration-shaped* substrings (`"function helper"`, not just
+//! `"helper"`) against a whitespace-normalized copy of the content — a
+//! *call* site (`format_price($x)`) no longer makes a file pass the
+//! filter, only a plausible *declaration* does. Languages where no
+//! node kind can be proven complete this way (the TypeScript family, via
+//! its default) keep the original bare-name behavior unchanged, and so
+//! does HCL (its zero-recall-loss story runs through dotted-name
+//! component expansion instead, unrelated to this mechanism) — for
+//! those, this known limitation is unchanged from before this ADR.
 
 use crate::extract::extract_all_symbols;
 use crate::language::LanguageSupport;
@@ -135,12 +149,15 @@ impl TagsResolver {
     ///
     /// `reference_names` is the full set of names any changed symbol in
     /// the diff actually references (gathered by `main.rs` before calling
-    /// this). A file is only parsed if its content contains at least one
-    /// of these names as a substring — see `should_parse_file`'s doc
-    /// comment for why this prefilter cannot cause a real definition to
-    /// be missed. Passing an empty set (no diff, or `--deps 0`'s caller
-    /// never reaching this path) indexes nothing, which is correct: no
-    /// name is referenced, so no definition needs to be found.
+    /// this). A file is only parsed if a whitespace-normalized copy of its
+    /// content contains, as a substring, at least one of the patterns its
+    /// language's [`LanguageSupport::index_prefilter_patterns`] returns for
+    /// one of these names (ADR 0080) — see that method's doc comment and
+    /// `should_parse_file`'s for why this prefilter cannot cause a real
+    /// definition to be missed. Passing an empty set (no diff, or
+    /// `--deps 0`'s caller never reaching this path) indexes nothing,
+    /// which is correct: no name is referenced, so no definition needs to
+    /// be found.
     ///
     /// `include_tests` mirrors `pipeline::analyze_diff`'s flag of the same
     /// name (ADR 0009's mechanism; ADR 0025 flipped the CLI-facing default
@@ -202,37 +219,63 @@ impl TagsResolver {
         include_generated: bool,
         on_progress: Option<OnProgress>,
     ) -> Self {
+        let files: Vec<(String, String)> = files.into_iter().collect();
+        let total = files.len();
+
+        // One matcher per registered-language *instance actually
+        // encountered* in `files`, keyed by `LanguageSupport::name()`
+        // (ADR 0080) — built once, single-threaded, before the parallel
+        // parse below, since every language a file could route to is
+        // already knowable from `files` and `language_for_path` alone.
+        // A single shared matcher (the pre-ADR-0080 design) is no longer
+        // possible: `index_prefilter_patterns` returns different pattern
+        // shapes per language for the same `name` (e.g. PHP's `"function
+        // helper"` vs. Rust's `"fn helper"`), so which patterns are valid
+        // for a given file's content now depends on that file's language.
+        //
         // A dotted reference name (HCL: `var.region`, ADR 0066) never
         // appears literally in its defining file — `variable "region"`
         // contains only the components. Adding each dot-separated
-        // component as its own pattern preserves the prefilter's
-        // zero-recall-loss guarantee (see `should_parse_file`); the only
-        // cost is parsing more candidate files. Every component is added,
-        // including single-character ones: a one-character pattern makes
-        // the prefilter pass more files, which costs parsing time, never
-        // recall.
-        let mut patterns: Vec<String> = Vec::new();
-        for name in reference_names {
-            patterns.push(name.clone());
-            if name.contains('.') {
-                patterns.extend(name.split('.').map(str::to_string));
-            }
+        // component's own `index_prefilter_patterns` preserves the
+        // prefilter's zero-recall-loss guarantee (see `should_parse_file`)
+        // exactly as the pre-ADR-0080 plain-component expansion did — for
+        // HCL (the only language this arises for today, since it keeps
+        // the bare-name default) a component's patterns are just the bare
+        // component itself, unchanged behavior. Every component is
+        // included, including single-character ones: a one-character
+        // pattern makes the prefilter pass more files, which costs
+        // parsing time, never recall.
+        let mut matchers: HashMap<&'static str, aho_corasick::AhoCorasick> = HashMap::new();
+        for (path, _content) in &files {
+            let Some(lang) = language_for_path(path) else {
+                continue;
+            };
+            matchers.entry(lang.name()).or_insert_with(|| {
+                let mut patterns: Vec<String> = Vec::new();
+                for name in reference_names {
+                    patterns.extend(lang.index_prefilter_patterns(name));
+                    if name.contains('.') {
+                        for component in name.split('.') {
+                            patterns.extend(lang.index_prefilter_patterns(component));
+                        }
+                    }
+                }
+                // `AhoCorasick::new` only errors on pathological inputs
+                // this call site cannot produce: an empty pattern set is
+                // handled gracefully (matches nothing, not an error), and
+                // the automaton construction itself only fails on
+                // internal overflow at pattern counts/lengths far beyond
+                // what a diff's expanded reference-name patterns could
+                // realistically reach. `.expect()` here documents "this
+                // is not expected to fail in practice" rather than a
+                // genuinely handled error path — there is no meaningful
+                // fallback if it somehow did (the resolver simply could
+                // not be built).
+                aho_corasick::AhoCorasick::new(&patterns)
+                    .expect("index_prefilter_patterns must build a valid AhoCorasick matcher")
+            });
         }
 
-        // `AhoCorasick::new` only errors on pathological inputs this call
-        // site cannot produce: an empty pattern set is handled gracefully
-        // (matches nothing, not an error), and the automaton construction
-        // itself only fails on internal overflow at pattern counts/lengths
-        // far beyond what a diff's expanded reference-name patterns could
-        // realistically reach. `.expect()` here documents "this is not
-        // expected to fail in practice" rather than a genuinely handled
-        // error path — there is no meaningful fallback if it somehow did
-        // (the resolver simply could not be built).
-        let matcher = aho_corasick::AhoCorasick::new(&patterns)
-            .expect("reference_names must build a valid AhoCorasick matcher");
-
-        let files: Vec<(String, String)> = files.into_iter().collect();
-        let total = files.len();
         // ADR 0031's reasoning applies here the same as in
         // `pipeline::analyze_repo`: the per-file body is embarrassingly
         // parallel (`extract_all_symbols` builds a fresh parser per call,
@@ -265,7 +308,16 @@ impl TagsResolver {
                     if !include_generated && is_generated_content(&content) {
                         return None;
                     }
-                    if !should_parse_file(&matcher, &content) {
+                    // Every language reachable from `lang`'s own
+                    // `language_for_path(&path)` above already has a
+                    // matcher, built by the identical lookup in the
+                    // single-threaded pass above `files.into_par_iter()`
+                    // — `.expect()` documents that invariant rather than
+                    // handling a case that cannot occur.
+                    let matcher = matchers
+                        .get(lang.name())
+                        .expect("a matcher was built for every language encountered in `files`");
+                    if !should_parse_file(matcher, &normalize_whitespace(&content)) {
                         return None;
                     }
                     Some(extract_all_symbols(&content, lang))
@@ -350,26 +402,68 @@ impl TagsResolver {
     }
 }
 
-/// Whether `content` could plausibly define something a changed symbol
-/// references, based on a single `aho-corasick` pass over all reference
-/// names at once (rather than one `str::contains` scan per name).
+/// Whether `content` (already whitespace-normalized by
+/// [`normalize_whitespace`]) could plausibly define something a changed
+/// symbol references, based on a single `aho-corasick` pass over one
+/// language's [`LanguageSupport::index_prefilter_patterns`] output for
+/// every reference name at once (rather than one `str::contains` scan per
+/// pattern).
 ///
 /// This is a coarse substring test, not a symbol-aware one: it does not
-/// verify the match is an actual identifier (vs., say, a substring inside
-/// a comment or string literal) or that it is the file's *definition* of
-/// that name rather than some unrelated mention. That imprecision is
+/// verify a match sits at an actual definition site (vs., say, a
+/// declaration-shaped substring that happens to appear inside a comment or
+/// string literal, or — for languages still on the bare-name default —
+/// any unrelated mention of the name at all). That imprecision is
 /// deliberately accepted — the goal is only to decide whether parsing
 /// `content` is worth attempting, and `extract_all_symbols` (the real,
 /// syntax-aware definition finder) still runs afterward and is the only
 /// thing that actually populates the index. Skipping a file here can
-/// therefore never cause `resolve()` to miss a real definition, since any
-/// file containing the definition's own name as text necessarily passes
-/// this filter (a definition's name always appears literally in its own
-/// declaration — or, for dotted names, its components do, which
-/// `TagsResolver::new`'s pattern expansion covers) — the prefilter can
+/// therefore never cause `resolve()` to miss a real definition, as long as
+/// `matcher`'s patterns satisfy [`LanguageSupport::index_prefilter_patterns`]'s
+/// contract (ADR 0080): every node kind the file's language's
+/// `definition_query` could capture a definition named `name` from is
+/// provably matched by at least one of that name's patterns, for every
+/// name in the file's language's matcher — `TagsResolver::new` builds
+/// exactly one matcher per encountered language enforcing this. For a
+/// dotted reference name (HCL: `var.region`), the same contract is
+/// satisfied per dot-separated component instead, which
+/// `TagsResolver::new`'s pattern expansion covers — the prefilter can
 /// only save work, not recall.
 fn should_parse_file(matcher: &aho_corasick::AhoCorasick, content: &str) -> bool {
     matcher.is_match(content)
+}
+
+/// Collapses every maximal run of whitespace in `content` to a single
+/// ASCII space, so [`should_parse_file`]'s declaration-anchored patterns
+/// (e.g. PHP's `"function helper"`, ADR 0080) match regardless of how
+/// many spaces, tabs, or newlines the real file puts between a keyword
+/// and the name it introduces (`function\n    helper` still contains
+/// `"function helper"` after normalization). A pure, dependency-free scan
+/// rather than a regex — the whitespace classes involved
+/// (`char::is_whitespace`) are exactly what `str::split_whitespace`/
+/// `str::trim` already use elsewhere in the standard library, so this
+/// mirrors an established, unsurprising definition of "whitespace" rather
+/// than inventing a bespoke one.
+///
+/// Only used to build the copy of `content` fed into the prefilter match
+/// (`TagsResolver::new`) — the real parse (`extract_all_symbols`) always
+/// runs against the original, unmodified `content`, so normalization here
+/// can never affect extracted signatures, byte ranges, or line numbers.
+fn normalize_whitespace(content: &str) -> String {
+    let mut normalized = String::with_capacity(content.len());
+    let mut in_whitespace = false;
+    for ch in content.chars() {
+        if ch.is_whitespace() {
+            if !in_whitespace {
+                normalized.push(' ');
+                in_whitespace = true;
+            }
+        } else {
+            normalized.push(ch);
+            in_whitespace = false;
+        }
+    }
+    normalized
 }
 
 /// Number of leading lines checked by [`is_generated_content`] — mirrors

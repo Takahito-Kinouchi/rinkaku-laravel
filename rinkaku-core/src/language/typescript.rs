@@ -115,6 +115,24 @@ impl LanguageSupport for TypeScriptSupport {
         REFERENCE_QUERY
     }
 
+    // `index_prefilter_patterns` (ADR 0080) is deliberately NOT overridden:
+    // it keeps the trait's bare-name default. Two of `DEFINITION_QUERY`'s
+    // captured node kinds have no single fixed keyword directly preceding
+    // the name, so no substring pattern could prove completeness for
+    // them without risking recall loss:
+    // - `variable_declarator value: (arrow_function)` — an arrow function
+    //   bound to `const`/`let`/`var` has its name *before* `=`, not after
+    //   a keyword (`const helper = () => {}`); there is no fixed token
+    //   this override could anchor a pattern to.
+    // - `method_definition` — a class method can be preceded by any
+    //   combination of `async`/`static`/`get`/`set`/`public`/`private`/
+    //   `protected`/`override`/`readonly`/`#`(private field) modifiers in
+    //   varying order, with no single required keyword immediately before
+    //   the name the way PHP's `function`/Rust's `fn` are.
+    // Per the trait's contract, one node kind lacking a provable pattern
+    // means the whole override must keep the bare name — so TypeScript,
+    // TSX (this file), Vue, and Svelte (both reusing `DEFINITION_QUERY`
+    // via `vue.rs`/`svelte.rs`) all fall through to the default unchanged.
     fn is_test_path(&self, path: &str) -> bool {
         is_test_path(path)
     }
