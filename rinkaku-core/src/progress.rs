@@ -1,7 +1,7 @@
 //! Optional progress reporting for the pipeline's two whole-repository
 //! file-scanning phases (ADR 0033): [`crate::pipeline::analyze_repo`]'s
-//! rayon-parallel parse and [`crate::deps::TagsResolver::new`]'s sequential
-//! indexing pass.
+//! rayon-parallel parse and [`crate::deps::TagsResolver::new`]'s
+//! rayon-parallel indexing pass.
 //!
 //! Defined here (the consumer side, per CLAUDE.md's "ports as traits,
 //! defined on the consumer side" rule) as a plain callback type rather than
@@ -17,9 +17,9 @@
 //! share a `&reference` across threads) is what's required — `Send` (safe
 //! to move a value to another thread) is not, since the callback itself
 //! never crosses a thread boundary, only calls through a shared reference
-//! do. `TagsResolver::new`'s sequential loop does not need the bound at all,
-//! but takes the same type for call-site symmetry (`main.rs` builds one
-//! closure and passes `Some(&closure)` to both).
+//! do. `TagsResolver::new`'s indexing loop shares the same shape (both
+//! phases now run under rayon), so `main.rs` builds one closure and passes
+//! `Some(&closure)` to both.
 //!
 //! `main.rs` is the only real caller (`--tui` mode, ADR 0033); every other
 //! caller — every other display mode, every existing test — passes `None`,
@@ -30,8 +30,7 @@ pub type OnProgress<'a> = &'a (dyn Fn(usize, usize) + Sync);
 
 /// How many completed files must pass between two [`OnProgress`] calls for
 /// the same phase — both [`crate::pipeline::analyze_repo`]'s parallel loop
-/// and [`crate::deps::TagsResolver::new`]'s sequential one use this same
-/// constant so a redraw at "file 16 of 842" means the same thing regardless
+/// and [`crate::deps::TagsResolver::new`]'s use this same constant so a redraw at "file 16 of 842" means the same thing regardless
 /// of which phase produced it.
 ///
 /// Chosen as a fixed stride rather than a time-based throttle (e.g. "redraw

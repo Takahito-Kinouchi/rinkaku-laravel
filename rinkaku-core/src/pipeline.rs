@@ -508,7 +508,7 @@ pub fn analyze_repo(
     // this one counter, and `fetch_add`'s return value (the count *before*
     // this increment) is turned into a 1-indexed "files done" count with
     // `+ 1` so `should_report_progress` sees the same 1-indexed convention
-    // `TagsResolver::new`'s sequential loop below also uses.
+    // `TagsResolver::new`'s own parallel loop also uses.
     let completed = AtomicUsize::new(0);
     let total = paths.len();
     let per_file: Vec<Option<PerFileOutcome>> = paths

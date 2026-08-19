@@ -51,8 +51,10 @@
 use crate::extract::extract_all_symbols;
 use crate::language::LanguageSupport;
 use crate::progress::{OnProgress, should_report_progress};
+use rayon::prelude::*;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A definition found by a [`Resolver`] for a referenced name. Reported
 /// verbatim in [`crate::extract::ExtractedSymbol::dependencies`], so it is
@@ -158,7 +160,8 @@ impl TagsResolver {
     /// unsupported files elsewhere (`pipeline::analyze_diff`).
     ///
     /// `on_progress` (ADR 0033), when `Some`, is called with `(files_done,
-    /// total)` as this loop works through `files` — `files` is materialized
+    /// total)` as the parallel loop below finishes files (in completion
+    /// order, same as `pipeline::analyze_repo`) — `files` is materialized
     /// into a `Vec` first (rather than iterated lazily) specifically so
     /// `total` is known up front the same way `pipeline::analyze_repo`'s
     /// `paths.len()` already is; every real call site already passes a
@@ -170,14 +173,13 @@ impl TagsResolver {
     /// existing test) skips the counter entirely.
     pub fn new(
         files: impl IntoIterator<Item = (String, String)>,
-        language_for_path: impl Fn(&str) -> Option<&'static dyn LanguageSupport>,
+        language_for_path: impl Fn(&str) -> Option<&'static dyn LanguageSupport> + Sync,
         reference_names: &HashSet<String>,
         include_tests: bool,
         generated_paths: &HashSet<String>,
         include_generated: bool,
         on_progress: Option<OnProgress>,
     ) -> Self {
-        let mut index: HashMap<String, Vec<ResolvedSymbol>> = HashMap::new();
         // A dotted reference name (HCL: `var.region`, ADR 0066) never
         // appears literally in its defining file — `variable "region"`
         // contains only the components. Adding each dot-separated
@@ -209,42 +211,66 @@ impl TagsResolver {
 
         let files: Vec<(String, String)> = files.into_iter().collect();
         let total = files.len();
-        for (done, (path, content)) in files.into_iter().enumerate() {
-            let outcome = (|| {
-                let lang = language_for_path(&path)?;
-                if !include_tests && lang.is_test_path(&path) {
-                    return None;
-                }
-                if !include_generated && generated_paths.contains(&path) {
-                    return None;
-                }
-                if !include_generated && is_generated_content(&content) {
-                    return None;
-                }
-                if !should_parse_file(&matcher, &content) {
-                    return None;
-                }
-                Some((lang, content))
-            })();
-
-            if let Some((lang, content)) = outcome {
-                for symbol in extract_all_symbols(&content, lang) {
-                    if !include_tests && symbol.is_test {
-                        continue;
+        // ADR 0031's reasoning applies here the same as in
+        // `pipeline::analyze_repo`: the per-file body is embarrassingly
+        // parallel (`extract_all_symbols` builds a fresh parser per call,
+        // every filter reads borrowed state without mutation), and it
+        // dominates `--deps 1`'s wall-clock time on a large repository —
+        // so rayon fans the parse across CPU cores. Only the per-file
+        // *extraction* is parallel; the index insertions below stay
+        // sequential over `par_iter().collect()`'s source-order result, so
+        // each name's candidate list keeps the exact insertion order the
+        // sequential loop produced (`resolve_dependencies`'s stable-sort
+        // tie-break depends on it — see its own doc comment).
+        //
+        // Progress counts files as they *finish*, in completion order, via
+        // the same shared-`AtomicUsize` pattern `analyze_repo` uses (ADR
+        // 0033): `fetch_add`'s pre-increment return is turned 1-indexed
+        // with `+ 1`, and the counter is only touched when a callback is
+        // actually present.
+        let completed = AtomicUsize::new(0);
+        let per_file: Vec<Option<(String, Vec<crate::extract::ExtractedSymbol>)>> = files
+            .into_par_iter()
+            .map(|(path, content)| {
+                let outcome = (|| {
+                    let lang = language_for_path(&path)?;
+                    if !include_tests && lang.is_test_path(&path) {
+                        return None;
                     }
-                    index.entry(symbol.name).or_default().push(ResolvedSymbol {
-                        signature: symbol.signature,
-                        path: path.clone(),
-                        container: symbol.container,
-                    });
-                }
-            }
+                    if !include_generated && generated_paths.contains(&path) {
+                        return None;
+                    }
+                    if !include_generated && is_generated_content(&content) {
+                        return None;
+                    }
+                    if !should_parse_file(&matcher, &content) {
+                        return None;
+                    }
+                    Some(extract_all_symbols(&content, lang))
+                })();
 
-            if let Some(on_progress) = on_progress {
-                let done = done + 1;
-                if should_report_progress(done, total) {
-                    on_progress(done, total);
+                if let Some(on_progress) = on_progress {
+                    let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                    if should_report_progress(done, total) {
+                        on_progress(done, total);
+                    }
                 }
+
+                outcome.map(|symbols| (path, symbols))
+            })
+            .collect();
+
+        let mut index: HashMap<String, Vec<ResolvedSymbol>> = HashMap::new();
+        for (path, symbols) in per_file.into_iter().flatten() {
+            for symbol in symbols {
+                if !include_tests && symbol.is_test {
+                    continue;
+                }
+                index.entry(symbol.name).or_default().push(ResolvedSymbol {
+                    signature: symbol.signature,
+                    path: path.clone(),
+                    container: symbol.container,
+                });
             }
         }
 
