@@ -109,6 +109,12 @@ pub enum AnalysisPhase {
     ResolvingPr,
     /// Running `git diff <base>...<head>` (`--base`/`--pr` mode).
     Diffing,
+    /// Reading the to-be-indexed files' contents out of git or the
+    /// working tree (`build_resolver`, before indexing starts) — split
+    /// from [`AnalysisPhase::BuildingDependencyIndex`] so a large
+    /// repository's blob-reading stretch shows as its own labeled,
+    /// progress-counted phase instead of a silent gap (ADR 0078).
+    ReadingFiles,
     /// Building the repo-wide dependency index (`build_resolver`, `--deps
     /// 1`, the default).
     BuildingDependencyIndex,
@@ -127,6 +133,7 @@ pub fn phase_message(phase: AnalysisPhase) -> &'static str {
         AnalysisPhase::Starting => "Starting...",
         AnalysisPhase::ResolvingPr => "Resolving PR...",
         AnalysisPhase::Diffing => "Diffing...",
+        AnalysisPhase::ReadingFiles => "Reading files...",
         AnalysisPhase::BuildingDependencyIndex => "Building dependency index...",
         AnalysisPhase::ParsingRepository => "Parsing repository...",
         AnalysisPhase::AnalyzingDiff => "Analyzing diff...",
@@ -151,6 +158,10 @@ mod tests {
     #[case::should_return_diffing_message_when_phase_is_diffing(
         AnalysisPhase::Diffing,
         "Diffing..."
+    )]
+    #[case::should_return_reading_files_message_when_phase_is_reading_files(
+        AnalysisPhase::ReadingFiles,
+        "Reading files..."
     )]
     #[case::should_return_dependency_index_message_when_phase_is_building_dependency_index(
         AnalysisPhase::BuildingDependencyIndex,

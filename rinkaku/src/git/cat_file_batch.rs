@@ -38,6 +38,7 @@ pub(crate) fn read_git_show_files_batch(
     cwd: Option<&std::path::Path>,
     head: &str,
     paths: Vec<String>,
+    on_progress: Option<rinkaku_core::progress::OnProgress>,
 ) -> anyhow::Result<Vec<(String, String)>> {
     let mut command = std::process::Command::new("git");
     command
@@ -89,7 +90,8 @@ pub(crate) fn read_git_show_files_batch(
     // completion (successful or not) and only then reaping the child keeps
     // the drop-stdin-then-wait-then-join sequence unconditional, so stderr
     // is always drained and available to fold into the final error.
-    let pump_result = pump_cat_file_batch_requests(&mut stdin, &mut reader, head, paths);
+    let pump_result =
+        pump_cat_file_batch_requests(&mut stdin, &mut reader, head, paths, on_progress);
 
     // Dropping `stdin` here (end of scope) closes the pipe, which is what
     // makes `git cat-file --batch` exit; `wait()` then just reaps it.
@@ -117,9 +119,11 @@ fn pump_cat_file_batch_requests(
     reader: &mut impl BufRead,
     head: &str,
     paths: Vec<String>,
+    on_progress: Option<rinkaku_core::progress::OnProgress>,
 ) -> anyhow::Result<Vec<(String, String)>> {
+    let total = paths.len();
     let mut files = Vec::with_capacity(paths.len());
-    for path in paths {
+    for (done, path) in paths.into_iter().enumerate() {
         let object = format!("{head}:{path}");
         writeln!(stdin, "{object}").map_err(|source| {
             anyhow::anyhow!("failed to write to git cat-file --batch: {source}")
@@ -128,9 +132,18 @@ fn pump_cat_file_batch_requests(
             anyhow::anyhow!("failed to flush git cat-file --batch stdin: {source}")
         })?;
 
-        match read_cat_file_batch_response(reader, &object)? {
-            Some(content) => files.push((path, content)),
-            None => continue,
+        if let Some(content) = read_cat_file_batch_response(reader, &object)? {
+            files.push((path, content));
+        }
+
+        // ADR 0078: counted whether or not the path resolved to content,
+        // matching what a reviewer watching a `done/total` bar expects it
+        // to track (same convention as ADR 0033's other progress loops).
+        if let Some(on_progress) = on_progress {
+            let done = done + 1;
+            if rinkaku_core::progress::should_report_progress(done, total) {
+                on_progress(done, total);
+            }
         }
     }
     Ok(files)
@@ -269,6 +282,7 @@ mod tests {
             Some(dir.path()),
             "HEAD",
             vec!["a.rs".to_string(), "b.rs".to_string()],
+            None,
         )
         .expect("git cat-file --batch should succeed for tracked files");
         actual.sort();
@@ -298,9 +312,13 @@ mod tests {
         )
         .expect("dirty the working tree");
 
-        let actual =
-            read_git_show_files_batch(Some(dir.path()), "HEAD", vec!["src/lib.rs".to_string()])
-                .expect("git cat-file --batch should succeed for a committed file");
+        let actual = read_git_show_files_batch(
+            Some(dir.path()),
+            "HEAD",
+            vec!["src/lib.rs".to_string()],
+            None,
+        )
+        .expect("git cat-file --batch should succeed for a committed file");
 
         assert_eq!(
             vec![("src/lib.rs".to_string(), committed.to_string())],
@@ -322,6 +340,7 @@ mod tests {
             Some(dir.path()),
             "HEAD",
             vec!["src/lib.rs".to_string(), "does/not/exist.rs".to_string()],
+            None,
         )
         .expect("git cat-file --batch should succeed even with a missing path");
 
@@ -353,6 +372,7 @@ mod tests {
             Some(dir.path()),
             "HEAD",
             vec!["text.rs".to_string(), "binary.dat".to_string()],
+            None,
         )
         .expect("git cat-file --batch should succeed even with binary content present");
         actual.sort();
@@ -563,7 +583,8 @@ mod tests {
     fn should_include_stderr_in_error_when_git_cat_file_batch_exits_non_zero() {
         let dir = tempfile::TempDir::new().expect("create tempdir");
 
-        let actual = read_git_show_files_batch(Some(dir.path()), "HEAD", vec!["a.rs".to_string()]);
+        let actual =
+            read_git_show_files_batch(Some(dir.path()), "HEAD", vec!["a.rs".to_string()], None);
 
         let error = actual.expect_err("a non-git cwd must fail rather than silently succeed");
         let message = error.to_string();

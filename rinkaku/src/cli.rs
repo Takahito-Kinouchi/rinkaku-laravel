@@ -71,6 +71,20 @@ pub(crate) struct Cli {
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(0..=1))]
     pub(crate) deps: u8,
 
+    /// Which slice of the repository the `--deps` index covers.
+    /// `changed-projects` (default) restricts the scan to the project
+    /// root(s) — nearest directory carrying a manifest such as
+    /// `composer.json`/`package.json`/`Cargo.toml` — containing the
+    /// diff's changed files, so a monorepo holding several applications
+    /// only reads and parses the one(s) actually touched. Falls back to
+    /// the whole repository whenever scoping cannot narrow anything (a
+    /// single-project repository, or a changed file outside every
+    /// project). `repo` always scans every tracked file — the escape
+    /// hatch for cross-project dependencies scoping would hide.
+    // See ADR 0078 for the scoping design.
+    #[arg(long, value_enum, default_value_t = DepsScope::ChangedProjects)]
+    pub(crate) deps_scope: DepsScope,
+
     /// Exclude test symbols from the "Change graph"/"Definitions" output
     /// and summarize their per-file counts under a "Tests" section
     /// instead. Without this flag, test symbols appear in the graph and
@@ -149,6 +163,15 @@ impl From<Format> for OutputFormat {
     }
 }
 
+/// `--deps-scope` values — see the field's doc comment.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DepsScope {
+    /// Scan only the project(s) containing changed files (default).
+    ChangedProjects,
+    /// Scan every tracked file, regardless of which project changed.
+    Repo,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,6 +184,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -180,6 +204,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -217,6 +242,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -236,6 +262,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -255,6 +282,7 @@ mod tests {
             pr: None,
             format: Some(Format::Json),
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -281,6 +309,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 0,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -307,6 +336,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: true,
             include_generated: false,
             entry: None,
@@ -352,6 +382,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: true,
             entry: None,
@@ -371,6 +402,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: Some("src/api".to_string()),
@@ -390,6 +422,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -409,6 +442,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -428,6 +462,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -462,6 +497,7 @@ mod tests {
             pr: Some("76".to_string()),
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,

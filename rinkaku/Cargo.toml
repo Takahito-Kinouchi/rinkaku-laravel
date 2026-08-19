@@ -21,6 +21,8 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+# ADR 0078: parallel working-tree reads in build_resolver.
+rayon = { workspace = true }
 rinkaku-core = { path = "../rinkaku-core", version = "0.6.21" }
 rinkaku-tui = { path = "../rinkaku-tui", version = "0.6.21" }
 clap = { workspace = true }

@@ -2190,6 +2190,7 @@ dependencies = [
  "indicatif",
  "log",
  "pretty_assertions",
+ "rayon",
  "rinkaku-core",
  "rinkaku-tui",
  "rstest",

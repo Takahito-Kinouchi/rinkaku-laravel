@@ -15,4 +15,5 @@ pub mod language;
 pub mod non_symbol_changes;
 pub mod pipeline;
 pub mod progress;
+pub mod project_scope;
 pub mod render;

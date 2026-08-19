@@ -129,6 +129,19 @@ dramatically faster; use it for quick iteration or CI checks that
 don't need dependency context. See
 [Known limitations](#known-limitations) for precision caveats.
 
+### `--deps-scope <changed-projects|repo>`
+
+`changed-projects` (default) restricts the `--deps 1` index to the
+project root(s) containing the diff's changed files — the nearest
+ancestor directory carrying a manifest (`composer.json`,
+`package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `setup.py`,
+`Gemfile`). In a monorepo holding several applications, only the
+touched one(s) are read and parsed. Falls back to the whole repository
+whenever scoping cannot narrow anything (single-project repository, or
+a changed file outside every project). `repo` always scans every
+tracked file — use it when changed code depends on a sibling project
+scoping would exclude. See ADR 0078.
+
 ### `--exclude-tests`
 
 By default ([ADR 0025](adr/0025-default-to-including-tests.md)), test

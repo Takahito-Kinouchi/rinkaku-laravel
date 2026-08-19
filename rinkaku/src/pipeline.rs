@@ -13,6 +13,7 @@ use crate::git::file_read::{read_git_show_file, read_working_tree_file};
 use crate::notes::garbage_input_note;
 use crate::progress::AnalysisProgress;
 use crate::spinner::AnalysisPhase;
+use rayon::prelude::*;
 use rinkaku_core::deps::TagsResolver;
 use rinkaku_core::language::language_for_path;
 use rinkaku_core::pipeline::analyze_diff;
@@ -136,17 +137,60 @@ pub(crate) fn build_resolver(
 
     let reference_names =
         rinkaku_core::pipeline::collect_referenced_names(diff_text, diff_read_file)?;
+    // ADR 0078: no referenced names means no lookup the index could ever
+    // answer — `TagsResolver::new`'s prefilter would skip every file after
+    // reading it, so skip the repository scan (listing, attribute checks,
+    // blob reads) entirely instead. `None` and an empty index behave
+    // identically downstream (`analyze_diff` just resolves nothing).
+    if reference_names.is_empty() {
+        return Ok(None);
+    }
 
-    let paths = list_git_files(cwd)?;
-    log::debug!(
-        "building dependency index over {} tracked files",
-        paths.len()
-    );
+    let all_paths = list_git_files(cwd)?;
+    // ADR 0078: in a monorepo, restrict the scan to the project(s) the
+    // diff actually touches. `None` (single-project repository, a changed
+    // file outside every project, or `--deps-scope repo`) keeps the full
+    // list — scoping is a narrowing, never a correctness gate.
+    let scope_roots = match cli.deps_scope {
+        crate::cli::DepsScope::Repo => None,
+        crate::cli::DepsScope::ChangedProjects => {
+            let changed = changed_paths(diff_text)?;
+            rinkaku_core::project_scope::changed_project_roots(&changed, &all_paths)
+        }
+    };
+    if let Some(roots) = &scope_roots {
+        log::debug!("dependency scan scoped to changed project roots: {roots:?}");
+    }
+    // ADR 0078: drop, *before any content is read*, every path the index
+    // could never use — outside the scoped project roots, no registered
+    // language, or a test file under `--exclude-tests`. On a typical web
+    // monorepo this skips the lockfiles/images/markup that dominate `git
+    // ls-files` without ever contributing a definition.
+    let paths: Vec<String> = all_paths
+        .into_iter()
+        .filter(|path| {
+            scope_roots.as_ref().is_none_or(|roots| {
+                rinkaku_core::project_scope::is_within_project_roots(path, roots)
+            })
+        })
+        .filter(|path| match language_for_path(path) {
+            Some(lang) => !cli.exclude_tests || !lang.is_test_path(path),
+            None => false,
+        })
+        .collect();
+    log::debug!("building dependency index over {} files", paths.len());
     let generated_paths = if cli.include_generated {
         std::collections::HashSet::new()
     } else {
         check_generated_paths_batch(cwd, &paths)
     };
+    // ADR 0033/0078: `(files_done, total)` for both the read loop below
+    // and `TagsResolver::new`'s indexing loop — a plain closure over
+    // `progress` (a `&dyn AnalysisProgress`, already object-safe), since
+    // `rinkaku_core::progress::OnProgress` is exactly the `Fn(usize,
+    // usize) + Sync` shape both expect.
+    let on_file_progress = |done: usize, total: usize| progress.report_file_progress(done, total);
+    progress.set_phase(AnalysisPhase::ReadingFiles);
     let files: Vec<(String, String)> = match head {
         // One `git cat-file --batch` child process serves every path
         // (see `read_git_show_files_batch`'s doc comment for why this
@@ -156,28 +200,36 @@ pub(crate) fn build_resolver(
         // here only ever fires for a genuinely unrecoverable failure
         // (the child process itself failing to start, or the batch
         // stream desyncing), which cannot be isolated to one path.
-        Some(head) => read_git_show_files_batch(cwd, head, paths)?,
-        None => paths
-            .into_iter()
-            .filter_map(|path| {
-                // A file listed by `git ls-files` can still fail to read
-                // (e.g. deleted in the working tree but not yet staged, a
-                // submodule gitlink entry) — skipped rather than failing
-                // the whole run, since the resolver's index is a
-                // best-effort aid, not a correctness-critical input.
-                read_working_tree_file(&path)
-                    .ok()
-                    .map(|content| (path, content))
-            })
-            .collect(),
+        Some(head) => read_git_show_files_batch(cwd, head, paths, Some(&on_file_progress))?,
+        // ADR 0078: working-tree reads are independent blocking syscalls,
+        // so rayon fans them out; ordered `collect` keeps the result in
+        // `paths` order (the same determinism contract as
+        // `TagsResolver::new`'s own parallel loop). The completion
+        // counter mirrors `pipeline::analyze_repo`'s ADR 0033 pattern.
+        None => {
+            let completed = std::sync::atomic::AtomicUsize::new(0);
+            let total = paths.len();
+            paths
+                .into_par_iter()
+                .filter_map(|path| {
+                    // A file listed by `git ls-files` can still fail to read
+                    // (e.g. deleted in the working tree but not yet staged, a
+                    // submodule gitlink entry) — skipped rather than failing
+                    // the whole run, since the resolver's index is a
+                    // best-effort aid, not a correctness-critical input.
+                    let file = read_working_tree_file(&path)
+                        .ok()
+                        .map(|content| (path, content));
+                    let done = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    if rinkaku_core::progress::should_report_progress(done, total) {
+                        on_file_progress(done, total);
+                    }
+                    file
+                })
+                .collect()
+        }
     };
-    // ADR 0033: reports `(files_done, total)` back through `progress` as
-    // `TagsResolver::new`'s sequential indexing loop works through `files`
-    // — a plain closure over `progress` (a `&dyn AnalysisProgress`, already
-    // object-safe) rather than a new abstraction, since
-    // `rinkaku_core::progress::OnProgress` is exactly the `Fn(usize, usize)
-    // + Sync` shape `TagsResolver::new` expects.
-    let on_file_progress = |done: usize, total: usize| progress.report_file_progress(done, total);
+    progress.set_phase(AnalysisPhase::BuildingDependencyIndex);
     Ok(Some(TagsResolver::new(
         files,
         language_for_path,
@@ -208,6 +260,7 @@ mod tests {
     use crate::spinner::Spinner;
     use crate::test_util::{init_repo_with_committed_file, run_git};
     use pretty_assertions::assert_eq;
+    use rinkaku_core::deps::Resolver;
     use std::collections::HashSet;
 
     // Regression test for the must-fix performance bug: `build_resolver`
@@ -233,6 +286,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 0,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -253,11 +307,31 @@ mod tests {
         assert!(actual.is_none());
     }
 
+    /// A minimal diff whose changed symbol references `helper` — enough
+    /// for `collect_referenced_names` to produce a non-empty set, which is
+    /// what `build_resolver` now requires before it scans the repository
+    /// at all (ADR 0078).
+    const DIFF_REFERENCING_HELPER: &str = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,3 +1,3 @@
+ fn run() {
+-    old();
++    helper();
+ }
+";
+
+    fn read_changed_main_rs(_: &str) -> std::io::Result<String> {
+        Ok("fn run() {\n    helper();\n}\n".to_string())
+    }
+
     // Sibling case to the one above: with `deps == 1` (repository scan
-    // enabled), the same non-git `cwd` makes `list_git_files` fail,
-    // confirming the scan is actually attempted in this branch and that
-    // the `Ok(None)` above is specific to `deps == 0`, not an artifact of
-    // the test directory itself.
+    // enabled) and a diff that actually references something, the same
+    // non-git `cwd` makes `list_git_files` fail, confirming the scan is
+    // actually attempted in this branch and that the `Ok(None)` above is
+    // specific to `deps == 0`, not an artifact of the test directory
+    // itself.
     #[test]
     fn should_fail_when_deps_is_one_and_cwd_has_no_git_repository() {
         let dir = tempfile::TempDir::new().expect("create tempdir");
@@ -268,6 +342,42 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
+            exclude_tests: false,
+            include_generated: false,
+            entry: None,
+            tui: false,
+        };
+
+        let spinner = Spinner::start("test");
+        let actual = build_resolver(
+            &cli,
+            DIFF_REFERENCING_HELPER,
+            read_changed_main_rs,
+            None,
+            Some(dir.path()),
+            &spinner,
+        );
+
+        assert!(actual.is_err());
+    }
+
+    // ADR 0078: a diff whose changed symbols reference nothing can never
+    // get an answer out of the index, so the repository scan must be
+    // skipped entirely — proven the same way as the `deps == 0` case
+    // above: a non-git `cwd` would make `list_git_files` fail if it were
+    // reached, so `Ok(None)` means it never ran.
+    #[test]
+    fn should_skip_repository_scan_when_diff_references_no_names() {
+        let dir = tempfile::TempDir::new().expect("create tempdir");
+        let cli = Cli {
+            command: None,
+            base: None,
+            head: "HEAD".to_string(),
+            pr: None,
+            format: None,
+            deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -276,9 +386,131 @@ mod tests {
         let read_file = |_: &str| -> std::io::Result<String> { Ok(String::new()) };
 
         let spinner = Spinner::start("test");
-        let actual = build_resolver(&cli, "", read_file, None, Some(dir.path()), &spinner);
+        let actual = build_resolver(&cli, "", read_file, None, Some(dir.path()), &spinner)
+            .expect("an empty reference-name set must not touch the repository at all");
 
-        assert!(actual.is_err());
+        assert!(actual.is_none());
+    }
+
+    /// Two-project monorepo fixture: `apps/shop` and `apps/admin`, each
+    /// with its own `Cargo.toml` and a same-named `fn helper` definition —
+    /// the shape ADR 0078's scoping decision is about.
+    fn init_two_project_monorepo(dir: &std::path::Path) {
+        run_git(dir, &["init", "--initial-branch=main"]);
+        run_git(dir, &["config", "user.email", "test@example.com"]);
+        run_git(dir, &["config", "user.name", "Test"]);
+        for (project, body) in [("shop", "1"), ("admin", "2")] {
+            let root = dir.join("apps").join(project);
+            std::fs::create_dir_all(root.join("src")).expect("create project dirs");
+            std::fs::write(root.join("Cargo.toml"), "[package]\n").expect("write manifest");
+            std::fs::write(
+                root.join("src/lib.rs"),
+                format!("fn helper() -> i32 {{\n    {body}\n}}\n"),
+            )
+            .expect("write lib.rs");
+        }
+        run_git(dir, &["add", "."]);
+        run_git(dir, &["commit", "-m", "initial commit"]);
+    }
+
+    /// The monorepo diff used by the scoping tests below: touches only
+    /// `apps/shop`, and its changed symbol references `helper`.
+    const MONOREPO_DIFF: &str = "\
+diff --git a/apps/shop/src/main.rs b/apps/shop/src/main.rs
+--- a/apps/shop/src/main.rs
++++ b/apps/shop/src/main.rs
+@@ -1,3 +1,3 @@
+ fn run() {
+-    old();
++    helper();
+ }
+";
+
+    #[test]
+    fn should_index_only_the_changed_project_when_scope_is_changed_projects() {
+        let dir = tempfile::TempDir::new().expect("create tempdir");
+        init_two_project_monorepo(dir.path());
+        let cli = Cli {
+            command: None,
+            base: None,
+            head: "HEAD".to_string(),
+            pr: None,
+            format: None,
+            deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
+            exclude_tests: false,
+            include_generated: false,
+            entry: None,
+            tui: false,
+        };
+
+        let spinner = Spinner::start("test");
+        // `head: Some("HEAD")` routes file reads through the cwd-aware
+        // `git cat-file --batch` path — the working-tree branch reads
+        // paths relative to the *process* cwd, which is not the tempdir.
+        let resolver = build_resolver(
+            &cli,
+            MONOREPO_DIFF,
+            read_changed_main_rs,
+            Some("HEAD"),
+            Some(dir.path()),
+            &spinner,
+        )
+        .expect("build_resolver must succeed in a real repository")
+        .expect("a non-empty reference set must build a resolver");
+
+        let resolved_paths: Vec<String> = resolver
+            .resolve("helper")
+            .into_iter()
+            .map(|symbol| symbol.path)
+            .collect();
+        assert_eq!(vec!["apps/shop/src/lib.rs".to_string()], resolved_paths);
+    }
+
+    #[test]
+    fn should_index_every_project_when_scope_is_repo() {
+        let dir = tempfile::TempDir::new().expect("create tempdir");
+        init_two_project_monorepo(dir.path());
+        let cli = Cli {
+            command: None,
+            base: None,
+            head: "HEAD".to_string(),
+            pr: None,
+            format: None,
+            deps: 1,
+            deps_scope: crate::cli::DepsScope::Repo,
+            exclude_tests: false,
+            include_generated: false,
+            entry: None,
+            tui: false,
+        };
+
+        let spinner = Spinner::start("test");
+        // Same `head: Some("HEAD")` reasoning as the sibling test above.
+        let resolver = build_resolver(
+            &cli,
+            MONOREPO_DIFF,
+            read_changed_main_rs,
+            Some("HEAD"),
+            Some(dir.path()),
+            &spinner,
+        )
+        .expect("build_resolver must succeed in a real repository")
+        .expect("a non-empty reference set must build a resolver");
+
+        let mut resolved_paths: Vec<String> = resolver
+            .resolve("helper")
+            .into_iter()
+            .map(|symbol| symbol.path)
+            .collect();
+        resolved_paths.sort();
+        assert_eq!(
+            vec![
+                "apps/admin/src/lib.rs".to_string(),
+                "apps/shop/src/lib.rs".to_string(),
+            ],
+            resolved_paths
+        );
     }
 
     // Regression test for the must-fix performance/correctness bug: an
@@ -315,6 +547,7 @@ mod tests {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -406,6 +639,7 @@ fn should_add_two_numbers() {
             pr: None,
             format: None,
             deps: 0,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: true,
             include_generated: false,
             entry: None,
@@ -469,6 +703,7 @@ fn should_add_two_numbers() {
             pr: None,
             format: None,
             deps: 0,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -513,6 +748,7 @@ fn should_add_two_numbers() {
             pr: None,
             format: None,
             deps: 0,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -569,6 +805,7 @@ fn should_add_two_numbers() {
             pr: None,
             format: None,
             deps: 0,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -611,6 +848,7 @@ fn should_add_two_numbers() {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -638,6 +876,7 @@ fn should_add_two_numbers() {
             pr: None,
             format: None,
             deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
             exclude_tests: false,
             include_generated: true,
             entry: None,
