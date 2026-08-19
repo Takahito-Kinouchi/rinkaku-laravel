@@ -3,7 +3,9 @@
 //! functions, class/interface/trait/enum containers, class-like
 //! signature slicing with method bodies stripped, and the reference
 //! captures (free calls, `new` expressions, named types, static-call
-//! scopes, receiver method calls, trait `use`).
+//! scopes, receiver method calls, trait `use`, enum-case/class-constant
+//! accesses, fully-qualified names, `instanceof` checks, and
+//! `extends`/`implements` targets — ADR 0082).
 
 use super::*;
 use crate::language::php::PhpSupport;
@@ -242,6 +244,188 @@ class Factory
         ],
         method.referenced_names
     );
+}
+
+#[test]
+fn should_capture_class_constant_access_class_half_not_the_constant() {
+    let source = "\
+<?php
+class OrderService
+{
+    public function classify(): string
+    {
+        $status = OrderStatus::Pending;
+        $class = UserController::class;
+        return $status . $class;
+    }
+}
+";
+    let lang = PhpSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let method = symbols
+        .iter()
+        .find(|s| s.name == "classify")
+        .expect("method extracted");
+    // `Pending` (the enum-case constant) and `class` (the `::class`
+    // keyword) are the second child of `class_constant_access_expression`
+    // in each case — the `.` anchor keeps them out of `referenced_names`.
+    assert_eq!(
+        vec!["OrderStatus".to_string(), "UserController".to_string()],
+        method.referenced_names
+    );
+}
+
+#[test]
+fn should_capture_qualified_param_and_return_type_basenames_not_namespace_segments() {
+    let source = "\
+<?php
+class OrderProcessor
+{
+    public function process(\\App\\Models\\Order $order): \\App\\Enums\\OrderStatus
+    {
+        return $order->status();
+    }
+}
+";
+    let lang = PhpSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let method = symbols
+        .iter()
+        .find(|s| s.name == "process")
+        .expect("method extracted");
+    // Only the final segment of each qualified name (the class/enum
+    // basename) is captured — `App`, `Models`, and `Enums` are namespace
+    // prefix segments, never captured.
+    assert_eq!(
+        vec!["Order".to_string(), "OrderStatus".to_string()],
+        method.referenced_names
+    );
+}
+
+#[test]
+fn should_capture_qualified_new_expression_and_static_call_scope_basenames() {
+    let source = "\
+<?php
+class Factory
+{
+    public static function create(): void
+    {
+        $order = new \\App\\Models\\Order();
+        \\App\\Models\\User::query();
+    }
+}
+";
+    let lang = PhpSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let method = symbols
+        .iter()
+        .find(|s| s.name == "create")
+        .expect("method extracted");
+    assert_eq!(
+        vec!["Order".to_string(), "User".to_string()],
+        method.referenced_names
+    );
+}
+
+#[test]
+fn should_capture_instanceof_right_side_bare_and_qualified_not_concat_constant() {
+    let source = "\
+<?php
+class Checker
+{
+    public function check($x, $a): bool
+    {
+        if ($x instanceof User) {
+            return true;
+        }
+        if ($x instanceof \\App\\Models\\User) {
+            return true;
+        }
+        $y = $a . SOME_CONST;
+        return false;
+    }
+}
+";
+    let lang = PhpSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let method = symbols
+        .iter()
+        .find(|s| s.name == "check")
+        .expect("method extracted");
+    // Both `instanceof` checks resolve to the same `User` name (deduped);
+    // `SOME_CONST` sits on the right side of a `.` (concatenation)
+    // binary_expression, not `instanceof`, so it is never captured.
+    assert_eq!(vec!["User".to_string()], method.referenced_names);
+}
+
+#[test]
+fn should_capture_qualified_catch_clause_exception_basename() {
+    let source = "\
+<?php
+class Handler
+{
+    public function handle(): void
+    {
+        try {
+            $this->attempt();
+        } catch (\\App\\Exceptions\\NotFound $e) {
+        }
+    }
+}
+";
+    let lang = PhpSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let method = symbols
+        .iter()
+        .find(|s| s.name == "handle")
+        .expect("method extracted");
+    // Bare catch types are already captured by the plain `named_type
+    // (name)` pattern; this pins the qualified-name variant, which was
+    // the actual gap.
+    assert_eq!(vec!["NotFound".to_string()], method.referenced_names);
+}
+
+#[test]
+fn should_capture_extends_and_implements_targets_on_the_class_symbol() {
+    let source = "\
+<?php
+class OrderController extends \\App\\Http\\Controllers\\Controller implements \\App\\Contracts\\Reportable
+{
+    public function index(): void
+    {
+    }
+}
+";
+    let lang = PhpSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let class_symbol = symbols
+        .iter()
+        .find(|s| s.name == "OrderController")
+        .expect("class symbol extracted");
+    // `extends`/`implements` sit directly on the class_declaration node,
+    // outside the nested `index` method's own subtree, so they surface on
+    // the class-level symbol rather than the method.
+    assert_eq!(
+        vec!["Controller".to_string(), "Reportable".to_string()],
+        class_symbol.referenced_names
+    );
+    let method = symbols
+        .iter()
+        .find(|s| s.name == "index")
+        .expect("method extracted");
+    assert_eq!(Vec::<String>::new(), method.referenced_names);
 }
 
 #[test]

@@ -60,14 +60,62 @@ const DEFINITION_QUERY: &str = "\
 /// - `use_declaration (name)` captures a class body's trait uses
 ///   (`use SomeTrait;`), linking the class to the trait definition the
 ///   same way a type reference would.
+/// - `object_creation_expression`/`named_type`/`scoped_call_expression
+///   scope:` each gain a `(qualified_name (name))` variant, for the
+///   fully-qualified form of the same position (`new \App\Models\Order()`,
+///   a `\App\Models\Order` parameter/return type, `\App\Models\User::
+///   query()`). A `qualified_name`'s namespace prefix segments
+///   (`App`, `Models`) live under a nested `namespace_name` child, not as
+///   direct children of `qualified_name` itself — only the final segment
+///   (the class basename `Order`/`User`) is a direct `(name)` child, so
+///   the pattern captures exactly that basename and never a prefix
+///   segment, matching the name-based resolution model (ADR 0003).
+///   Bare catch-clause types (`catch (NotFound $e)`) were already
+///   captured by the plain `named_type (name)` pattern above; only the
+///   qualified form needed a dedicated pattern (ADR 0082).
+/// - `class_constant_access_expression . (name)` captures an enum-case or
+///   class-constant access's class half (`OrderStatus::Pending`,
+///   `UserController::class`) as a type reference. The leading `.`
+///   anchor restricts the match to the node's *first* child — the class/
+///   enum name — so the second child (the constant name, or the literal
+///   `class` keyword, which also parses as a `(name)` node) is never
+///   captured; a `(qualified_name (name))` variant covers the
+///   fully-qualified class/enum half the same way (ADR 0082).
+/// - `binary_expression operator: \"instanceof\" right: (name)` captures
+///   the right-hand type of an `instanceof` check (`$x instanceof User`)
+///   as a type reference, plus a `(qualified_name (name))` variant for
+///   `$x instanceof \\App\\Models\\User`. Anchored on the anonymous
+///   `\"instanceof\"` operator token specifically — `binary_expression`
+///   covers every PHP binary operator (concatenation, comparison,
+///   logical, ...), so capturing an unanchored `right: (name)` would also
+///   capture unrelated constants like the `SOME_CONST` in `$a .
+///   SOME_CONST` (ADR 0082).
+/// - `base_clause (name)`/`class_interface_clause (name)` capture a
+///   class's `extends`/`implements` targets (`class Foo extends Base
+///   implements Contract`) as type references, each with a
+///   `(qualified_name (name))` variant for a fully-qualified base/
+///   interface. `interface_declaration`'s own `extends` list reuses
+///   `base_clause` too, so no interface-specific pattern is needed (ADR
+///   0082).
 const REFERENCE_QUERY: &str = "\
 [
   (function_call_expression function: (name) @reference.call)
   (object_creation_expression (name) @reference.call)
+  (object_creation_expression (qualified_name (name) @reference.type))
   (named_type (name) @reference.type)
+  (named_type (qualified_name (name) @reference.type))
   (scoped_call_expression scope: (name) @reference.type)
+  (scoped_call_expression scope: (qualified_name (name) @reference.type))
   (member_call_expression name: (name) @reference.method)
   (use_declaration (name) @reference.type)
+  (class_constant_access_expression . (name) @reference.type)
+  (class_constant_access_expression . (qualified_name (name) @reference.type))
+  (binary_expression operator: \"instanceof\" right: (name) @reference.type)
+  (binary_expression operator: \"instanceof\" right: (qualified_name (name) @reference.type))
+  (base_clause (name) @reference.type)
+  (base_clause (qualified_name (name) @reference.type))
+  (class_interface_clause (name) @reference.type)
+  (class_interface_clause (qualified_name (name) @reference.type))
 ]";
 
 pub struct PhpSupport;
