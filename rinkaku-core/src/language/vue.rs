@@ -137,8 +137,7 @@ mod tests {
 
     #[test]
     fn should_keep_both_blocks_when_sfc_has_script_and_script_setup() {
-        let source =
-            "<script>\nconst a = () => 1;\n</script>\n<script setup>\nconst b = () => 2;\n</script>\n";
+        let source = "<script>\nconst a = () => 1;\n</script>\n<script setup>\nconst b = () => 2;\n</script>\n";
 
         let actual = mask_non_script(source);
 
