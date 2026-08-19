@@ -31,7 +31,7 @@ use super::LanguageSupport;
 /// so it needs its own capture; `abstract_method_signature` (a
 /// body-less `abstract area(): number;` member inside such a class) is
 /// likewise distinct from `method_definition`.
-const DEFINITION_QUERY: &str = "\
+pub(super) const DEFINITION_QUERY: &str = "\
 [
   (function_declaration) @definition.function
   (method_definition) @definition.function
@@ -88,7 +88,7 @@ const DEFINITION_QUERY: &str = "\
 ///   declarative capture (ADR 0064 amendment, issue #230); TypeScript's
 ///   idiomatic lowercase method names (`get`, `set`, `has`, `delete`,
 ///   `clear`) are the case this matters most for.
-const REFERENCE_QUERY: &str = "\
+pub(super) const REFERENCE_QUERY: &str = "\
 [
   (call_expression function: (identifier) @reference.call)
   (new_expression constructor: (identifier) @reference.call)

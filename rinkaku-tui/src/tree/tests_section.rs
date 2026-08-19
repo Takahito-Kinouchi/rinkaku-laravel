@@ -69,6 +69,33 @@ fn sort_alphabetically(nodes: &mut [TreeNode]) {
     });
 }
 
+/// Whether a *non-`FileReport`* entry (`report.removed`, `report.tests`,
+/// `report.skipped`) belongs in the Tests section by its path alone.
+/// [`super::build_tree`] only consults this for paths with no `FileReport`
+/// of their own — a path that does have one follows wherever
+/// [`is_whole_test_file`] routed that report, so both halves of a file
+/// always merge into a single node.
+///
+/// The language's own `is_test_path` is authoritative when the path has a
+/// registered `LanguageSupport`. A path without one (a JSON fixture under
+/// `tests/`, a deleted file of an unsupported type) falls back to a
+/// language-agnostic directory check over the conventional test-directory
+/// segment names — without the fallback, exactly those files were what
+/// kept a `tests/` directory alive in the production tree alongside the
+/// Tests section (the Laravel-repo duplication this routing exists to
+/// fix).
+pub(super) fn is_test_dir_path(path: &str) -> bool {
+    match rinkaku_core::language::language_for_path(path) {
+        Some(lang) => lang.is_test_path(path),
+        None => path.split('/').any(|segment| {
+            matches!(
+                segment,
+                "tests" | "Tests" | "test" | "__tests__" | "testdata"
+            )
+        }),
+    }
+}
+
 #[cfg(test)]
 #[path = "tests_section_tests/mod.rs"]
 mod tests;

@@ -58,6 +58,20 @@ pub trait LanguageSupport {
         false
     }
 
+    /// Rewrites raw file content into what this language's grammar should
+    /// actually parse, or borrows it unchanged (the default, and every
+    /// language except Vue). The only current override is Vue's SFC
+    /// masking (`vue::mask_non_script`): everything outside the
+    /// `<script>` block(s) becomes whitespace so the TypeScript grammar
+    /// parses only the code, while every kept byte stays at its original
+    /// line/byte offset — the pipeline's changed-line ranges and the
+    /// extracted signature text keep referring to real file positions.
+    /// Implementations must preserve line count and byte offsets for
+    /// exactly that reason.
+    fn source_for_parse<'a>(&self, source: &'a str) -> std::borrow::Cow<'a, str> {
+        std::borrow::Cow::Borrowed(source)
+    }
+
     /// Widens a captured `@definition` node's span to include any
     /// decorator/attribute annotating it (ADR 0073), so the touched-range
     /// check, `ExtractedSymbol::range`, and the extracted signature text
@@ -138,13 +152,23 @@ static REGISTRY: &[RegistryEntry] = &[
         suffixes: &[".tf", ".tofu", ".tftest.hcl"],
         support: || &hcl::HclSupport,
     },
+    RegistryEntry {
+        suffixes: &[".php"],
+        support: || &php::PhpSupport,
+    },
+    RegistryEntry {
+        suffixes: &[".vue"],
+        support: || &vue::VueSupport,
+    },
 ];
 
 pub mod go;
 pub mod hcl;
+pub mod php;
 pub mod python;
 pub mod rust;
 pub mod typescript;
+pub mod vue;
 
 #[cfg(test)]
 mod tests {
@@ -215,6 +239,22 @@ mod tests {
         let actual = language_for_path(path);
 
         assert!(actual.is_none());
+    }
+
+    #[test]
+    fn should_return_php_support_when_path_has_php_extension() {
+        let actual = language_for_path("src/Service.php");
+
+        let support = actual.expect("expected Some(&dyn LanguageSupport) for .php path");
+        assert_eq!("php", support.name());
+    }
+
+    #[test]
+    fn should_return_vue_support_when_path_has_vue_extension() {
+        let actual = language_for_path("src/components/Button.vue");
+
+        let support = actual.expect("expected Some(&dyn LanguageSupport) for .vue path");
+        assert_eq!("vue", support.name());
     }
 
     #[rstest]

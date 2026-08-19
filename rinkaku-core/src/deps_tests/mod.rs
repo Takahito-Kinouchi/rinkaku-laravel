@@ -13,6 +13,9 @@
 //! - `prefilter` — `should_parse_file`'s aho-corasick substring prefilter
 //!   (index/skip/incidental-hit/empty-names cases), previously the
 //!   `mod prefilter_tests` nested module
+//! - `parallel_determinism` — the rayon-parallel indexing keeps each
+//!   name's candidate list in input-file order, byte-identical across
+//!   repeated calls
 //! - `resolve_dependencies` — `resolve_dependencies` cross-file behavior:
 //!   self-reference exclusion, diff-collision exclusion, proximity
 //!   ranking, per-name cap boundary (via `rstest`), cross-name
@@ -24,6 +27,7 @@ use crate::language::go::GoSupport;
 use crate::language::rust::RustSupport;
 
 mod generated_lockfile_path;
+mod parallel_determinism;
 mod prefilter;
 mod resolve_dependencies;
 mod tags_resolver_exclusions;

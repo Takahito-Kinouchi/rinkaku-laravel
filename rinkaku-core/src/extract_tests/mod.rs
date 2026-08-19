@@ -20,6 +20,12 @@
 //! - [`python`] — Python `LanguageSupport`: class signature slicing with
 //!   method bodies stripped, decorator/nested-function edge cases, and
 //!   Python end-to-end.
+//! - [`php`] — PHP `LanguageSupport`: free functions,
+//!   class/interface/trait/enum containers, class-like signature slicing
+//!   with method bodies stripped, reference captures, and PHP end-to-end.
+//! - [`vue`] — Vue SFC `LanguageSupport`: `source_for_parse` masking
+//!   (script-only parsing at original file lines), template-only changes
+//!   surfacing nothing, and multi-script-block extraction.
 //! - [`typescript`] — TypeScript / TSX `LanguageSupport`: interface, type
 //!   alias, enum, arrow-function const bindings, abstract class/method
 //!   signatures, class field arrow-function body stripping, and TS/TSX
@@ -47,8 +53,10 @@ mod classification;
 mod go;
 mod hcl;
 mod normalize_for_comparison;
+mod php;
 mod python;
 mod rust;
 mod rust_references;
 mod tidy_lines;
 mod typescript;
+mod vue;
