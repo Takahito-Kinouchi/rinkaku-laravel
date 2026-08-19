@@ -194,10 +194,12 @@ fn should_draw_skip_reason_in_detail_pane_when_cursor_is_on_a_skipped_file_row()
 #[test]
 fn should_draw_test_symbol_count_in_detail_pane_when_cursor_is_on_a_whole_test_file_row() {
     let report = report_with_one_test_file();
-    // Row 0 is the collapsing "src" dir; row 1 is the whole test file.
-    // ADR 0020 defaults the right pane to Diff, so `ToggleDiff` is
-    // needed here to reach Detail.
+    // ADR 0077: a whole-test file lives inside the Tests section — row 0
+    // is the Section row, row 1 the "src" dir, row 2 the test file. ADR
+    // 0020 defaults the right pane to Diff, so `ToggleDiff` is needed
+    // here to reach Detail.
     let app = App::new(&report)
+        .handle_key(crate::app::InputKey::Down)
         .handle_key(crate::app::InputKey::Down)
         .handle_key(crate::app::InputKey::ToggleDiff);
     let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("terminal");

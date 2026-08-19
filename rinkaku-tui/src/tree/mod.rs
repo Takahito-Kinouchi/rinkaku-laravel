@@ -318,27 +318,62 @@ pub fn build_tree(report: &Report) -> Tree {
     // A mixed file (some non-test symbols alongside some test symbols)
     // always stays in `production` untouched — only a *whole* test file
     // routes into `tests` (ADR 0035 Phase B, see
-    // `tests_section::is_whole_test_file`).
+    // `tests_section::is_whole_test_file`). Each `FileReport`'s
+    // destination is recorded so every other report section below lands
+    // in the same builder as the file's own report — a path split across
+    // builders would render the same file (and its whole directory
+    // chain) twice, once in the production tree and once inside the
+    // Tests section.
+    let mut routed_to_tests: HashMap<&str, bool> = HashMap::new();
     for file in &report.files {
-        if tests_section::is_whole_test_file(&file.path, &file.symbols) {
+        let is_whole_test = tests_section::is_whole_test_file(&file.path, &file.symbols);
+        routed_to_tests.insert(file.path.as_str(), is_whole_test);
+        if is_whole_test {
             tests.insert_file(&file.path, &file.symbols);
         } else {
             production.insert_file(&file.path, &file.symbols);
         }
     }
-    // A `RemovedSymbol` carries no `is_test` flag and is never checked
-    // against `is_test_path` here, so it always stays in production
-    // regardless of the rest of its file's fate.
+    // Every non-`FileReport` entry follows its file's recorded
+    // destination, or — for a path with no `FileReport` at all (a
+    // whole-test summary under `--exclude-tests`, a deleted test file, a
+    // fixture with no registered language) — routes by path convention
+    // (ADR 0077, `tests_section::is_test_dir_path`). Before this, these
+    // entries were inserted into `production` unconditionally, which is
+    // what made a repository's `tests/` directory show up in the
+    // production tree *and* the Tests section at once.
+    let routes_to_tests = |path: &str| -> bool {
+        routed_to_tests
+            .get(path)
+            .copied()
+            .unwrap_or_else(|| tests_section::is_test_dir_path(path))
+    };
     for removed in &report.removed {
-        production.insert_removed(&removed.path, removed);
+        let builder = if routes_to_tests(&removed.path) {
+            &mut tests
+        } else {
+            &mut production
+        };
+        builder.insert_removed(&removed.path, removed);
     }
     for test_file in &report.tests {
-        production.insert_test_file(&test_file.path, test_file.symbol_count);
+        let builder = if routes_to_tests(&test_file.path) {
+            &mut tests
+        } else {
+            &mut production
+        };
+        builder.insert_test_file(&test_file.path, test_file.symbol_count);
     }
     for skipped in &report.skipped {
-        if !matches!(skipped.reason, SkipReason::Generated) {
-            production.insert_skipped(&skipped.path, skipped.reason);
+        if matches!(skipped.reason, SkipReason::Generated) {
+            continue;
         }
+        let builder = if routes_to_tests(&skipped.path) {
+            &mut tests
+        } else {
+            &mut production
+        };
+        builder.insert_skipped(&skipped.path, skipped.reason);
     }
 
     let mut roots = production.finish().roots;

@@ -19,18 +19,28 @@ fn should_add_whole_test_file_as_childless_file_node_with_symbol_count() {
         ..empty_report()
     };
 
+    // ADR 0077: a whole-test summary (no `FileReport` of its own) routes
+    // into the Tests section rather than the production tree, so a
+    // test-only change no longer grows a production `src/` directory.
     let expected = Tree {
         roots: vec![TreeNode {
-            kind: NodeKind::Dir,
-            path: "src".to_string(),
+            kind: NodeKind::Section(crate::tree::SectionKind::Tests),
+            path: crate::tree::TESTS_SECTION_PATH.to_string(),
             badges: Badges::default(),
             children: vec![TreeNode {
-                kind: NodeKind::File,
-                path: "src/lib_test.go".to_string(),
+                kind: NodeKind::Dir,
+                path: "src".to_string(),
                 badges: Badges::default(),
-                children: vec![],
+                children: vec![TreeNode {
+                    kind: NodeKind::File,
+                    path: "src/lib_test.go".to_string(),
+                    badges: Badges::default(),
+                    children: vec![],
+                    skip_reason: None,
+                    test_symbol_count: Some(3),
+                }],
                 skip_reason: None,
-                test_symbol_count: Some(3),
+                test_symbol_count: None,
             }],
             skip_reason: None,
             test_symbol_count: None,
