@@ -4,6 +4,7 @@
 //! queries, jumplist navigation) has its own sibling module; this one is
 //! "what `App` is made of and how to build/read/overwrite it directly".
 
+use crate::detail::DependencyStatus;
 use crate::nav::{self, Nav};
 use crate::order::{DirRank, OrderMode, rank_directories};
 use crate::review::ReviewState;
@@ -142,6 +143,17 @@ pub struct App {
     /// `TuiSession::run` read this once [`Self::should_quit`] is set to
     /// decide whether to run `self-update` after the terminal is restored.
     pub(super) update_requested: bool,
+    /// `--tui` mode's background dependency-resolution job status (ADR
+    /// 0081) — see [`DependencyStatus`]'s own doc comment. Defaults to
+    /// [`DependencyStatus::Ready`] (every existing test, and every
+    /// non-`--tui`-async caller, never touches this at all); `main.rs`'s
+    /// composition root moves it to [`DependencyStatus::Pending`] right
+    /// after [`Self::new`] whenever it actually spawned a background
+    /// resolver thread ([`Self::with_dependency_resolution_pending`]), and
+    /// `crate::event_loop::run_app`'s loop moves it to `Ready`/`Failed` once
+    /// that thread's `mpsc` channel yields an update
+    /// ([`Self::set_dependency_status`]).
+    pub(super) dependency_status: DependencyStatus,
 }
 
 impl App {
@@ -183,7 +195,22 @@ impl App {
             update_available: None,
             update_prompt_open: false,
             update_requested: false,
+            dependency_status: DependencyStatus::default(),
         }
+    }
+
+    /// Moves `--tui` mode's background dependency-resolution status (ADR
+    /// 0081) to [`DependencyStatus::Pending`] — `main.rs`'s composition
+    /// root calls this once, right after [`Self::new`]
+    /// (`with_review_sink_a_available`'s own precedent), but only when it
+    /// actually spawned a background resolver thread for this session
+    /// (`deferred_resolver.is_some()` in `main.rs`'s own terms). Every
+    /// other caller leaves this at `Self::new`'s `Default` `Ready`, so a
+    /// `--deps 0` run or a non-`--tui` caller never shows the "resolving
+    /// dependencies..." placeholder at all.
+    pub fn with_dependency_resolution_pending(mut self) -> Self {
+        self.dependency_status = DependencyStatus::Pending;
+        self
     }
 
     /// Sets whether sink A (a GitHub PR review) is on the export menu for
@@ -375,6 +402,26 @@ impl App {
     /// own doc comment.
     pub fn update_requested(&self) -> bool {
         self.update_requested
+    }
+
+    /// `--tui` mode's background dependency-resolution job status (ADR
+    /// 0081) — see [`DependencyStatus`]'s own doc comment.
+    pub fn dependency_status(&self) -> DependencyStatus {
+        self.dependency_status
+    }
+
+    /// Records the background dependency-resolution thread's outcome (ADR
+    /// 0081) once `crate::event_loop::run_app`'s loop observes one on its
+    /// `mpsc` channel — `&mut self` (unlike this module's other
+    /// `with_*`/builder-style setters) because `run_app` calls this
+    /// alongside `crate::dependency_update::merge_resolved_files`, which
+    /// takes `report` by value rather than through `App`; a builder method
+    /// here would just add a redundant `app = app.with_...(...)`
+    /// reassignment at that one call site with no benefit, mirroring
+    /// [`Self::notify_update_available`]'s own `&mut self` precedent for
+    /// the same "one imperative call site, no chained construction" shape.
+    pub fn set_dependency_status(&mut self, status: DependencyStatus) {
+        self.dependency_status = status;
     }
 
     /// Records that a newer released version is available, called once by

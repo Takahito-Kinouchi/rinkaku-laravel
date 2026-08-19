@@ -70,6 +70,28 @@ pub(crate) trait AnalysisProgress: Sync {
     }
 }
 
+/// A no-op [`AnalysisProgress`] implementation used only for the
+/// background dependency-resolution thread `--tui` mode spawns (ADR 0081):
+/// that thread calls `pipeline::build_resolver` — which requires an
+/// `&dyn AnalysisProgress` — after the terminal has already been handed off
+/// to `TuiSession::run`'s own event loop on the main thread, so unlike
+/// every other implementer here (the stderr [`crate::spinner::Spinner`],
+/// `--tui`'s startup-phase [`crate::splash_progress::SplashProgress`]) it
+/// must never draw anything, not even buffer a note for a later flush —
+/// there is no later flush point left once the event loop already owns the
+/// screen. `set_phase`/`report_file_progress` are exercised routinely by
+/// `build_resolver`'s own file-scanning loop; `note` is overridden purely
+/// for documentation/defense (`build_resolver`'s current body never calls
+/// it, but this type's whole contract is "never draws", so it does not
+/// lean on that staying true) rather than any observed call site.
+pub(crate) struct SilentProgress;
+
+impl AnalysisProgress for SilentProgress {
+    fn set_phase(&self, _phase: AnalysisPhase) {}
+
+    fn note(&self, _message: String) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

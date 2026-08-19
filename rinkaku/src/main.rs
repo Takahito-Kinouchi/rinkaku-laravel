@@ -80,11 +80,13 @@ use notes::{
     apply_entry_pivot, entry_pivot_empty_note, garbage_input_note, repo_outline_empty_note,
 };
 use pipeline::{
-    build_resolver, changed_paths, read_stdin_diff, resolve_generated_paths, run_base_pipeline,
+    DeferredResolver, build_resolver, changed_paths, read_stdin_diff, resolve_generated_paths,
+    run_base_pipeline,
 };
 use progress::AnalysisProgress;
 use rinkaku_core::render::{Report, render};
 use rinkaku_tui::TuiSession;
+use rinkaku_tui::dependency_update::DependencyResolutionUpdate;
 use rinkaku_tui::locale::detect_locale;
 use rinkaku_tui::review::PrContext;
 use spinner::{AnalysisPhase, Spinner};
@@ -201,7 +203,14 @@ fn main() -> anyhow::Result<()> {
                 spinner::phase_message(AnalysisPhase::Starting),
             ))?;
             let progress = SplashProgress::new(session);
-            let outcome = run_analysis(&cli, &progress).map(|analyzed| {
+            // ADR 0081: `defer_resolver: true` — the splash above only
+            // covers diff analysis now, not dependency-index construction.
+            // `run_analysis` returns with every symbol's `dependencies`
+            // still empty and, when there was anything to resolve at all,
+            // a `DeferredResolver` this branch runs on a background thread
+            // once the TUI has actually opened (see the `dependency_update`
+            // wiring below `session.run`'s call site).
+            let outcome = run_analysis(&cli, &progress, true).map(|analyzed| {
                 // `finish_report` is called *before* `into_session_and_notes`
                 // below, while `progress` is still the active
                 // `AnalysisProgress` — its own `--entry`-empty note (ADR
@@ -216,34 +225,36 @@ fn main() -> anyhow::Result<()> {
                     analyzed.resolved_workdir,
                     analyzed.pr_head_sha,
                     analyzed.pr_context,
+                    analyzed.deferred_resolver,
                 )
             });
             let (session, buffered_notes) = progress.into_session_and_notes();
-            let (report, diff_text, resolved_workdir, pr_head_sha, pr_context) = match outcome {
-                Ok(analyzed) => analyzed,
-                Err(err) => {
-                    // `session` (and with it, `TuiSession`'s `Drop` impl)
-                    // is dropped right here, before `err` propagates past
-                    // this function — restoring the terminal ahead of
-                    // `main`'s `anyhow` error path printing the failure to
-                    // stderr, exactly like `rinkaku_tui::run`'s pre-ADR-0033
-                    // `EnableMouseCapture`-failure branch already did for
-                    // its own early-return case. `buffered_notes` are
-                    // flushed here too (before the terminal-restoring drop
-                    // completes, but after — `flush_notes` is plain
-                    // `eprintln!`, so ordering against the drop itself
-                    // doesn't matter for correctness, only that this runs
-                    // after the alternate screen is torn down, which
-                    // dropping `session` right below guarantees) so a note
-                    // buffered before the error (e.g. `used_fallback`'s
-                    // warning, ADR 0033) is not silently lost on an
-                    // early-return failure.
-                    drop(session);
-                    release_log_sink(&log_sink);
-                    flush_notes(buffered_notes);
-                    return Err(err);
-                }
-            };
+            let (report, diff_text, resolved_workdir, pr_head_sha, pr_context, deferred_resolver) =
+                match outcome {
+                    Ok(analyzed) => analyzed,
+                    Err(err) => {
+                        // `session` (and with it, `TuiSession`'s `Drop` impl)
+                        // is dropped right here, before `err` propagates past
+                        // this function — restoring the terminal ahead of
+                        // `main`'s `anyhow` error path printing the failure to
+                        // stderr, exactly like `rinkaku_tui::run`'s pre-ADR-0033
+                        // `EnableMouseCapture`-failure branch already did for
+                        // its own early-return case. `buffered_notes` are
+                        // flushed here too (before the terminal-restoring drop
+                        // completes, but after — `flush_notes` is plain
+                        // `eprintln!`, so ordering against the drop itself
+                        // doesn't matter for correctness, only that this runs
+                        // after the alternate screen is torn down, which
+                        // dropping `session` right below guarantees) so a note
+                        // buffered before the error (e.g. `used_fallback`'s
+                        // warning, ADR 0033) is not silently lost on an
+                        // early-return failure.
+                        drop(session);
+                        release_log_sink(&log_sink);
+                        flush_notes(buffered_notes);
+                        return Err(err);
+                    }
+                };
             let repo_root = resolve_repo_root(resolved_workdir.as_deref());
             // `--pr` mode never checks the fetched head ref out (this
             // module's own doc comment on the `--pr` read strategy), so the
@@ -285,6 +296,46 @@ fn main() -> anyhow::Result<()> {
                 std::env::var("LC_MESSAGES").ok().as_deref(),
                 std::env::var("LANG").ok().as_deref(),
             );
+            // ADR 0081: spawned only when there was actually something to
+            // defer (`deferred_resolver.is_some()`, i.e. `cli.deps != 0`
+            // and a resolver was worth building at all) — a run with
+            // nothing to resolve opens with `dependency_update: None`,
+            // which `TuiSession::run`/`run_app` treat exactly like every
+            // pre-ADR-0081 session (`App`'s `dependency_status` stays
+            // `Ready`, no "resolving dependencies..." placeholder ever
+            // shows). `report.files.clone()` hands the thread its own copy
+            // to resolve against, while `report` itself stays intact for
+            // `session.run`'s immediate, synchronous first render below —
+            // the two must not race over the same `Vec`.
+            let dependency_update = deferred_resolver.map(|deferred| {
+                let files = report.files.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let update = match deferred.resolve(files) {
+                        Ok(resolved) => DependencyResolutionUpdate::Resolved(resolved),
+                        Err(err) => {
+                            // ADR 0081: no error text travels over the
+                            // channel itself (the detail pane only ever
+                            // shows a fixed "dependency resolution failed"
+                            // line) — logged here instead, through the
+                            // ordinary `log::` plumbing this crate already
+                            // routes through `DeferredLogSink` during
+                            // `--tui` mode, so the failure still reaches
+                            // stderr once the TUI exits and the sink
+                            // flushes, same as any other background `log::`
+                            // call this module makes.
+                            log::error!("background dependency resolution failed: {err:#}");
+                            DependencyResolutionUpdate::Failed
+                        }
+                    };
+                    // A `send` failure here means the receiving end
+                    // (`TuiSession::run`'s event loop) already dropped —
+                    // the reviewer quit before resolution finished, which
+                    // is not this thread's problem to report.
+                    let _ = tx.send(update);
+                });
+                rx
+            });
             let run_result = session.run(
                 &report,
                 &diff_text,
@@ -293,6 +344,7 @@ fn main() -> anyhow::Result<()> {
                 source_reader,
                 review_ports,
                 update_check,
+                dependency_update,
                 locale,
             );
             // Flushed after `TuiSession::run` has already restored the
@@ -336,7 +388,10 @@ fn main() -> anyhow::Result<()> {
             // unconditionally in every non-TUI input mode, including piped
             // stderr.
             let spinner = Spinner::start(spinner::phase_message(AnalysisPhase::Starting));
-            let analyzed = run_analysis(&cli, &spinner)?;
+            // ADR 0081: `defer_resolver: false` — every non-`--tui` display
+            // mode keeps the original synchronous
+            // `build_resolver` → `analyze_diff` order byte-for-byte.
+            let analyzed = run_analysis(&cli, &spinner, false)?;
             // Cleared as soon as the `Report` is built, before the
             // `--entry` pivot (pure/instant) and the render call below.
             spinner.finish_and_clear();
@@ -403,6 +458,15 @@ struct AnalyzedReport {
     /// resolution can fail even in `--pr` mode without failing the whole
     /// run). `None` for every other input mode.
     pr_context: Option<PrContext>,
+    /// Everything needed to build the dependency resolver and populate
+    /// `report`'s symbols' `dependencies` later, on a background thread
+    /// (ADR 0081) — `Some` only when `defer_resolver` was `true` *and*
+    /// `cli.deps != 0` (mirroring `pipeline::build_resolver`'s own
+    /// top-level gate); always `None` when `defer_resolver` is `false`
+    /// (every non-`--tui` caller) or the whole-repo-outline branch ran
+    /// (ADR 0017: that branch never resolves dependencies at all, deferred
+    /// or otherwise).
+    deferred_resolver: Option<DeferredResolver>,
 }
 
 /// Runs the same `--pr`/`--base`/stdin/whole-repo input-mode chain
@@ -414,7 +478,22 @@ struct AnalyzedReport {
 /// `SplashProgress` sitting in between `TuiSession::init` and
 /// `TuiSession::run`, while the non-TUI branch calls it with a `Spinner` —
 /// the input-mode logic itself does not need to know which one it got.
-fn run_analysis(cli: &Cli, progress: &dyn AnalysisProgress) -> anyhow::Result<AnalyzedReport> {
+///
+/// `defer_resolver` (ADR 0081): `false` for every non-`--tui` caller keeps
+/// every input mode's synchronous `build_resolver` → `analyze_diff` order
+/// byte-for-byte unchanged, matching this function's behavior before this
+/// parameter existed. `true` (`--tui` mode only) skips the synchronous
+/// `build_resolver` call in the `--pr`/`--base` (`run_base_pipeline`) and
+/// stdin branches, passing `resolver: None` to `analyze_diff` so `report`
+/// comes back with every symbol's `dependencies` empty, and populates
+/// `AnalyzedReport::deferred_resolver` instead of running the resolver
+/// inline. Has no effect on the whole-repo-outline branch (`analyze_repo`
+/// never took a resolver in the first place, ADR 0017).
+fn run_analysis(
+    cli: &Cli,
+    progress: &dyn AnalysisProgress,
+    defer_resolver: bool,
+) -> anyhow::Result<AnalyzedReport> {
     // Tracks the same `cwd`/`workdir` each branch below already resolves for
     // its own `git`/`gh` calls, so the TUI's source view (`repo_root`,
     // `main`'s own use of this result) reads files from the repository the
@@ -431,7 +510,7 @@ fn run_analysis(cli: &Cli, progress: &dyn AnalysisProgress) -> anyhow::Result<An
     // input mode, the same way `resolved_workdir` above already carries
     // out `--pr`'s resolved clone directory.
     let mut pr_head_sha: Option<String> = None;
-    let (report, diff_text, pr_context) = if let Some(pr_arg) = &cli.pr {
+    let (report, diff_text, pr_context, deferred_resolver) = if let Some(pr_arg) = &cli.pr {
         // Validate the arg and derive the fetch refspec's PR number, but
         // pass the original (trimmed) value — not the parsed number — to
         // `gh pr view` (see that function's doc comment for why).
@@ -474,17 +553,19 @@ fn run_analysis(cli: &Cli, progress: &dyn AnalysisProgress) -> anyhow::Result<An
                 base_branch = pr_info.base_ref_name,
             ));
         }
-        let (report, diff_text) = run_base_pipeline(cli, &base_sha, &head_sha, cwd, progress)?;
+        let (report, diff_text, deferred) =
+            run_base_pipeline(cli, &base_sha, &head_sha, cwd, progress, defer_resolver)?;
         // ADR 0048: `PrContext` for `--tui`'s review-annotations sink A, `None`
         // when owner/repo can't be resolved (`resolve_pr_context`'s own
         // doc comment on why that is a soft failure, not a hard error —
         // the analysis above has already succeeded by this point, and
         // losing sink A is strictly less bad than losing the whole run).
         let pr_context = resolve_pr_context(&parsed, cwd, number, head_sha);
-        (report, diff_text, pr_context)
+        (report, diff_text, pr_context, deferred)
     } else if let Some(base) = &cli.base {
-        let (report, diff_text) = run_base_pipeline(cli, base, &cli.head, None, progress)?;
-        (report, diff_text, None)
+        let (report, diff_text, deferred) =
+            run_base_pipeline(cli, base, &cli.head, None, progress, defer_resolver)?;
+        (report, diff_text, None, deferred)
     } else if std::io::stdin().is_terminal() {
         // ADR 0017: this is the third arm of an `if let Some(pr) ... else if
         // let Some(base) ... else if <here>` chain, so reaching it already
@@ -538,20 +619,39 @@ fn run_analysis(cli: &Cli, progress: &dyn AnalysisProgress) -> anyhow::Result<An
         if let Some(note) = repo_outline_empty_note(&report) {
             progress.note(note.to_string());
         }
-        (report, String::new(), None)
+        // ADR 0017: `analyze_repo` never takes a resolver at all, so there
+        // is nothing to defer regardless of `defer_resolver`.
+        (report, String::new(), None, None)
     } else {
         let diff_text = read_stdin_diff()?;
         if diff_text.trim().is_empty() {
             progress.note("note: diff is empty, nothing to analyze".to_string());
         }
-        let resolver = build_resolver(
-            cli,
-            &diff_text,
-            read_working_tree_file,
-            None,
-            None,
-            progress,
-        )?;
+        // ADR 0081: `defer_resolver` skips the synchronous `build_resolver`
+        // call below (`resolver` stays `None`, so `analyze_diff` opens the
+        // report with every symbol's `dependencies` empty) and instead
+        // captures a `DeferredResolver` — `Some` only when `cli.deps != 0`,
+        // mirroring `build_resolver`'s own top-level gate — for `main`'s
+        // `DisplayMode::Tui` arm to run on a background thread once the TUI
+        // is already open.
+        let (resolver, deferred) = if defer_resolver {
+            let deferred = (cli.deps != 0).then(|| {
+                DeferredResolver::new(cli, &diff_text, read_working_tree_file, None, None)
+            });
+            (None, deferred)
+        } else {
+            (
+                build_resolver(
+                    cli,
+                    &diff_text,
+                    read_working_tree_file,
+                    None,
+                    None,
+                    progress,
+                )?,
+                None,
+            )
+        };
         let changed_paths = changed_paths(&diff_text)?;
         let generated_paths = resolve_generated_paths(cli, &changed_paths, None);
         log::debug!("analyzing diff");
@@ -584,7 +684,7 @@ fn run_analysis(cli: &Cli, progress: &dyn AnalysisProgress) -> anyhow::Result<An
         if let Some(note) = garbage_input_note(&diff_text, &report) {
             progress.note(note.to_string());
         }
-        (report, diff_text, None)
+        (report, diff_text, None, deferred)
     };
 
     Ok(AnalyzedReport {
@@ -592,6 +692,7 @@ fn run_analysis(cli: &Cli, progress: &dyn AnalysisProgress) -> anyhow::Result<An
         diff_text,
         resolved_workdir,
         pr_head_sha,
+        deferred_resolver,
         pr_context,
     })
 }

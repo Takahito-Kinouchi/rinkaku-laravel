@@ -12,6 +12,7 @@ mod goto;
 mod scroll_sync;
 
 use crate::app::{App, BlastRadiusSelection, Focus, InputKey, Screen};
+use crate::dependency_update::{DependencyResolutionUpdate, apply_update};
 use crate::locale::Locale;
 use crate::nav::row_search_texts;
 use crate::review::PrContext;
@@ -67,16 +68,35 @@ pub struct ReviewPorts<'a> {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_app(
     terminal: &mut ratatui::DefaultTerminal,
-    report: &Report,
+    initial_report: &Report,
     diff_text: &str,
     entry_path: Option<&str>,
     repo_root: &std::path::Path,
     source_reader: &dyn source::SourceReader,
     review_ports: ReviewPorts<'_>,
     update_check: Option<std::sync::mpsc::Receiver<String>>,
+    dependency_update: Option<std::sync::mpsc::Receiver<DependencyResolutionUpdate>>,
     locale: Locale,
 ) -> std::io::Result<bool> {
+    // ADR 0081: owned rather than a plain `&Report` borrow of the caller's
+    // value, specifically so the `dependency_update` poll below can replace
+    // it in place once a background-resolved file list arrives — every
+    // downstream use in this function reads `report` exactly as it always
+    // has (a `&Report`, via this reborrow), so nothing past this point
+    // needs to know whether the report it sees is the original or a merged
+    // one. `App`'s own tree/nav/cursor/fold state is unaffected either way:
+    // `App::new` below builds it once, from `initial_report`, and `App`
+    // never re-derives it from `report` again afterward (`build_tree`'s
+    // output is identical for both reports — dependency resolution changes
+    // only `dependencies`/`omitted_dependency_matches`, never a symbol's
+    // identity — see `crate::dependency_update`'s own doc comment and
+    // tests).
+    let mut owned_report: Report = initial_report.clone();
+    let mut report: &Report = &owned_report;
     let mut app = App::new(report).with_review_sink_a_available(review_ports.pr_context.is_some());
+    if dependency_update.is_some() {
+        app = app.with_dependency_resolution_pending();
+    }
     if let Some(path) = entry_path {
         app = app.with_entry_pivot(path);
     }
@@ -265,6 +285,32 @@ pub(crate) fn run_app(
             && let Ok(version) = receiver.try_recv()
         {
             app.notify_update_available(version);
+        }
+
+        // ADR 0081: same non-blocking `try_recv` shape as `update_check`
+        // just above. `owned_report`/`report` are mutated here rather than
+        // through a builder method on `App` (which holds no `Report` of its
+        // own — every other function in this loop already takes `report`
+        // fresh as a parameter, `App::selected_detail`'s own doc comment on
+        // why): `owned_report`'s last-drawn borrow (`report`, from either
+        // the previous iteration or the initial assignment above) has
+        // already had its final read for this iteration by this point (the
+        // `terminal.draw` call above, and nothing between it and here reads
+        // `report`), so replacing `owned_report`'s value and re-deriving
+        // `report` from it immediately after is sound — every read of
+        // `report` for the rest of *this* iteration, and every iteration
+        // after, sees the merged value. `Err` (sender dropped without
+        // sending — the background thread panicked, an unreachable case
+        // given `DeferredResolver::resolve`'s own `Result`-returning
+        // contract, but not one this loop needs to distinguish from "still
+        // running") is silently ignored, same as `update_check` above.
+        if let Some(receiver) = &dependency_update
+            && let Ok(update) = receiver.try_recv()
+        {
+            let (merged_report, status) = apply_update(owned_report, update);
+            owned_report = merged_report;
+            report = &owned_report;
+            app.set_dependency_status(status);
         }
 
         // A 100ms poll timeout keeps the loop responsive to terminal

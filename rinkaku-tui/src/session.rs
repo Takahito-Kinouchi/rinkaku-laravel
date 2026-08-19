@@ -9,6 +9,7 @@
 //! only the terminal-lifecycle wrapper around that loop moves here.
 
 use crate::ReviewPorts;
+use crate::dependency_update::DependencyResolutionUpdate;
 use crate::locale::Locale;
 use crate::run_app;
 use crate::source::{SourceReader, WorkingTreeSourceReader};
@@ -116,6 +117,12 @@ pub fn run(
             &WorkingTreeSourceReader,
             review_ports,
             None,
+            // ADR 0081: this convenience wrapper has no background
+            // dependency-resolution thread of its own to hand a receiver
+            // in from (mirrors `update_check`'s own `None` just above) —
+            // callers that want async resolution use `TuiSession::run`
+            // directly, as `rinkaku`'s `main.rs` does.
+            None,
             Locale::English,
         )
         .map(|_update_requested| ())
@@ -222,6 +229,15 @@ impl TuiSession {
     /// [`run_app`]'s event loop, which owns the actual non-blocking
     /// `try_recv` poll.
     ///
+    /// `dependency_update` (ADR 0081) is the receiving half of the mpsc
+    /// channel `main.rs`'s background dependency-resolution thread sends a
+    /// [`DependencyResolutionUpdate`] over, `None` when that thread was
+    /// never spawned (`--deps 0`, nothing left for the resolver to do, or a
+    /// caller with no such thread — e.g. [`run`]'s own convenience
+    /// wrapper). Mirrors `update_check`'s own shape and is polled the same
+    /// non-blocking way by [`run_app`]'s loop, which applies a received
+    /// update via `crate::dependency_update::apply_update`.
+    ///
     /// `locale` (ADR 0055) governs only the `?` help overlay's own prose —
     /// `main.rs` detects it from `LC_ALL`/`LC_MESSAGES`/`LANG` at its own
     /// composition root and passes the result in unchanged; this crate
@@ -246,6 +262,7 @@ impl TuiSession {
         source_reader: &dyn SourceReader,
         review_ports: ReviewPorts<'_>,
         update_check: Option<std::sync::mpsc::Receiver<String>>,
+        dependency_update: Option<std::sync::mpsc::Receiver<DependencyResolutionUpdate>>,
         locale: Locale,
     ) -> std::io::Result<bool> {
         let result = run_app(
@@ -257,6 +274,7 @@ impl TuiSession {
             source_reader,
             review_ports,
             update_check,
+            dependency_update,
             locale,
         );
         let _ = execute!(std::io::stdout(), event::DisableMouseCapture);

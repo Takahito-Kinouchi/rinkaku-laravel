@@ -80,6 +80,27 @@ pub struct DetailView {
     /// different mechanism than a fan-in-relevant reference), so keeping
     /// two fields now avoids a breaking rename later.
     pub callers: Vec<SymbolMention>,
+    /// This symbol's 1-hop dependency-index matches (ADR 0003), verbatim
+    /// from [`rinkaku_core::extract::ExtractedSymbol::dependencies`] —
+    /// unlike [`Self::used_by`]/[`Self::callers`]/[`Self::callees`] (all
+    /// derived from `report.graph.edges`, which only connects symbols
+    /// *both* present in the diff's own `files`), a dependency here can
+    /// point anywhere in the repository the `--tui` session's resolver
+    /// indexed. Empty whenever dependency resolution was never attempted
+    /// (`--deps 0`) or found nothing — and, in `--tui` mode, also empty
+    /// while background resolution is still pending (ADR 0081): the
+    /// rendering layer (`crate::ui::detail_pane::detail_lines`) is the one
+    /// that decides whether an empty list here means "nothing depends on
+    /// this" or "not resolved yet", by consulting `App::dependency_status`
+    /// separately — this view-model field only ever carries whatever
+    /// `report` currently has, the same "no session state, just report
+    /// data" discipline every other `DetailView` field already follows.
+    pub depends_on: Vec<rinkaku_core::deps::ResolvedSymbol>,
+    /// Mirrors
+    /// [`rinkaku_core::extract::ExtractedSymbol::omitted_dependency_matches`]
+    /// — see [`Self::depends_on`]'s own doc comment for why this can be
+    /// non-zero even while `depends_on` itself is capped.
+    pub omitted_dependency_matches: usize,
 }
 
 /// Builds a [`DetailView`] for the *present* (non-removed) symbol
@@ -134,7 +155,41 @@ pub fn build_detail(report: &Report, id: &str) -> Option<DetailView> {
         used_by,
         callees,
         callers,
+        depends_on: symbol.dependencies.clone(),
+        omitted_dependency_matches: symbol.omitted_dependency_matches,
     })
+}
+
+/// Whether `--tui`'s background dependency-resolution thread (ADR 0081) has
+/// finished, and if so, whether it succeeded — the session-wide overlay
+/// [`crate::ui::detail_pane::detail_lines`] consults to decide how to
+/// render the "Depends on:" area for *any* symbol, since a report opened
+/// with `resolver: None` cannot itself distinguish "nothing depends on
+/// this" from "not resolved yet" (both look like an empty
+/// [`DetailView::depends_on`]).
+///
+/// Lives on [`crate::app::App`] rather than on [`Report`]/[`DetailView`]:
+/// it describes the *session's* background job, not anything about the
+/// report's own data, and every `App` outside `--tui` mode's async path
+/// (every existing test, the `crate::run` convenience wrapper) never
+/// touches it at all, staying at the `Default` `Ready`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DependencyStatus {
+    /// Dependency resolution was never deferred at all (`--deps 0`, a
+    /// non-`--tui` caller, or `--tui` with nothing left to resolve), or it
+    /// already finished successfully — `depends_on`/`omitted_dependency_matches`
+    /// on every [`DetailView`] already reflect the final result.
+    #[default]
+    Ready,
+    /// `--tui`'s background thread is still running; every symbol's
+    /// `depends_on` is still empty by construction (`analyze_diff` was
+    /// called with `resolver: None`), which is not yet a meaningful
+    /// answer.
+    Pending,
+    /// The background thread errored (e.g. a `git` failure) before it
+    /// could resolve anything — every symbol's `depends_on` stays
+    /// permanently empty for this session; nothing will retry.
+    Failed,
 }
 
 /// Which side of `report.graph.edges` [`symbol_mentions`] should walk: the

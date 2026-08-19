@@ -64,8 +64,16 @@ only becomes load-bearing when the output would otherwise not be TUI
   wide pane; on a narrow terminal it falls back to unified regardless of
   the toggle, and the pane header notes why.
 - **Detail pane (right)** — what the cursor is on: classification,
-  signature (with an old/new diff on contract change), used-by, callees;
-  or, for a directory, its badge breakdown and cycle members.
+  signature (with an old/new diff on contract change), used-by, callees,
+  and — when `--deps` finds anything — depends-on (the repository-wide
+  1-hop dependency index,
+  [ADR 0003](adr/0003-tags-based-dependency-resolution-first-lsp-later.md));
+  or, for a directory, its badge breakdown and cycle members. Dependency
+  resolution runs on a background thread once the TUI has already opened
+  ([ADR 0081](adr/0081-async-dependency-resolution-in-tui.md)) rather
+  than blocking startup: the depends-on area shows a dimmed "resolving
+  dependencies..." placeholder until it finishes (or "dependency
+  resolution failed" on a background error), then fills in normally.
 - **Blast radius pane (right)** — an entry-tree rooted at the cursor's
   directory/file: *"if this changes, what does it reach?"* The
   interactive equivalent of `--entry <path>`

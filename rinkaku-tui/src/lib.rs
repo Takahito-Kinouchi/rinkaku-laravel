@@ -2,7 +2,8 @@
 //!
 //! Two layers, kept deliberately separate:
 //!
-//! - **View-models** (`tree`, `nav`, `order`, `detail`, `app`, `row_view`):
+//! - **View-models** (`tree`, `nav`, `order`, `detail`, `app`, `row_view`,
+//!   `dependency_update`):
 //!   plain data and pure functions/state machines derived from
 //!   [`rinkaku_core::render::Report`]. `tree`/`nav`/`order`/`detail` carry
 //!   no `ratatui`/`crossterm` types at all (ADR 0016 decision 3). `app`
@@ -41,6 +42,7 @@ rust_i18n::i18n!("locales", fallback = "en");
 pub mod annotation_markers;
 pub mod app;
 pub mod blast_radius;
+pub mod dependency_update;
 pub mod detail;
 pub mod diff_shape;
 pub mod diff_view;

@@ -4,7 +4,7 @@
 //! itself never splits on `\n` (it renders as one row), so this behavior
 //! has to be built by pushing multiple `Line`s, not left to ratatui.
 
-use crate::detail::{DetailView, SignatureView};
+use crate::detail::{DependencyStatus, DetailView, SignatureView};
 use crate::ui::detail_pane::detail_lines;
 
 use pretty_assertions::assert_eq;
@@ -22,6 +22,8 @@ fn detail_view(signature: SignatureView) -> DetailView {
         used_by: vec![],
         callees: vec![],
         callers: vec![],
+        depends_on: vec![],
+        omitted_dependency_matches: 0,
     }
 }
 
@@ -29,9 +31,14 @@ fn detail_view(signature: SignatureView) -> DetailView {
 /// per `Line` — styling (bold headings, red/green diff coloring) is
 /// covered by the render code's own visual intent rather than pinned
 /// here, since this suite's concern is which lines get pushed and in what
-/// order.
+/// order. `DependencyStatus::Ready` with an empty `depends_on` (this
+/// module's `detail_view` helper never sets either) renders no "Depends
+/// on:" section at all (ADR 0081) — the pending/failed placeholder and the
+/// populated-list rendering both have their own dedicated coverage in
+/// `depends_on.rs`, so this suite's `expected` vectors stay unaware of the
+/// section entirely.
 fn rendered_text(detail: &DetailView) -> Vec<String> {
-    detail_lines(detail)
+    detail_lines(detail, DependencyStatus::Ready)
         .iter()
         .map(|line| line.to_string())
         .collect()

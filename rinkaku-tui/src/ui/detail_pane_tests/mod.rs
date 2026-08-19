@@ -21,6 +21,9 @@
 //! - `tab_expansion` — ADR 0061: signature lines reach the buffer with
 //!   their tabs expanded to tab stops, on both the current and the
 //!   changed-signature paths
+//! - `depends_on` — ADR 0081: `detail_lines`' "Depends on:" area under
+//!   each `DependencyStatus` (pending placeholder, failed placeholder,
+//!   ready-and-populated, ready-and-empty)
 
 use super::file_detail_lines;
 use crate::app::{App, BlastRadiusSelection};
@@ -35,6 +38,7 @@ use rinkaku_core::graph::SymbolGraph;
 use rinkaku_core::render::{FileReport, Report};
 
 mod content_by_row_kind;
+mod depends_on;
 mod scroll_behavior;
 mod signature_view;
 mod size_warning;

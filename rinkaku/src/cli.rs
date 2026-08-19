@@ -4,7 +4,15 @@ use clap::{Parser, Subcommand};
 use rinkaku_core::render::OutputFormat;
 
 /// rinkaku (輪郭) — condense PR diffs into signatures and their dependencies.
-#[derive(Parser, Debug, PartialEq, Eq)]
+//
+// `Clone` (ADR 0081): `--tui` mode's background dependency-resolution
+// thread needs its own owned copy of the parsed CLI to call `build_resolver`
+// with, since it runs after `main`'s own `cli` binding is long past the
+// point a borrow could reach across the `std::thread::spawn` boundary.
+// Every field is a plain owned value (`String`/`Option<String>`/`bool`/`u8`/
+// `Copy` enums), so deriving `Clone` costs nothing beyond what `main` already
+// pays once per run.
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
 #[command(name = "rinkaku", version, about, long_about = None)]
 pub(crate) struct Cli {
     /// Subcommand to run. Omitted for the default diff-condensation flow
@@ -130,7 +138,7 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) entry: Option<String>,
 }
-#[derive(Subcommand, Debug, PartialEq, Eq)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
     /// Update rinkaku to the latest GitHub release in place. If you
     /// installed via Homebrew or `cargo install`, prefer `brew upgrade`

@@ -6,7 +6,7 @@
 use super::scroll::{Body, render_scrollable_pane};
 use super::style::{expand_tabs_text, pane_border_style};
 use crate::app::{App, Focus, SelectedDetail};
-use crate::detail::{DetailView, DirDetail, FileDetail, SignatureView};
+use crate::detail::{DependencyStatus, DetailView, DirDetail, FileDetail, SignatureView};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -38,7 +38,7 @@ pub(crate) fn draw_detail_pane(
     };
 
     let lines = match &detail {
-        SelectedDetail::Symbol(detail) => detail_lines(detail),
+        SelectedDetail::Symbol(detail) => detail_lines(detail, app.dependency_status()),
         SelectedDetail::Dir(detail) => dir_detail_lines(detail, report.origin),
         SelectedDetail::File(detail) => file_detail_lines(detail),
     };
@@ -281,8 +281,26 @@ pub(crate) fn kind_abbrev(kind: rinkaku_core::extract::SymbolKind) -> &'static s
 /// signature (a styled old/new diff when the contract changed, mirroring
 /// `render.rs`'s Markdown ` ```diff ` block decision per
 /// `crate::detail::SignatureView`'s own doc comment), used-by, callers,
-/// callees.
-pub(crate) fn detail_lines(detail: &DetailView) -> Vec<Line<'static>> {
+/// callees, and — ADR 0081 — "Depends on:".
+///
+/// `dependency_status` (ADR 0081) governs the "Depends on:" area
+/// independently of `detail.depends_on` itself, since an empty
+/// `depends_on` is ambiguous on its own (see
+/// [`crate::detail::DetailView::depends_on`]'s own doc comment):
+/// [`DependencyStatus::Pending`] always shows a single dimmed "resolving
+/// dependencies..." line regardless of `detail.depends_on`'s current
+/// (necessarily still-empty) content, [`DependencyStatus::Failed`] shows a
+/// single dimmed "dependency resolution failed" line, and
+/// [`DependencyStatus::Ready`] renders `detail.depends_on`/
+/// `omitted_dependency_matches` normally — hiding the section entirely
+/// when both are empty/zero, mirroring `render.rs`'s Markdown
+/// `render_dependencies`'s identical "nothing to show" gate so the two
+/// surfaces agree on when a symbol has *no* section at all versus an
+/// empty one.
+pub(crate) fn detail_lines(
+    detail: &DetailView,
+    dependency_status: DependencyStatus,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     lines.push(Line::from(vec![
@@ -345,7 +363,78 @@ pub(crate) fn detail_lines(detail: &DetailView) -> Vec<Line<'static>> {
         lines.push(Line::raw(format!("  {} ({})", mention.name, mention.path)));
     }
 
+    push_depends_on_lines(&mut lines, detail, dependency_status);
+
     lines
+}
+
+/// The "Depends on:" section (ADR 0081/ADR 0003) — see [`detail_lines`]'s
+/// own doc comment for the three-way `dependency_status` split. Kept as its
+/// own function (rather than inlined at `detail_lines`' tail) so the
+/// dimmed-placeholder style is declared once rather than duplicated between
+/// the `Pending`/`Failed` arms.
+fn push_depends_on_lines(
+    lines: &mut Vec<Line<'static>>,
+    detail: &DetailView,
+    dependency_status: DependencyStatus,
+) {
+    let dimmed = Style::default().fg(Color::DarkGray);
+    match dependency_status {
+        DependencyStatus::Pending => {
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "Depends on:",
+                Style::default().add_modifier(Modifier::BOLD),
+            ));
+            lines.push(Line::styled("  resolving dependencies...", dimmed));
+        }
+        DependencyStatus::Failed => {
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "Depends on:",
+                Style::default().add_modifier(Modifier::BOLD),
+            ));
+            lines.push(Line::styled("  dependency resolution failed", dimmed));
+        }
+        DependencyStatus::Ready => {
+            if detail.depends_on.is_empty() && detail.omitted_dependency_matches == 0 {
+                return;
+            }
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "Depends on:",
+                Style::default().add_modifier(Modifier::BOLD),
+            ));
+            for dependency in &detail.depends_on {
+                lines.push(Line::raw(format!(
+                    "  {} ({})",
+                    collapse_to_single_line(&dependency.signature),
+                    dependency.path,
+                )));
+            }
+            if detail.omitted_dependency_matches > 0 {
+                lines.push(Line::styled(
+                    format!(
+                        "  (+{} more definitions matched by name)",
+                        detail.omitted_dependency_matches
+                    ),
+                    dimmed,
+                ));
+            }
+        }
+    }
+}
+
+/// Collapses a possibly multi-line signature (ADR 0060) onto one line for
+/// the "Depends on:" list, one entry per line — mirrors
+/// `rinkaku_core::render::markdown`'s private helper of the same name and
+/// contract (kept as its own small copy here rather than a shared
+/// abstraction: this crate's ADR 0016 decision 3 keeps `crate::detail`/
+/// `crate::ui` free of a dependency on `rinkaku-core`'s render layer, and a
+/// one-line `split_whitespace().join(" ")` is not worth a cross-crate API
+/// for).
+fn collapse_to_single_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

@@ -35,6 +35,8 @@ fn should_build_current_signature_when_classification_is_not_signature_changed()
         used_by: vec![],
         callees: vec![],
         callers: vec![],
+        depends_on: vec![],
+        omitted_dependency_matches: 0,
     };
     let actual = build_detail(&report, "lib.rs::foo");
 
@@ -90,6 +92,38 @@ fn should_fall_back_to_current_signature_when_previous_signature_is_missing() {
         SignatureView::Current("fn foo()".to_string()),
         actual.signature
     );
+}
+
+// ADR 0081: `depends_on`/`omitted_dependency_matches` must come straight
+// off the symbol's own `dependencies`/`omitted_dependency_matches` fields
+// (the `TagsResolver` index's output, ADR 0003) — distinct from
+// `used_by`/`callers`/`callees`, which never read those fields at all (see
+// `DetailView::depends_on`'s own doc comment on why the two are kept
+// separate).
+#[test]
+fn should_populate_depends_on_from_symbol_dependencies() {
+    let dependency = rinkaku_core::deps::ResolvedSymbol {
+        signature: "fn helper() -> i32".to_string(),
+        path: "helper.rs".to_string(),
+        container: None,
+    };
+    let report = Report {
+        origin: rinkaku_core::render::ReportOrigin::Diff,
+        files: vec![FileReport {
+            path: "lib.rs".to_string(),
+            symbols: vec![ExtractedSymbol {
+                dependencies: vec![dependency.clone()],
+                omitted_dependency_matches: 2,
+                ..symbol("lib.rs::foo", "foo")
+            }],
+        }],
+        ..empty_report()
+    };
+
+    let actual = build_detail(&report, "lib.rs::foo").expect("symbol found");
+
+    assert_eq!(vec![dependency], actual.depends_on);
+    assert_eq!(2, actual.omitted_dependency_matches);
 }
 
 #[test]
