@@ -52,9 +52,31 @@ use crate::extract::extract_all_symbols;
 use crate::language::LanguageSupport;
 use crate::progress::{OnProgress, should_report_progress};
 use rayon::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// The per-symbol projection of [`crate::extract::ExtractedSymbol`] that
+/// [`TagsResolver::from_entries`] needs to rebuild an index entry, without
+/// the extraction-only fields (`id`, `range`, `referenced_names`, ...)
+/// that only matter while a diff's own changed symbols are being
+/// classified. Exists so a caller can persist a repository-wide index
+/// (rinkaku's `rinkaku/src/deps_cache.rs`, ADR 0079) across runs and
+/// rebuild a [`TagsResolver`] from the persisted data alone, without
+/// re-parsing every unchanged file — `derive(Serialize, Deserialize)`
+/// is what that cache round-trips through disk as JSON.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexEntry {
+    pub name: String,
+    pub signature: String,
+    pub container: Option<String>,
+    /// Mirrors [`crate::extract::ExtractedSymbol::is_test`] — see its own
+    /// doc comment. [`TagsResolver::from_entries`]'s `include_tests`
+    /// parameter filters on this per entry, the same way [`TagsResolver::new`]
+    /// filters on [`crate::extract::ExtractedSymbol::is_test`] while
+    /// building its index from freshly extracted symbols.
+    pub is_test: bool,
+}
 
 /// A definition found by a [`Resolver`] for a referenced name. Reported
 /// verbatim in [`crate::extract::ExtractedSymbol::dependencies`], so it is
@@ -276,6 +298,56 @@ impl TagsResolver {
 
         Self { index }
     }
+
+    /// Builds the resolver's index directly from already-extracted
+    /// [`IndexEntry`] data, keyed by the path each entry's file was
+    /// extracted from — the counterpart to [`TagsResolver::new`] for a
+    /// caller that already has entries on hand (a persisted cache, ADR
+    /// 0079) and wants to skip re-reading/re-parsing files whose content
+    /// hasn't changed since they were extracted. Unlike `new`, this
+    /// constructor does no filesystem/`git` work, no parsing, and no
+    /// prefiltering — the caller decides which files' entries to include
+    /// (e.g. by comparing git blob OIDs) before calling this.
+    ///
+    /// `include_tests` has the exact same meaning as `new`'s parameter of
+    /// the same name: `false` drops every entry whose `is_test` is `true`
+    /// from the index. Test-*file* exclusion (`LanguageSupport::is_test_path`)
+    /// and generated-file exclusion are the caller's responsibility here —
+    /// they are decided by which `(path, entries)` pairs are included in
+    /// `entries` at all, since this constructor has no `LanguageSupport`
+    /// or `.gitattributes` information to apply them itself.
+    ///
+    /// Insertion order into the index must match `new`'s exactly: entries
+    /// are inserted sequentially in `entries`' iteration order, one
+    /// `(name, container, path)` at a time — the same order `new`'s
+    /// sequential post-parse loop produces from its rayon-parallel, then
+    /// ordered-`collect`ed, per-file results. `resolve_dependencies`'s
+    /// stable-sort tie-break (see its own doc comment) depends on this:
+    /// candidates sharing a `path_proximity_rank` keep their relative
+    /// order from `resolver.resolve(name)`, i.e. from `entries`' order. A
+    /// caller that wants the same tie-break behavior as a fresh `new` call
+    /// must therefore pass `entries` in the same path order `new` would
+    /// have iterated `files` in (e.g. `git ls-files`'s lexicographic
+    /// order), not an arbitrary order such as a `HashMap`'s iteration.
+    pub fn from_entries(
+        entries: impl IntoIterator<Item = (String, Vec<IndexEntry>)>,
+        include_tests: bool,
+    ) -> Self {
+        let mut index: HashMap<String, Vec<ResolvedSymbol>> = HashMap::new();
+        for (path, file_entries) in entries {
+            for entry in file_entries {
+                if !include_tests && entry.is_test {
+                    continue;
+                }
+                index.entry(entry.name).or_default().push(ResolvedSymbol {
+                    signature: entry.signature,
+                    path: path.clone(),
+                    container: entry.container,
+                });
+            }
+        }
+        Self { index }
+    }
 }
 
 /// Whether `content` could plausibly define something a changed symbol
@@ -322,14 +394,19 @@ const GENERATED_MARKER_SCAN_LINES: usize = 5;
 /// rule set) — deliberately a small, easily-audited subset rather than a
 /// comprehensive port.
 ///
-/// `pub(crate)` rather than private: shared by `TagsResolver::new` (this
+/// `pub` (not just `pub(crate)`): shared by `TagsResolver::new` (this
 /// module, to exclude generated files from the repo-wide dependency index —
-/// ADR 0010/0011's Consequences on dependency resolution) and
+/// ADR 0010/0011's Consequences on dependency resolution),
 /// `pipeline::analyze_diff` (to exclude them from the diff's own changed
-/// symbols). Lives here rather than in `pipeline.rs` since `pipeline.rs`
-/// already imports from this module (`Resolver`/`resolve_dependencies`);
-/// the reverse import would be a cycle.
-pub(crate) fn is_generated_content(content: &str) -> bool {
+/// symbols), and, across the `rinkaku_core`/`rinkaku` crate boundary,
+/// `rinkaku`'s `deps_cache` module (ADR 0079), which must apply the exact
+/// same content-marker check to a cache miss's freshly read content before
+/// deciding whether to parse it and what to record as that file's
+/// `is_generated` flag in the persisted cache. Lives here rather than in
+/// `pipeline.rs` since `pipeline.rs` already imports from this module
+/// (`Resolver`/`resolve_dependencies`); the reverse import would be a
+/// cycle.
+pub fn is_generated_content(content: &str) -> bool {
     content
         .lines()
         .take(GENERATED_MARKER_SCAN_LINES)

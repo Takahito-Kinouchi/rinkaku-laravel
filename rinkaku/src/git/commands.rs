@@ -1,6 +1,6 @@
 //! Local git subprocess wrappers used by the composition root and other
-//! modules: `git diff`, `git ls-files`, and `git rev-parse
-//! --show-toplevel`.
+//! modules: `git diff`, `git ls-files`, `git rev-parse --show-toplevel`,
+//! `git rev-parse --git-dir`, and `git ls-tree`.
 
 pub(crate) fn run_git_diff(
     base: &str,
@@ -82,6 +82,84 @@ pub(crate) fn resolve_repo_root(cwd: Option<&std::path::Path>) -> std::path::Pat
     })
 }
 
+/// Resolves the repository's git directory (`.git`, or the real directory
+/// a linked worktree's `.git` file points at) via `git rev-parse
+/// --git-dir`. Used by `deps_cache` (ADR 0079) to place the persistent
+/// dependency-index cache alongside git's own per-repository state rather
+/// than inside the worktree, where it would need its own `.gitignore`
+/// entry and could be accidentally committed.
+///
+/// `git rev-parse --git-dir` prints a path relative to `cwd` in the
+/// common case (`.git`), so the result is joined onto `cwd` to make it
+/// usable regardless of the calling process's actual working directory —
+/// mirroring why `resolve_repo_root` above does the same for
+/// `--show-toplevel`'s output.
+pub(crate) fn resolve_git_dir(cwd: Option<&std::path::Path>) -> anyhow::Result<std::path::PathBuf> {
+    let mut command = std::process::Command::new("git");
+    command.args(["rev-parse", "--git-dir"]);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    let output = command.output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git rev-parse --git-dir failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let printed = std::path::PathBuf::from(String::from_utf8(output.stdout)?.trim());
+    Ok(if printed.is_absolute() {
+        printed
+    } else {
+        match cwd {
+            Some(cwd) => cwd.join(printed),
+            None => printed,
+        }
+    })
+}
+
+/// Lists every blob's git object ID at `rev` via a single `git ls-tree -r
+/// <rev> -z --format=%(objectname)%x09%(path)` subprocess — one process
+/// for the whole tree, not one per candidate path, matching the batching
+/// pattern `git cat-file --batch` uses in `cat_file_batch.rs`. Used by
+/// `deps_cache` (ADR 0079) to detect, before reading or parsing a single
+/// byte of content, which candidate paths' blobs actually changed since
+/// the last cached run.
+///
+/// `-z` NUL-terminates each entry instead of newline-terminating it, so a
+/// path containing a literal newline round-trips correctly (rare, but not
+/// something a plain line-oriented parse could rule out).
+pub(crate) fn list_blob_oids(
+    cwd: Option<&std::path::Path>,
+    rev: &str,
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let mut command = std::process::Command::new("git");
+    command.args([
+        "ls-tree",
+        "-r",
+        rev,
+        "-z",
+        "--format=%(objectname)%x09%(path)",
+    ]);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    let output = command.output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git ls-tree -r {rev} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let stdout = String::from_utf8(output.stdout)?;
+    Ok(stdout
+        .split('\0')
+        .filter(|entry| !entry.is_empty())
+        .filter_map(|entry| entry.split_once('\t'))
+        .map(|(oid, path)| (path.to_string(), oid.to_string()))
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +230,116 @@ mod tests {
                 .expect("a git repository must succeed");
 
             assert_eq!(vec!["src/lib.rs".to_string()], actual);
+        }
+    }
+
+    mod resolve_git_dir_tests {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn should_resolve_git_dir_to_dot_git_when_cwd_is_repository_root() {
+            let dir = tempfile::TempDir::new().expect("create tempdir");
+            init_repo_with_committed_file(dir.path(), "fn foo() {}\n");
+
+            let actual = resolve_git_dir(Some(dir.path())).expect("a git repository must resolve");
+
+            let expected = dir
+                .path()
+                .join(".git")
+                .canonicalize()
+                .expect("canonicalize expected");
+            let actual = actual.canonicalize().expect("canonicalize actual");
+            assert_eq!(expected, actual);
+        }
+
+        // Same regression shape as `resolve_repo_root`'s own subdirectory
+        // test above: `git rev-parse --git-dir` prints a path relative to
+        // `cwd` (`../.git` from a subdirectory), so a caller invoking it
+        // from anywhere but the repository root must still get back a
+        // usable path pointing at the same `.git` directory.
+        #[test]
+        fn should_resolve_git_dir_when_cwd_is_a_subdirectory() {
+            let dir = tempfile::TempDir::new().expect("create tempdir");
+            init_repo_with_committed_file(dir.path(), "fn foo() {}\n");
+            let subdir = dir.path().join("src");
+
+            let actual = resolve_git_dir(Some(&subdir)).expect("a git repository must resolve");
+
+            let expected = dir
+                .path()
+                .join(".git")
+                .canonicalize()
+                .expect("canonicalize expected");
+            let actual = actual.canonicalize().expect("canonicalize actual");
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn should_fail_when_cwd_is_not_a_git_repository() {
+            let dir = tempfile::TempDir::new().expect("create tempdir");
+
+            let actual = resolve_git_dir(Some(dir.path()));
+
+            assert!(actual.is_err());
+        }
+    }
+
+    mod list_blob_oids_tests {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn should_list_oid_for_every_tracked_blob_at_head() {
+            let dir = tempfile::TempDir::new().expect("create tempdir");
+            init_repo_with_committed_file(dir.path(), "fn foo() {}\n");
+
+            let actual =
+                list_blob_oids(Some(dir.path()), "HEAD").expect("a git repository must resolve");
+
+            assert_eq!(1, actual.len());
+            let oid = actual
+                .get("src/lib.rs")
+                .expect("src/lib.rs must be present in the tree");
+            assert_eq!(40, oid.len(), "expected a full 40-character SHA-1 OID");
+        }
+
+        // Regression guard for the staleness detection this function
+        // exists for (ADR 0079): a file's OID must change when its
+        // committed content changes, so a cache keyed on it can tell the
+        // two revisions apart.
+        #[test]
+        fn should_return_different_oid_when_file_content_changes_across_commits() {
+            let dir = tempfile::TempDir::new().expect("create tempdir");
+            init_repo_with_committed_file(dir.path(), "fn foo() {}\n");
+            let before = list_blob_oids(Some(dir.path()), "HEAD")
+                .expect("first commit must resolve")
+                .get("src/lib.rs")
+                .cloned()
+                .expect("src/lib.rs must be present");
+
+            std::fs::write(dir.path().join("src/lib.rs"), "fn bar() {}\n")
+                .expect("edit src/lib.rs");
+            crate::test_util::run_git(dir.path(), &["add", "src/lib.rs"]);
+            crate::test_util::run_git(dir.path(), &["commit", "-m", "change foo to bar"]);
+
+            let after = list_blob_oids(Some(dir.path()), "HEAD")
+                .expect("second commit must resolve")
+                .get("src/lib.rs")
+                .cloned()
+                .expect("src/lib.rs must be present");
+
+            assert_ne!(before, after);
+        }
+
+        #[test]
+        fn should_fail_when_rev_does_not_exist() {
+            let dir = tempfile::TempDir::new().expect("create tempdir");
+            init_repo_with_committed_file(dir.path(), "fn foo() {}\n");
+
+            let actual = list_blob_oids(Some(dir.path()), "does-not-exist");
+
+            assert!(actual.is_err());
         }
     }
 }

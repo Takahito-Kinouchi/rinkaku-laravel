@@ -85,6 +85,17 @@ pub(crate) struct Cli {
     #[arg(long, value_enum, default_value_t = DepsScope::ChangedProjects)]
     pub(crate) deps_scope: DepsScope,
 
+    /// Disable the persistent dependency-index cache (ADR 0079). By
+    /// default, `--base`/`--pr` mode caches each indexed file's
+    /// definitions on disk keyed by its git blob OID, so a later run
+    /// against the same repository only re-reads and re-parses files that
+    /// actually changed since the last run. Pass this flag to always
+    /// rebuild the index from scratch, e.g. to rule out a stale cache
+    /// while debugging, or on a one-shot CI runner where the cache would
+    /// never be reused anyway.
+    #[arg(long, default_value_t = false)]
+    pub(crate) no_deps_cache: bool,
+
     /// Exclude test symbols from the "Change graph"/"Definitions" output
     /// and summarize their per-file counts under a "Tests" section
     /// instead. Without this flag, test symbols appear in the graph and
@@ -185,6 +196,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -205,6 +217,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -243,6 +256,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -263,6 +277,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -283,6 +298,7 @@ mod tests {
             format: Some(Format::Json),
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -310,6 +326,7 @@ mod tests {
             format: None,
             deps: 0,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -337,6 +354,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: true,
             include_generated: false,
             entry: None,
@@ -383,6 +401,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: true,
             entry: None,
@@ -403,6 +422,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: Some("src/api".to_string()),
@@ -423,6 +443,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -443,6 +464,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -463,6 +485,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -498,6 +521,7 @@ mod tests {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,

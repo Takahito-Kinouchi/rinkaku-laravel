@@ -216,6 +216,34 @@ pub(crate) fn build_resolver(
     } else {
         check_generated_paths_batch(cwd, &paths)
     };
+    // ADR 0079: `--base`/`--pr` mode (`head: Some(_)`) has a stable git
+    // blob to key a persistent cache on, so it routes through
+    // `deps_cache::resolve_indexed_files`, which skips reading/parsing
+    // any candidate path whose blob OID matches a previous run's —
+    // unless `--no-deps-cache` asks for the pre-cache behavior verbatim.
+    // Working-tree mode (`head: None`) never takes this path: a working
+    // tree file's content need not match any committed blob, so there is
+    // nothing stable to key a cache on.
+    if let Some(head) = head
+        && !cli.no_deps_cache
+    {
+        let entries = crate::deps_cache::resolve_indexed_files(
+            cwd,
+            head,
+            paths,
+            language_for_path,
+            &generated_paths,
+            cli.include_generated,
+            progress,
+        )?;
+        // Same CLI→core polarity flip as the `analyze_diff` /
+        // `analyze_repo` calls above (ADR 0025).
+        return Ok(Some(TagsResolver::from_entries(
+            entries,
+            !cli.exclude_tests,
+        )));
+    }
+
     // ADR 0033/0078: `(files_done, total)` for both the read loop below
     // and `TagsResolver::new`'s indexing loop — a plain closure over
     // `progress` (a `&dyn AnalysisProgress`, already object-safe), since
@@ -231,7 +259,9 @@ pub(crate) fn build_resolver(
         // best-effort skip as the working-tree branch below); the `?`
         // here only ever fires for a genuinely unrecoverable failure
         // (the child process itself failing to start, or the batch
-        // stream desyncing), which cannot be isolated to one path.
+        // stream desyncing), which cannot be isolated to one path. Only
+        // reached here when `--no-deps-cache` was passed — the
+        // cache-backed equivalent already returned above otherwise.
         Some(head) => read_git_show_files_batch(cwd, head, paths, Some(&on_file_progress))?,
         // ADR 0078: working-tree reads are independent blocking syscalls,
         // so rayon fans them out; ordered `collect` keeps the result in
@@ -319,6 +349,7 @@ mod tests {
             format: None,
             deps: 0,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -375,6 +406,7 @@ diff --git a/src/main.rs b/src/main.rs
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -410,6 +442,7 @@ diff --git a/src/main.rs b/src/main.rs
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -470,6 +503,7 @@ diff --git a/apps/shop/src/main.rs b/apps/shop/src/main.rs
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -522,6 +556,7 @@ diff --git a/apps/shop/src/main.rs b/apps/shop/src/main.rs
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -560,6 +595,7 @@ diff --git a/apps/shop/src/main.rs b/apps/shop/src/main.rs
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::Repo,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -629,6 +665,7 @@ diff --git a/apps/shop/src/main.rs b/apps/shop/src/main.rs
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -721,6 +758,7 @@ fn should_add_two_numbers() {
             format: None,
             deps: 0,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: true,
             include_generated: false,
             entry: None,
@@ -785,6 +823,7 @@ fn should_add_two_numbers() {
             format: None,
             deps: 0,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -830,6 +869,7 @@ fn should_add_two_numbers() {
             format: None,
             deps: 0,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -887,6 +927,7 @@ fn should_add_two_numbers() {
             format: None,
             deps: 0,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -930,6 +971,7 @@ fn should_add_two_numbers() {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,
@@ -958,6 +1000,7 @@ fn should_add_two_numbers() {
             format: None,
             deps: 1,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: true,
             entry: None,
@@ -1014,6 +1057,7 @@ fn should_add_two_numbers() {
             format: None,
             deps: 0,
             deps_scope: crate::cli::DepsScope::ChangedProjects,
+            no_deps_cache: false,
             exclude_tests: false,
             include_generated: false,
             entry: None,

@@ -142,6 +142,19 @@ a changed file outside every project). `repo` always scans every
 tracked file — use it when changed code depends on a sibling project
 scoping would exclude. See ADR 0078.
 
+### `--no-deps-cache`
+
+`--base`/`--pr` mode's `--deps 1` index is cached on disk per
+repository (`<git-dir>/rinkaku-cache/deps-index-v1.json`), keyed by each
+indexed file's git blob OID: a later run against the same repository
+only re-reads and re-parses files that actually changed since the
+cache was last written, instead of rebuilding the whole index from
+scratch every time. Pass `--no-deps-cache` to disable this and always
+rebuild from scratch — e.g. to rule out a stale cache while debugging,
+or on a one-shot CI runner where the cache would never be reused
+anyway. See ADR 0079. Not used by stdin/whole-repo mode's working-tree
+index, which has no committed blob to key staleness on.
+
 ### `--exclude-tests`
 
 By default ([ADR 0025](adr/0025-default-to-including-tests.md)), test

@@ -21,6 +21,11 @@
 //!   ranking, per-name cap boundary (via `rstest`), cross-name
 //!   omitted-count accumulation, and container-aware filtering of bare
 //!   vs. method-reference candidates (ADR 0068 amendment, issue #227)
+//! - `tags_resolver_from_entries` — `TagsResolver::from_entries`'s
+//!   cache-backed index construction (ADR 0079): resolution from
+//!   pre-extracted `IndexEntry` data, `include_tests` filtering, and the
+//!   same input-order preservation guarantee `parallel_determinism` pins
+//!   for `new`
 
 use super::*;
 use crate::language::go::GoSupport;
@@ -31,6 +36,7 @@ mod parallel_determinism;
 mod prefilter;
 mod resolve_dependencies;
 mod tags_resolver_exclusions;
+mod tags_resolver_from_entries;
 mod tags_resolver_indexing;
 
 /// Test-only `language_for_path`: routes `.rs` to Rust and `.go` to

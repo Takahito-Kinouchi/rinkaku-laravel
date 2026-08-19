@@ -42,6 +42,7 @@
 mod browser;
 mod cli;
 mod clipboard;
+mod deps_cache;
 mod display;
 mod generated_paths;
 mod git;
