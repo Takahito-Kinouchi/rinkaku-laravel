@@ -58,6 +58,19 @@ pub trait LanguageSupport {
         false
     }
 
+    /// Whether `path` can contribute definitions worth putting in the
+    /// repo-wide dependency index (`crate::deps::TagsResolver`). Defaults
+    /// to `true`; the only current override is PHP's Blade templates
+    /// (`*.blade.php`), which parse under the PHP grammar but exist to
+    /// render markup — defining an indexable symbol inside one is an
+    /// anti-pattern, while *reading* every template inflates the startup
+    /// scan (ADR 0078 addendum). This gates only the index: a changed
+    /// template still goes through diff analysis and rendering exactly
+    /// as before.
+    fn contributes_to_dependency_index(&self, _path: &str) -> bool {
+        true
+    }
+
     /// Rewrites raw file content into what this language's grammar should
     /// actually parse, or borrows it unchanged (the default, and every
     /// language except Vue). The only current override is Vue's SFC

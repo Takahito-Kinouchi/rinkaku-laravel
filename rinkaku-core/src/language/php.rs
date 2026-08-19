@@ -89,6 +89,13 @@ impl LanguageSupport for PhpSupport {
         REFERENCE_QUERY
     }
 
+    /// Blade templates parse under this grammar (their path still ends
+    /// in `.php`) but are excluded from the dependency index — see the
+    /// trait method's doc comment.
+    fn contributes_to_dependency_index(&self, path: &str) -> bool {
+        !path.ends_with(".blade.php")
+    }
+
     /// PHPUnit's conventions: suites live under a `tests/` (commonly
     /// capitalized `Tests/` in Symfony-style projects) directory, and a
     /// test class file ends in `Test.php` wherever it lives.
@@ -117,6 +124,17 @@ mod tests {
         let tree = parser.parse(source, None).expect("parse must succeed");
 
         assert!(!tree.root_node().has_error());
+    }
+
+    #[rstest]
+    #[case::should_exclude_blade_template_from_index("resources/views/page.blade.php", false)]
+    #[case::should_include_plain_php_in_index("app/Service.php", true)]
+    fn contributes_to_dependency_index_cases(#[case] path: &str, #[case] expected: bool) {
+        let support = PhpSupport;
+
+        let actual = support.contributes_to_dependency_index(path);
+
+        assert_eq!(expected, actual);
     }
 
     #[rstest]

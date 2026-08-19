@@ -174,7 +174,10 @@ pub(crate) fn build_resolver(
             })
         })
         .filter(|path| match language_for_path(path) {
-            Some(lang) => !cli.exclude_tests || !lang.is_test_path(path),
+            Some(lang) => {
+                lang.contributes_to_dependency_index(path)
+                    && (!cli.exclude_tests || !lang.is_test_path(path))
+            }
             None => false,
         })
         .collect();
@@ -448,6 +451,55 @@ diff --git a/apps/shop/src/main.rs b/apps/shop/src/main.rs
         // `head: Some("HEAD")` routes file reads through the cwd-aware
         // `git cat-file --batch` path — the working-tree branch reads
         // paths relative to the *process* cwd, which is not the tempdir.
+        let resolver = build_resolver(
+            &cli,
+            MONOREPO_DIFF,
+            read_changed_main_rs,
+            Some("HEAD"),
+            Some(dir.path()),
+            &spinner,
+        )
+        .expect("build_resolver must succeed in a real repository")
+        .expect("a non-empty reference set must build a resolver");
+
+        let resolved_paths: Vec<String> = resolver
+            .resolve("helper")
+            .into_iter()
+            .map(|symbol| symbol.path)
+            .collect();
+        assert_eq!(vec!["apps/shop/src/lib.rs".to_string()], resolved_paths);
+    }
+
+    // ADR 0078 addendum: a Blade template defining a same-named helper
+    // must not reach the index — only the real definition resolves.
+    #[test]
+    fn should_not_index_blade_templates() {
+        let dir = tempfile::TempDir::new().expect("create tempdir");
+        init_two_project_monorepo(dir.path());
+        std::fs::create_dir_all(dir.path().join("apps/shop/resources/views"))
+            .expect("create views dir");
+        std::fs::write(
+            dir.path().join("apps/shop/resources/views/page.blade.php"),
+            "<?php function helper() { return 3; } ?>\n<div>x</div>\n",
+        )
+        .expect("write blade template");
+        run_git(dir.path(), &["add", "."]);
+        run_git(dir.path(), &["commit", "-m", "add blade"]);
+        let cli = Cli {
+            command: None,
+            base: None,
+            head: "HEAD".to_string(),
+            pr: None,
+            format: None,
+            deps: 1,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
+            exclude_tests: false,
+            include_generated: false,
+            entry: None,
+            tui: false,
+        };
+
+        let spinner = Spinner::start("test");
         let resolver = build_resolver(
             &cli,
             MONOREPO_DIFF,

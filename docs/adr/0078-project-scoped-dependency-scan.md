@@ -52,6 +52,20 @@ The reading stretch also reported no progress — the spinner sat on
    working-tree loop also moves to rayon (ordered `collect`, shared
    completion counter — the ADR 0076 pattern).
 
+## Addendum (2026-08-19): Blade templates excluded from the index
+
+`*.blade.php` routes to the PHP grammar (the suffix registry matches on
+`.php`), so decision 2's language filter kept reading and parsing every
+Blade template — a Laravel app carries hundreds, and they exist to
+render markup, not to define indexable symbols (a `@php function ...`
+definition inside a template is an anti-pattern this fork accepts
+losing from "Depends on"). A new defaulted
+`LanguageSupport::contributes_to_dependency_index` hook (only PHP
+overrides it, excluding `.blade.php`) drops them from the *index scan
+only*: a changed template still flows through diff analysis, the
+non-symbol changed-line count (ADR 0070), and the TUI/diff pane exactly
+as before.
+
 ## Alternatives considered
 
 - **Scoping by top-level directory instead of manifests**: rejected —
