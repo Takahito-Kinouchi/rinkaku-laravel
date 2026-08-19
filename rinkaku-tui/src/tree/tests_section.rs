@@ -88,7 +88,10 @@ pub(super) fn is_test_dir_path(path: &str) -> bool {
     match rinkaku_core::language::language_for_path(path) {
         Some(lang) => lang.is_test_path(path),
         None => path.split('/').any(|segment| {
-            matches!(segment, "tests" | "Tests" | "test" | "__tests__" | "testdata")
+            matches!(
+                segment,
+                "tests" | "Tests" | "test" | "__tests__" | "testdata"
+            )
         }),
     }
 }
