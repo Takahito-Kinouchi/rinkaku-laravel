@@ -9,7 +9,9 @@ use crate::cli::Cli;
 use crate::generated_paths::{check_generated_paths, check_generated_paths_batch};
 use crate::git::cat_file_batch::read_git_show_files_batch;
 use crate::git::commands::{list_git_files, run_git_diff};
-use crate::git::file_read::{read_git_show_file, read_working_tree_file};
+use crate::git::file_read::{
+    read_git_show_file, read_prefetched_or_fallback, read_working_tree_file,
+};
 use crate::notes::garbage_input_note;
 use crate::progress::AnalysisProgress;
 use crate::spinner::AnalysisPhase;
@@ -57,9 +59,33 @@ pub(crate) fn run_base_pipeline(
         ));
     }
 
+    let changed_paths = changed_paths(&diff_text)?;
+    progress.set_phase(AnalysisPhase::ReadingFiles);
+    // Prefetch every changed path's content on both sides via a single
+    // `git cat-file --batch` child each, instead of the one `git show`
+    // spawn per file the closures below used to do directly — same
+    // batching strategy `build_resolver`'s repository-wide scan already
+    // uses (`read_git_show_files_batch`'s own doc comment). A path missing
+    // from a batch result (added/deleted on that side, or a rename whose
+    // old/new path differs from what the diff parser reports) simply isn't
+    // in the map; the closures below fall back to the per-file
+    // `read_git_show_file`, so behavior for those paths is unchanged.
+    let head_contents: std::collections::HashMap<String, String> =
+        read_git_show_files_batch(cwd, head, changed_paths.clone(), None)?
+            .into_iter()
+            .collect();
+    let base_contents: std::collections::HashMap<String, String> =
+        read_git_show_files_batch(cwd, base, changed_paths.clone(), None)?
+            .into_iter()
+            .collect();
+
     let read_file = {
         let head = head.to_string();
-        move |path: &str| read_git_show_file(cwd, &head, path)
+        move |path: &str| {
+            read_prefetched_or_fallback(&head_contents, path, |path| {
+                read_git_show_file(cwd, &head, path)
+            })
+        }
     };
     // ADR 0014: `--base`/`--pr` mode always knows a base commit, so unlike
     // stdin mode (see `main`'s own `analyze_diff` call), a `read_base_file`
@@ -71,10 +97,13 @@ pub(crate) fn run_base_pipeline(
     // an error (see its own doc comment).
     let read_base_file = {
         let base = base.to_string();
-        move |path: &str| read_git_show_file(cwd, &base, path)
+        move |path: &str| {
+            read_prefetched_or_fallback(&base_contents, path, |path| {
+                read_git_show_file(cwd, &base, path)
+            })
+        }
     };
     let resolver = build_resolver(cli, &diff_text, &read_file, Some(head), cwd, progress)?;
-    let changed_paths = changed_paths(&diff_text)?;
     let generated_paths = resolve_generated_paths(cli, &changed_paths, cwd);
     log::debug!("analyzing diff");
     progress.set_phase(AnalysisPhase::AnalyzingDiff);
@@ -939,5 +968,83 @@ fn should_add_two_numbers() {
 
         let expected: HashSet<String> = HashSet::new();
         assert_eq!(expected, actual);
+    }
+
+    // Regression test for the batched-prefetch change: `run_base_pipeline`
+    // now serves `read_file`/`read_base_file` from a `read_git_show_files_batch`
+    // prefetch (keyed by `changed_paths`) instead of one `git show` spawn
+    // per file, with `read_git_show_file` as a per-path fallback. This pins
+    // down that the resulting `Report` is unchanged for a diff with both a
+    // modified file (needs both head- and base-side content, prefetched on
+    // both sides here since its path is unchanged) and a deleted file
+    // (its path is in `changed_paths`, so it's in the base-side prefetch,
+    // but the head-side prefetch necessarily misses it since the file
+    // doesn't exist at `head`; `removed_symbols_from_deleted_file` only
+    // ever reads the base side, so that miss is never exercised here).
+    #[test]
+    fn should_produce_same_report_via_batched_prefetch_for_modified_and_deleted_files() {
+        let dir = tempfile::TempDir::new().expect("create tempdir");
+        run_git(dir.path(), &["init", "--initial-branch=main"]);
+        run_git(dir.path(), &["config", "user.email", "test@example.com"]);
+        run_git(dir.path(), &["config", "user.name", "Test"]);
+        std::fs::write(
+            dir.path().join("kept.rs"),
+            "fn foo(a: i32) -> i32 {\n    a\n}\n",
+        )
+        .expect("write kept.rs");
+        std::fs::write(dir.path().join("gone.rs"), "fn bar() -> i32 {\n    1\n}\n")
+            .expect("write gone.rs");
+        run_git(dir.path(), &["add", "kept.rs", "gone.rs"]);
+        run_git(dir.path(), &["commit", "-m", "initial commit"]);
+
+        std::fs::write(
+            dir.path().join("kept.rs"),
+            "fn foo(a: i32, b: i32) -> i32 {\n    a\n}\n",
+        )
+        .expect("widen kept.rs's signature");
+        run_git(dir.path(), &["rm", "gone.rs"]);
+        run_git(dir.path(), &["add", "kept.rs"]);
+        run_git(dir.path(), &["commit", "-m", "widen foo, delete gone.rs"]);
+
+        let cli = Cli {
+            command: None,
+            base: None,
+            head: "HEAD".to_string(),
+            pr: None,
+            format: None,
+            deps: 0,
+            deps_scope: crate::cli::DepsScope::ChangedProjects,
+            exclude_tests: false,
+            include_generated: false,
+            entry: None,
+            tui: false,
+        };
+        let spinner = Spinner::start("test");
+        let (actual, _diff_text) =
+            run_base_pipeline(&cli, "HEAD~1", "HEAD", Some(dir.path()), &spinner)
+                .expect("run_base_pipeline should succeed");
+
+        assert_eq!(1, actual.files.len());
+        assert_eq!("kept.rs", actual.files[0].path);
+        assert_eq!(1, actual.files[0].symbols.len());
+        let symbol = &actual.files[0].symbols[0];
+        assert_eq!(
+            Some(rinkaku_core::extract::Classification::SignatureChanged),
+            symbol.classification
+        );
+        assert_eq!(
+            Some("fn foo(a: i32) -> i32".to_string()),
+            symbol.previous_signature
+        );
+
+        assert_eq!(
+            vec![rinkaku_core::extract::RemovedSymbol {
+                name: "bar".to_string(),
+                kind: rinkaku_core::extract::SymbolKind::Function,
+                path: "gone.rs".to_string(),
+                signature: "fn bar() -> i32".to_string(),
+            }],
+            actual.removed
+        );
     }
 }
