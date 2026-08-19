@@ -1,6 +1,6 @@
 //! CLI argument definitions extracted from `main.rs`.
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use rinkaku_core::render::OutputFormat;
 
 /// rinkaku (輪郭) — condense PR diffs into signatures and their dependencies.
@@ -13,14 +13,18 @@ use rinkaku_core::render::OutputFormat;
 // `Copy` enums), so deriving `Clone` costs nothing beyond what `main` already
 // pays once per run.
 #[derive(Parser, Debug, Clone, PartialEq, Eq)]
-#[command(name = "rinkaku", version, about, long_about = None)]
+#[command(
+    name = "rinkaku-laravel",
+    // ADR 0083: identifies this as a fork build in its own `--version`
+    // output, rather than the bare semver upstream `rinkaku --version`
+    // prints — the whole point of the rename is that the two binaries
+    // must never be mistaken for one another, and the version string is
+    // the one place a reviewer is likely to actually check that.
+    version = concat!(env!("CARGO_PKG_VERSION"), " (fork of hiro-o918/rinkaku)"),
+    about,
+    long_about = None
+)]
 pub(crate) struct Cli {
-    /// Subcommand to run. Omitted for the default diff-condensation flow
-    /// (stdin / `--base` / `--deps` / `--format` below), which stays the
-    /// primary, backward-compatible entry point.
-    #[command(subcommand)]
-    pub(crate) command: Option<Command>,
-
     /// Base ref to diff against (runs `git diff <base>...<head>` instead
     /// of reading from stdin).
     #[arg(long, conflicts_with = "pr")]
@@ -138,24 +142,6 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) entry: Option<String>,
 }
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Command {
-    /// Update rinkaku to the latest GitHub release in place. If you
-    /// installed via Homebrew or `cargo install`, prefer `brew upgrade`
-    /// or `cargo install rinkaku` instead so your package manager stays
-    /// in sync — self-update works either way, but it bypasses those
-    /// managers' bookkeeping.
-    ///
-    /// Requires either an interactive terminal (to confirm the update) or
-    /// `--yes`. Refuses to run when stdin is not a TTY and `--yes` is not
-    /// given, since there would be no one to answer the confirmation
-    /// prompt.
-    SelfUpdate {
-        /// Skip the interactive confirmation prompt and proceed.
-        #[arg(long, short = 'y')]
-        yes: bool,
-    },
-}
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
     Md,
@@ -197,7 +183,6 @@ mod tests {
     #[test]
     fn should_default_to_markdown_head_and_no_base_when_no_args_given() {
         let expected = Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: None,
@@ -218,7 +203,6 @@ mod tests {
     #[test]
     fn should_set_tui_when_tui_flag_given() {
         let expected = Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: None,
@@ -257,7 +241,6 @@ mod tests {
     #[test]
     fn should_set_base_when_base_flag_given() {
         let expected = Cli {
-            command: None,
             base: Some("main".to_string()),
             head: "HEAD".to_string(),
             pr: None,
@@ -278,7 +261,6 @@ mod tests {
     #[test]
     fn should_set_base_and_head_when_both_flags_given() {
         let expected = Cli {
-            command: None,
             base: Some("main".to_string()),
             head: "feature-branch".to_string(),
             pr: None,
@@ -299,7 +281,6 @@ mod tests {
     #[test]
     fn should_set_format_json_when_format_flag_given() {
         let expected = Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: None,
@@ -327,7 +308,6 @@ mod tests {
     #[test]
     fn should_set_deps_zero_when_deps_flag_given() {
         let expected = Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: None,
@@ -355,7 +335,6 @@ mod tests {
     #[test]
     fn should_set_exclude_tests_when_exclude_tests_flag_given() {
         let expected = Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: None,
@@ -402,7 +381,6 @@ mod tests {
     #[test]
     fn should_set_include_generated_when_include_generated_flag_given() {
         let expected = Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: None,
@@ -423,7 +401,6 @@ mod tests {
     #[test]
     fn should_set_entry_when_entry_flag_given() {
         let expected = Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: None,
@@ -442,75 +419,28 @@ mod tests {
     }
 
     #[test]
-    fn should_set_self_update_command_when_self_update_subcommand_given() {
-        let expected = Cli {
-            command: Some(Command::SelfUpdate { yes: false }),
-            base: None,
-            head: "HEAD".to_string(),
-            pr: None,
-            format: None,
-            deps: 1,
-            deps_scope: crate::cli::DepsScope::ChangedProjects,
-            no_deps_cache: false,
-            exclude_tests: false,
-            include_generated: false,
-            entry: None,
-            tui: false,
-        };
-        let actual = Cli::parse_from(["rinkaku", "self-update"]);
-
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn should_set_yes_flag_when_self_update_yes_flag_given() {
-        let expected = Cli {
-            command: Some(Command::SelfUpdate { yes: true }),
-            base: None,
-            head: "HEAD".to_string(),
-            pr: None,
-            format: None,
-            deps: 1,
-            deps_scope: crate::cli::DepsScope::ChangedProjects,
-            no_deps_cache: false,
-            exclude_tests: false,
-            include_generated: false,
-            entry: None,
-            tui: false,
-        };
-        let actual = Cli::parse_from(["rinkaku", "self-update", "--yes"]);
-
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn should_set_yes_flag_when_self_update_short_y_flag_given() {
-        let expected = Cli {
-            command: Some(Command::SelfUpdate { yes: true }),
-            base: None,
-            head: "HEAD".to_string(),
-            pr: None,
-            format: None,
-            deps: 1,
-            deps_scope: crate::cli::DepsScope::ChangedProjects,
-            no_deps_cache: false,
-            exclude_tests: false,
-            include_generated: false,
-            entry: None,
-            tui: false,
-        };
-        let actual = Cli::parse_from(["rinkaku", "self-update", "-y"]);
-
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
     fn should_verify_cli_definition() {
         // clap's own consistency check (duplicate args, invalid
         // configuration, etc.) — mirrors skem's `Cli::command().debug_assert()`
         // convention for catching CLI wiring mistakes at test time.
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    // ADR 0083: pins the fork-identifying `--version` string — a bare
+    // upstream-style semver here would make this fork's binary
+    // indistinguishable from an `hiro-o918/rinkaku` install of the same
+    // name in `--version` output, the same collision the package rename
+    // itself exists to remove.
+    #[test]
+    fn should_print_fork_identifying_version_string() {
+        use clap::CommandFactory;
+        let version = Cli::command().get_version().expect("version").to_string();
+
+        assert!(
+            version.contains("fork of hiro-o918/rinkaku"),
+            "version string {version:?} does not identify this as a fork"
+        );
     }
 
     #[test]
@@ -522,7 +452,6 @@ mod tests {
         // on to let `--pr` reuse the `Cli` struct's `head` field internally
         // without users needing to omit an unrelated flag.
         let expected = Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: Some("76".to_string()),

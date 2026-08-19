@@ -92,15 +92,10 @@ use rinkaku_core::render::Report;
 /// [`TuiSession::run`] for callers that have no splash screen to draw
 /// in between (ADR 0033) — every terminal-lifecycle detail this doc
 /// comment describes lives on `TuiSession` now, see that type's own doc
-/// comment for the same guarantees. Passes `None` for
-/// [`TuiSession::run`]'s update-check receiver (ADR 0054) — this
-/// convenience wrapper has no version-check thread of its own to hand
-/// one in from; callers that want the update prompt use `TuiSession::run`
-/// directly, as `rinkaku`'s `main.rs` does. Passes [`Locale::English`]
-/// for the `?` help overlay (ADR 0055) — this wrapper has no locale
-/// detection of its own; callers that want the reviewer's own locale use
-/// `TuiSession::run` directly with a value detected at their own
-/// composition root.
+/// comment for the same guarantees. Passes [`Locale::English`] for the `?`
+/// help overlay (ADR 0055) — this wrapper has no locale detection of its
+/// own; callers that want the reviewer's own locale use `TuiSession::run`
+/// directly with a value detected at their own composition root.
 pub fn run(
     report: &Report,
     diff_text: &str,
@@ -108,24 +103,20 @@ pub fn run(
     repo_root: &std::path::Path,
     review_ports: ReviewPorts<'_>,
 ) -> std::io::Result<()> {
-    TuiSession::init()?
-        .run(
-            report,
-            diff_text,
-            entry_path,
-            repo_root,
-            &WorkingTreeSourceReader,
-            review_ports,
-            None,
-            // ADR 0081: this convenience wrapper has no background
-            // dependency-resolution thread of its own to hand a receiver
-            // in from (mirrors `update_check`'s own `None` just above) —
-            // callers that want async resolution use `TuiSession::run`
-            // directly, as `rinkaku`'s `main.rs` does.
-            None,
-            Locale::English,
-        )
-        .map(|_update_requested| ())
+    TuiSession::init()?.run(
+        report,
+        diff_text,
+        entry_path,
+        repo_root,
+        &WorkingTreeSourceReader,
+        review_ports,
+        // ADR 0081: this convenience wrapper has no background
+        // dependency-resolution thread of its own to hand a receiver in
+        // from — callers that want async resolution use `TuiSession::run`
+        // directly, as `rinkaku`'s `main.rs` does.
+        None,
+        Locale::English,
+    )
 }
 
 /// Owns the terminal's raw-mode/alternate-screen/mouse-capture lifecycle
@@ -221,35 +212,19 @@ impl TuiSession {
     /// fallback" decision. `ReviewPorts::clipboard` (sink B) is always
     /// required — it never depends on a PR.
     ///
-    /// `update_check` (ADR 0054) is the receiving half of the mpsc channel
-    /// `main.rs`'s background version-check thread sends a version string
-    /// over, `None` when that thread was never spawned
-    /// (`RINKAKU_UPDATE_CHECK=0`, or a caller with no such thread — e.g.
-    /// [`run`]'s own convenience wrapper). Threaded through unchanged to
-    /// [`run_app`]'s event loop, which owns the actual non-blocking
-    /// `try_recv` poll.
-    ///
     /// `dependency_update` (ADR 0081) is the receiving half of the mpsc
     /// channel `main.rs`'s background dependency-resolution thread sends a
     /// [`DependencyResolutionUpdate`] over, `None` when that thread was
     /// never spawned (`--deps 0`, nothing left for the resolver to do, or a
     /// caller with no such thread — e.g. [`run`]'s own convenience
-    /// wrapper). Mirrors `update_check`'s own shape and is polled the same
-    /// non-blocking way by [`run_app`]'s loop, which applies a received
-    /// update via `crate::dependency_update::apply_update`.
+    /// wrapper). Polled the non-blocking way by [`run_app`]'s loop, which
+    /// applies a received update via `crate::dependency_update::apply_update`.
     ///
     /// `locale` (ADR 0055) governs only the `?` help overlay's own prose —
     /// `main.rs` detects it from `LC_ALL`/`LC_MESSAGES`/`LANG` at its own
     /// composition root and passes the result in unchanged; this crate
     /// never reads an environment variable itself.
-    ///
-    /// Returns whether the reviewer confirmed the update popup before
-    /// quitting (`App::update_requested`) alongside the ordinary
-    /// `std::io::Result` — `main.rs` uses this to decide whether to run
-    /// `self-update` after this call's terminal-restoring postamble below
-    /// has already completed, exactly the "update runs after TUI teardown"
-    /// ordering ADR 0054 requires.
-    // `update_check`/`locale` pushed this past clippy's 7-argument
+    // `dependency_update`/`locale` pushed this past clippy's 7-argument
     // threshold — see `run_app`'s own `#[allow]` (this method's sole
     // caller) for why a struct wrapper is not worth it here.
     #[allow(clippy::too_many_arguments)]
@@ -261,10 +236,9 @@ impl TuiSession {
         repo_root: &std::path::Path,
         source_reader: &dyn SourceReader,
         review_ports: ReviewPorts<'_>,
-        update_check: Option<std::sync::mpsc::Receiver<String>>,
         dependency_update: Option<std::sync::mpsc::Receiver<DependencyResolutionUpdate>>,
         locale: Locale,
-    ) -> std::io::Result<bool> {
+    ) -> std::io::Result<()> {
         let result = run_app(
             &mut self.terminal,
             report,
@@ -273,7 +247,6 @@ impl TuiSession {
             repo_root,
             source_reader,
             review_ports,
-            update_check,
             dependency_update,
             locale,
         );

@@ -9,19 +9,19 @@ processors.
 
 | Mode | Reads files from | Notes |
 | --- | --- | --- |
-| **stdin** — `gh pr diff 123 \| rinkaku` | working tree | Assumes the piped diff matches the working tree. A stale/unrelated piped diff will misalign line numbers. |
-| **`--base <ref>`** — `rinkaku --base main` | `git show <head>:<path>` | Runs `git diff` internally; extraction always matches the diffed commit. |
+| **stdin** — `gh pr diff 123 \| rinkaku-laravel` | working tree | Assumes the piped diff matches the working tree. A stale/unrelated piped diff will misalign line numbers. |
+| **`--base <ref>`** — `rinkaku-laravel --base main` | `git show <head>:<path>` | Runs `git diff` internally; extraction always matches the diffed commit. |
 | **`--pr <number>`** — inside a local clone | `git show`-backed | Requires `gh` installed and authenticated ([ADR 0004](adr/0004-pr-input-mode-via-gh-in-local-clone.md)). |
 | **`--pr <url>`** — from any directory | `git show`-backed | Prefers an existing [ghq](https://github.com/x-motemen/ghq) clone; otherwise auto-clones blobless into a cache ([ADR 0005](adr/0005-auto-clone-into-cache-for-pr-urls.md) / [ADR 0006](adr/0006-prefer-ghq-managed-clones-over-cache.md)). Private repos need `gh auth setup-git`. |
-| **Whole-repo** — bare `rinkaku` | working tree | No diff involved; outlines every symbol and its dependency structure ([ADR 0017](adr/0017-whole-repo-outline-as-default-input-mode.md)). Default on a TTY is the TUI. |
+| **Whole-repo** — bare `rinkaku-laravel` | working tree | No diff involved; outlines every symbol and its dependency structure ([ADR 0017](adr/0017-whole-repo-outline-as-default-input-mode.md)). Default on a TTY is the TUI. |
 
 ## Output formats (`--format`)
 
 ```sh
-rinkaku --base main --format md        # Markdown (default when stdout is not a TTY)
-rinkaku --base main --format json      # Structured JSON for tooling
-rinkaku --base main --format mermaid   # A flowchart for pasting into a PR comment
-rinkaku --base main --format digest    # API-changes-only list for a PR comment's <details>
+rinkaku-laravel --base main --format md        # Markdown (default when stdout is not a TTY)
+rinkaku-laravel --base main --format json      # Structured JSON for tooling
+rinkaku-laravel --base main --format mermaid   # A flowchart for pasting into a PR comment
+rinkaku-laravel --base main --format digest    # API-changes-only list for a PR comment's <details>
 ```
 
 `--tui` replaces the output stage entirely and conflicts with
@@ -34,7 +34,7 @@ Running rinkaku on
 (a 35-line diff adding stderr progress logging to `main.rs`):
 
 ```sh
-$ git show aa7ca34 --format="" | rinkaku --deps 0
+$ git show aa7ca34 --format="" | rinkaku-laravel --deps 0
 ```
 
 ````markdown
@@ -202,7 +202,7 @@ depends on. Symbols outside `path` are neither hidden nor excluded
 from analysis, only no longer eligible to be roots.
 
 ```sh
-rinkaku --base main --entry src/api
+rinkaku-laravel --base main --entry src/api
 ```
 
 Combines with `--tui`: opens with the cursor on the row matching
@@ -211,37 +211,17 @@ Combines with `--tui`: opens with the cursor on the row matching
 when nothing matches. Fan-in counts remain whole-analysis (see
 [ADR 0019](adr/0019-entry-path-pivot-view.md)'s Consequences).
 
-## `self-update`
+## Updating
 
-```sh
-rinkaku self-update            # prompts before installing
-rinkaku self-update --yes      # non-interactive
-```
-
-Downloads the latest release for your platform and replaces the
-running binary in place. If you installed via Homebrew or
-`cargo install`, prefer `brew upgrade` / `cargo install rinkaku` so
-your package manager's bookkeeping stays in sync. When stdin is not a
-terminal and `--yes` is not given, `self-update` refuses to run rather
-than silently proceeding.
-
-`--tui` also checks for a newer release in the background on startup.
-The check gets up to 300ms to answer before analysis begins; if it
-finds a newer release in that window and stdin is a terminal, `rinkaku`
-asks on the terminal whether to update, and answering `y` installs the
-release and re-runs the same command with the updated binary. Piped
-input (`gh pr diff 123 | rinkaku --tui`) is never asked, since a re-run
-could not read the already-consumed diff.
-
-If the check answers too late for that window, nothing is printed and
-analysis proceeds; the result still reaches the TUI, where the status
-line shows an `update vX.Y.Z: U` hint. Press `U` to open a
-confirmation popup and `Enter` to update and quit (the update runs
-after the TUI has exited, and does not re-run the analysis).
-
-The check is silent on any failure and never blocks TUI startup for
-longer than the 300ms window. Set `RINKAKU_UPDATE_CHECK=0` to skip it
-entirely.
+This fork has no `self-update` subcommand and no background
+update-check on `--tui` startup ([ADR 0083](adr/0083-rename-command-and-remove-self-update.md)):
+the inherited `self-update` downloaded the *upstream*
+`hiro-o918/rinkaku` release binary, silently replacing this fork's
+build — a build that lacks PHP/Vue/Svelte support — with no warning.
+Re-run the install command in the [README](../README.md)
+(`cargo install --git ... rinkaku-laravel`) to update instead. If an
+old upstream `rinkaku` binary is still installed, remove it with
+`cargo uninstall rinkaku`.
 
 ## Known limitations
 

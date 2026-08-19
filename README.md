@@ -22,12 +22,23 @@ rinkaku は PR の diff を「変更されたシンボルのシグネチャと�
   配下だけをスキャン（`--deps-scope`、既定で有効）。対応言語のファイル
   以外は読み込み自体を省略し、読み込み中も件数を表示（ADR 0078）
 
+## インストール
+
+```sh
+cargo install --git https://github.com/Takahito-Kinouchi/rinkaku-laravel rinkaku-laravel
+```
+
+コマンド名は `rinkaku-laravel`（上流の `rinkaku` とは別名 — ADR 0083）。
+自動アップデート機能は持たない（本フォークに GitHub Releases が無いため）ので、
+更新は `cargo install` の再実行で行う。以前アップストリーム版の `rinkaku` を
+インストールしていた場合は `cargo uninstall rinkaku` で削除しておくこと。
+
 ## 使い方（最小）
 
 ```sh
 cargo build --release
-./target/release/rinkaku --base main          # TUI
-./target/release/rinkaku --base main --format md
+./target/release/rinkaku-laravel --base main          # TUI
+./target/release/rinkaku-laravel --base main --format md
 ```
 
 開発時の品質ゲートは上流と同じです:

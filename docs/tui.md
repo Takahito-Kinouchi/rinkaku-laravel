@@ -7,9 +7,9 @@ with [ratatui](https://ratatui.rs)
 model ([ADR 0020](adr/0020-tui-interaction-model-v2.md)).
 
 On an interactive terminal, TUI is the **default output**: bare
-`rinkaku` opens the TUI on a whole-repo outline
+`rinkaku-laravel` opens the TUI on a whole-repo outline
 ([ADR 0017](adr/0017-whole-repo-outline-as-default-input-mode.md)), and
-so do `rinkaku --pr 123`, `rinkaku --base main`, etc. The `--tui` flag
+so do `rinkaku-laravel --pr 123`, `rinkaku-laravel --base main`, etc. The `--tui` flag
 only becomes load-bearing when the output would otherwise not be TUI
 (stdout is not a TTY, e.g. a diff piped in). It conflicts with
 `--format`.
@@ -117,7 +117,6 @@ Press `?` in the TUI for the always-up-to-date table.
 | `ctrl-o` / `ctrl-i` | Jump back / forward through the jumplist |
 | `n` / `N` | Compose a review note / open the notes list ([ADR 0048](adr/0048-tui-review-actions.md)) |
 | `w` / `W` | Open the current PR's page in a web browser, `--pr` mode only ([ADR 0050](adr/0050-tui-open-pr-in-browser.md)) |
-| `U` | Prompt to self-update, once the background check has found a newer release ([ADR 0054](adr/0054-tui-update-available-prompt.md), [ADR 0062](adr/0062-update-prompt-before-analysis.md)) |
 | `?` | Toggle the help overlay |
 | `q` / `ctrl-c` | Quit (from the entry view); `esc`/`q` also returns from the source view |
 
@@ -171,7 +170,7 @@ stdin ([ADR 0016](adr/0016-tui-crate-and-stack.md)'s addendum), so a
 piped diff and interactive navigation coexist:
 
 ```sh
-gh pr diff 123 | rinkaku --tui
+gh pr diff 123 | rinkaku-laravel --tui
 ```
 
 Here `--tui` is required because stdout may not be a TTY under the pipe

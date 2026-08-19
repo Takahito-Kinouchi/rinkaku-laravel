@@ -228,12 +228,6 @@ pub enum InputKey {
     /// special-cases this variant before dispatch rather than routing it
     /// through `App::handle_key`.
     OpenPrInBrowser,
-    /// `U` (ADR 0054): opens the update confirmation popup once a newer
-    /// released version has been found. Deliberately key-gated rather than
-    /// auto-opening when the background version-check thread reports: an
-    /// unprompted modal stealing keystrokes mid-review would be worse than
-    /// a quiet, persistent status-line hint.
-    OpenUpdatePrompt,
     /// `/` on the Source screen (ADR 0057): starts composing a search
     /// query. Source-screen-only — `crate::input_translate::translate_key`
     /// never emits this variant while [`Screen::Entry`], so `/` has no

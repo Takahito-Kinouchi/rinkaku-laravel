@@ -25,7 +25,6 @@ use std::collections::HashSet;
 fn should_skip_repository_scan_when_deps_is_zero() {
     let dir = tempfile::TempDir::new().expect("create tempdir");
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -82,7 +81,6 @@ fn read_changed_main_rs(_: &str) -> std::io::Result<String> {
 fn should_fail_when_deps_is_one_and_cwd_has_no_git_repository() {
     let dir = tempfile::TempDir::new().expect("create tempdir");
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -118,7 +116,6 @@ fn should_fail_when_deps_is_one_and_cwd_has_no_git_repository() {
 fn should_skip_repository_scan_when_diff_references_no_names() {
     let dir = tempfile::TempDir::new().expect("create tempdir");
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -179,7 +176,6 @@ fn should_index_only_the_changed_project_when_scope_is_changed_projects() {
     let dir = tempfile::TempDir::new().expect("create tempdir");
     init_two_project_monorepo(dir.path());
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -221,7 +217,6 @@ fn should_index_every_project_when_scope_is_repo() {
     let dir = tempfile::TempDir::new().expect("create tempdir");
     init_two_project_monorepo(dir.path());
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -291,7 +286,6 @@ fn should_skip_repository_scan_when_diff_is_empty() {
     std::fs::set_permissions(&index_path, permissions).expect("revoke .git/index read access");
 
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -390,7 +384,6 @@ fn should_add_two_numbers() {
     run_git(dir.path(), &["commit", "-m", "fix test assertion"]);
 
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -455,7 +448,6 @@ fn should_add_two_numbers() {
     run_git(dir.path(), &["commit", "-m", "fix test assertion"]);
 
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -501,7 +493,6 @@ fn should_classify_symbol_as_signature_changed_via_real_base_commit() {
     run_git(dir.path(), &["commit", "-m", "widen foo's signature"]);
 
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -559,7 +550,6 @@ fn should_report_non_symbol_change_via_real_base_commit_when_diff_only_extends_d
     run_git(dir.path(), &["commit", "-m", "export other from foo"]);
 
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -603,7 +593,6 @@ fn should_resolve_generated_paths_from_already_parsed_changed_paths() {
     std::fs::write(dir.path().join("Cargo.lock"), "").expect("write Cargo.lock");
 
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -632,7 +621,6 @@ fn should_return_empty_set_when_include_generated_is_true() {
     std::fs::write(dir.path().join("Cargo.lock"), "").expect("write Cargo.lock");
 
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -689,7 +677,6 @@ fn should_produce_same_report_via_batched_prefetch_for_modified_and_deleted_file
     run_git(dir.path(), &["commit", "-m", "widen foo, delete gone.rs"]);
 
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -761,7 +748,6 @@ fn init_repo_with_out_of_diff_dependency(dir: &std::path::Path) {
 
 fn deps_enabled_cli() -> Cli {
     Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,
@@ -868,7 +854,6 @@ fn should_not_index_blade_templates() {
     run_git(dir.path(), &["add", "."]);
     run_git(dir.path(), &["commit", "-m", "add blade"]);
     let cli = Cli {
-        command: None,
         base: None,
         head: "HEAD".to_string(),
         pr: None,

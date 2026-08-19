@@ -127,22 +127,6 @@ pub struct App {
     /// needs it and `App` is the only layer that both dispatches keys and
     /// is told this flag at startup.
     pub(super) review_sink_a_available: bool,
-    /// The latest released version rinkaku's background update check
-    /// found, if any (`main.rs`'s version-check thread, delivered via
-    /// [`Self::notify_update_available`]) — `None` until that check
-    /// completes or finds nothing newer. Drives the status line's update
-    /// hint and whether `u` opens [`Self::update_prompt_open`] at all.
-    pub(super) update_available: Option<String>,
-    /// Whether the update confirmation popup is currently open — reachable
-    /// via `u`, once [`Self::update_available`] is `Some`. Mirrors
-    /// [`Self::jump_popup`]'s flag-not-`Screen` shape for the same reason:
-    /// it sits on top of whatever was already showing and must not disturb
-    /// that state.
-    pub(super) update_prompt_open: bool,
-    /// Whether the reviewer confirmed the update popup — `run_app`/
-    /// `TuiSession::run` read this once [`Self::should_quit`] is set to
-    /// decide whether to run `self-update` after the terminal is restored.
-    pub(super) update_requested: bool,
     /// `--tui` mode's background dependency-resolution job status (ADR
     /// 0081) — see [`DependencyStatus`]'s own doc comment. Defaults to
     /// [`DependencyStatus::Ready`] (every existing test, and every
@@ -192,9 +176,6 @@ impl App {
             review: ReviewState::default(),
             search: SearchState::default(),
             review_sink_a_available: false,
-            update_available: None,
-            update_prompt_open: false,
-            update_requested: false,
             dependency_status: DependencyStatus::default(),
         }
     }
@@ -386,24 +367,6 @@ impl App {
         self.should_quit
     }
 
-    /// The latest released version found by the background update check
-    /// (`main.rs`'s version-check thread), if any — see the field's own
-    /// doc comment.
-    pub fn update_available(&self) -> Option<&str> {
-        self.update_available.as_deref()
-    }
-
-    /// Whether the update confirmation popup is currently open.
-    pub fn update_prompt_open(&self) -> bool {
-        self.update_prompt_open
-    }
-
-    /// Whether the reviewer confirmed the update popup — see the field's
-    /// own doc comment.
-    pub fn update_requested(&self) -> bool {
-        self.update_requested
-    }
-
     /// `--tui` mode's background dependency-resolution job status (ADR
     /// 0081) — see [`DependencyStatus`]'s own doc comment.
     pub fn dependency_status(&self) -> DependencyStatus {
@@ -417,24 +380,9 @@ impl App {
     /// alongside `crate::dependency_update::merge_resolved_files`, which
     /// takes `report` by value rather than through `App`; a builder method
     /// here would just add a redundant `app = app.with_...(...)`
-    /// reassignment at that one call site with no benefit, mirroring
-    /// [`Self::notify_update_available`]'s own `&mut self` precedent for
-    /// the same "one imperative call site, no chained construction" shape.
+    /// reassignment at that one call site with no benefit.
     pub fn set_dependency_status(&mut self, status: DependencyStatus) {
         self.dependency_status = status;
-    }
-
-    /// Records that a newer released version is available, called once by
-    /// `crate::event_loop::run_app`'s event loop when the background
-    /// version-check thread's `mpsc::Receiver` yields a version string
-    /// (`main.rs`'s composition root spawns that thread; this method is
-    /// the only seam through which its result reaches `App`, keeping this
-    /// module free of the thread/channel itself). The popup is never
-    /// opened from here: ADR 0062 moved the confirmation ahead of
-    /// analysis, onto the ordinary terminal, so reaching the TUI at all
-    /// means the reviewer was not asked and `u` is the only way in.
-    pub fn notify_update_available(&mut self, version: impl Into<String>) {
-        self.update_available = Some(version.into());
     }
 
     /// Sets the status-line message directly — used by `crate::run` to

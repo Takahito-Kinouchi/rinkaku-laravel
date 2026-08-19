@@ -51,17 +51,15 @@ mod log_writer;
 mod notes;
 mod pipeline;
 mod progress;
-mod self_update;
 mod spinner;
 mod splash_progress;
-mod update_prompt;
 
 #[cfg(test)]
 mod test_util;
 
 use browser::SystemBrowserOpener;
 use clap::Parser;
-use cli::{Cli, Command};
+use cli::Cli;
 use clipboard::SystemClipboard;
 use display::{DisplayMode, resolve_display_mode};
 use generated_paths::check_generated_paths_batch;
@@ -112,13 +110,6 @@ fn logger_builder() -> env_logger::Builder {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    if let Some(Command::SelfUpdate { yes }) = cli.command {
-        // Non-TUI: logs straight to stderr like every other subcommand did
-        // before display-mode resolution was moved ahead of logger init.
-        logger_builder().init();
-        return self_update::run_self_update(yes, self_update::Announcement::Print).map(|_| ());
-    }
-
     // ADR 0033: the display mode is decided *before* analysis runs, not
     // after a `Report` already exists — `resolve_display_mode` only
     // depends on `cli.tui`/`cli.format`/whether stdout is a terminal, none
@@ -157,42 +148,6 @@ fn main() -> anyhow::Result<()> {
             // giving deterministic logs-before-notes ordering there; this
             // guard is purely the safety net for the paths that skip them.
             let _log_sink_guard = log_writer::ReleaseGuard::new(log_sink.clone(), std::io::stderr);
-
-            // ADR 0054: a background version check, skippable via
-            // `RINKAKU_UPDATE_CHECK=0` (checked here, at the composition
-            // root, rather than inside `rinkaku_tui` — env reads are IO,
-            // same boundary rule as everything else this module gates).
-            // The spawned thread is fire-and-forget: it is never joined,
-            // and `self_update::check_update_available`'s own "silent on
-            // any failure" contract means a slow or failed network call
-            // simply never sends anything, rather than blocking or
-            // panicking this thread.
-            let update_check = if std::env::var("RINKAKU_UPDATE_CHECK").as_deref() != Ok("0") {
-                let (sender, receiver) = std::sync::mpsc::channel();
-                std::thread::spawn(move || {
-                    if let Some(version) = self_update::check_update_available() {
-                        let _ = sender.send(version);
-                    }
-                });
-                Some(receiver)
-            } else {
-                None
-            };
-            // ADR 0062: the confirmation is offered here — on the ordinary
-            // terminal, before the alternate screen opens and before the
-            // ~1.9s analysis an accepted update would otherwise discard.
-            //
-            // The callback drains buffered logs on the one path that
-            // `exec`s: replacing the process image runs no `Drop`, so
-            // `_log_sink_guard` cannot cover it. It is not called on the
-            // paths that continue into the TUI, which still need the sink
-            // deferring until the alternate screen is gone (ADR 0033).
-            let before_reexec = || release_log_sink(&log_sink);
-            let update_check =
-                match update_prompt::offer_pre_analysis_update(update_check, before_reexec)? {
-                    update_prompt::PreAnalysisOutcome::NotAsked(receiver) => receiver,
-                    update_prompt::PreAnalysisOutcome::Declined => None,
-                };
 
             // No stderr spinner in this branch (ADR 0033 decision 1): the
             // splash screen drawn on the alternate screen is this run's
@@ -343,7 +298,6 @@ fn main() -> anyhow::Result<()> {
                 &repo_root,
                 source_reader,
                 review_ports,
-                update_check,
                 dependency_update,
                 locale,
             );
@@ -358,19 +312,7 @@ fn main() -> anyhow::Result<()> {
             // or entry-screen frame mid-redraw.
             release_log_sink(&log_sink);
             flush_notes(buffered_notes);
-            let update_requested = run_result.map_err(anyhow::Error::from)?;
-            // ADR 0054: reached only when the pre-analysis prompt did not
-            // run (ADR 0062) and the reviewer opened the popup with `u`
-            // instead. The update runs only after the block above has
-            // already restored the terminal — `yes: true` since the
-            // reviewer already confirmed inside the TUI's own popup, so
-            // `run_self_update` skips straight to downloading rather than
-            // prompting a second time on the now-restored terminal.
-            if update_requested {
-                self_update::run_self_update(true, self_update::Announcement::Print).map(|_| ())
-            } else {
-                Ok(())
-            }
+            run_result.map_err(anyhow::Error::from)
         }
         DisplayMode::Output(format) => {
             // Non-TUI: no alternate screen ever opens, so `log::` output

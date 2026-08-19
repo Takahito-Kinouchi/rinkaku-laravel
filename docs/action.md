@@ -144,8 +144,8 @@ by the `binary` input:
   to preserve the [trust boundary](#trust-boundary) below — and is
   what this repository's own [dogfooding
   workflow](../.github/workflows/rinkaku-report.yaml) does
-  (`cargo build --release -p rinkaku` from a trusted checkout, then
-  `binary: ${{ github.workspace }}/target/release/rinkaku`).
+  (`cargo build --release -p rinkaku-laravel` from a trusted checkout,
+  then `binary: ${{ github.workspace }}/target/release/rinkaku-laravel`).
 
 ## Inputs
 

@@ -107,15 +107,30 @@ jobs:
         with:
           key: rinkaku-report-build
 
+      # The bin package was renamed rinkaku -> rinkaku-laravel (ADR
+      # 0083), but this workflow builds from the PR BASE ref by design
+      # (see the trust-boundary comment above) — so on the rename PR
+      # itself, and on any PR whose base predates the rename, the base
+      # tree still carries the old package name. Build whichever name
+      # the base tree actually has; the fallback goes dead (but stays
+      # harmless) once the rename is on main.
       - name: Build rinkaku from the base ref
         if: steps.check-action.outputs.present == 'true'
-        run: cargo build --release -p rinkaku
+        id: build-binary
+        run: |
+          if cargo pkgid -p rinkaku-laravel >/dev/null 2>&1; then
+            pkg=rinkaku-laravel
+          else
+            pkg=rinkaku
+          fi
+          cargo build --release -p "${pkg}"
+          echo "binary=${GITHUB_WORKSPACE}/target/release/${pkg}" >> "$GITHUB_OUTPUT"
 
       - name: Run rinkaku report action
         if: steps.check-action.outputs.present == 'true'
         uses: ./
         with:
-          binary: ${{ github.workspace }}/target/release/rinkaku
+          binary: ${{ steps.build-binary.outputs.binary }}
           repo-path: ${{ github.workspace }}/rinkaku-pr-head
           base: ${{ github.event.pull_request.base.ref }}
           github-token: ${{ github.token }}

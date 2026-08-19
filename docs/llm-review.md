@@ -27,8 +27,8 @@ aid.
    can't tamper with the tool inspecting it:
 
    ```sh
-   rinkaku --pr 123 --format md > map.md
-   # or: rinkaku --base main --format md > map.md
+   rinkaku-laravel --pr 123 --format md > map.md
+   # or: rinkaku-laravel --base main --format md > map.md
    ```
 
 2. **Paste `map.md` at the top of the reviewer's prompt**, followed

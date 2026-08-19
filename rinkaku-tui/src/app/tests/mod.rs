@@ -34,9 +34,6 @@
 //!   (ADR 0048)
 //! - `search` — Source-view search composing/cancel/next/prev dispatch
 //!   (ADR 0057)
-//! - `update_prompt` — `notify_update_available`, `OpenUpdatePrompt`'s
-//!   `update_available` gating, and the update popup's own
-//!   `PopupConfirm`/`PopupCancel` handling (ADR 0054)
 
 use crate::app::App;
 use crate::app::InputKey;
@@ -54,7 +51,6 @@ mod right_pane;
 mod scroll_reset;
 mod search;
 mod source_screen;
-mod update_prompt;
 
 pub(super) fn symbol(id: &str, name: &str) -> ExtractedSymbol {
     ExtractedSymbol {

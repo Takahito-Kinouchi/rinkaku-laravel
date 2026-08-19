@@ -275,11 +275,6 @@ fn global_bindings(locale: Locale) -> Vec<KeyBinding> {
                 .into_owned(),
         },
         KeyBinding {
-            keys: "u",
-            description: rust_i18n::t!("help.binding.prompt_self_update", locale = tag)
-                .into_owned(),
-        },
-        KeyBinding {
             keys: "?",
             description: rust_i18n::t!("help.binding.toggle_help_overlay", locale = tag)
                 .into_owned(),

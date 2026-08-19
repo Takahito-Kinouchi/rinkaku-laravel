@@ -46,7 +46,6 @@ help:
     jump_back: "Jump back to the previous location in the jumplist"
     jump_forward: "Jump forward to the next location in the jumplist"
     open_pr_in_browser: "Open the current PR's page in a web browser (--pr mode only)"
-    prompt_self_update: "Prompt to self-update (only shown when a newer release is available)"
     toggle_help_overlay: "Toggle this help overlay"
     quit: "Quit (esc/q return to the entry view from the source view)"
   marker:

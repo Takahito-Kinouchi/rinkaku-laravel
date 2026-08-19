@@ -1,10 +1,9 @@
 //! Small popups composited on top of whatever screen was already rendered
 //! underneath, after the pane split has drawn everything else: the
-//! jump-target popup (ADR 0022) and the update-available prompt (ADR
-//! 0054). [`centered_rect`] is this module's own layout primitive, shared
-//! with the larger `?` help overlay in [`super::help_overlay`] (ADR 0028
-//! split, once this module's combined help-overlay + popup content grew
-//! past the file-size threshold).
+//! jump-target popup (ADR 0022). [`centered_rect`] is this module's own
+//! layout primitive, shared with the larger `?` help overlay in
+//! [`super::help_overlay`] (ADR 0028 split, once this module's combined
+//! help-overlay + popup content grew past the file-size threshold).
 
 use super::scroll::{truncate_to_width, windowed_rows_with_indicators};
 use ratatui::Frame;
@@ -19,8 +18,8 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 /// `Percentage` constraint sandwiched between two equal `Percentage`
 /// margins), extracted as its own pure function so the overlay's sizing
 /// rule is nameable and independent of any one popup's own
-/// `Clear`/`Paragraph` concerns. Shared by [`super::help_overlay::draw_help_overlay`],
-/// [`draw_jump_popup`], and [`draw_update_prompt`].
+/// `Clear`/`Paragraph` concerns. Shared by [`super::help_overlay::draw_help_overlay`]
+/// and [`draw_jump_popup`].
 pub(crate) fn centered_rect(area: Rect, percent_width: u16, percent_height: u16) -> Rect {
     let vertical_margin = (100 - percent_height) / 2;
     let [_, middle, _] = Layout::vertical([
@@ -115,25 +114,6 @@ pub(crate) fn draw_jump_popup(frame: &mut Frame, popup: &crate::app::JumpPopup, 
     }
 
     let block = Block::bordered().title(" Jump to (enter: go, esc: cancel) ");
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, overlay_area);
-}
-
-/// Draws the update confirmation popup (ADR 0054) centered over
-/// `full_area`, once `U` has opened it over a background-discovered
-/// `version` — the same `Clear`-first, centered-bordered-box compositing
-/// [`draw_jump_popup`] uses, sized the same 60% x 40% since its content is
-/// just as short (two lines).
-pub(crate) fn draw_update_prompt(frame: &mut Frame, version: &str, full_area: Rect) {
-    let overlay_area = centered_rect(full_area, 60, 40);
-    frame.render_widget(Clear, overlay_area);
-
-    let lines = vec![
-        Line::raw(format!("Update rinkaku to v{version}?")),
-        Line::raw(""),
-        Line::raw("[Enter] update & quit  [Esc] not now"),
-    ];
-    let block = Block::bordered().title(" Update available ");
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, overlay_area);
 }
@@ -379,97 +359,5 @@ mod tests {
 
         let text = buffer_text(&terminal);
         assert!(!text.contains("Jump to"));
-    }
-
-    #[test]
-    fn should_draw_update_prompt_with_version_when_opened() {
-        let report = report_with_one_symbol();
-        let mut app = App::new(&report);
-        app.notify_update_available("1.2.3");
-        let app = app.handle_key(crate::app::InputKey::OpenUpdatePrompt);
-        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
-
-        terminal
-            .draw(|frame| {
-                draw(
-                    frame,
-                    &app,
-                    &report,
-                    &crate::diff_shape::DiffPaneContent::Empty,
-                    &[],
-                    &BlastRadiusSelection::NotApplicable,
-                    None,
-                    &[],
-                    &crate::annotation_markers::AnnotationMarkers::default(),
-                    Locale::English,
-                );
-            })
-            .expect("draw");
-
-        let text = buffer_text(&terminal);
-        assert!(text.contains("Update available"));
-        assert!(text.contains("Update rinkaku to v1.2.3?"));
-        assert!(text.contains("[Enter] update & quit  [Esc] not now"));
-    }
-
-    #[test]
-    fn should_not_draw_update_prompt_when_update_prompt_is_closed() {
-        let report = report_with_one_symbol();
-        let mut app = App::new(&report);
-        app.notify_update_available("1.2.3");
-        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
-
-        terminal
-            .draw(|frame| {
-                draw(
-                    frame,
-                    &app,
-                    &report,
-                    &crate::diff_shape::DiffPaneContent::Empty,
-                    &[],
-                    &BlastRadiusSelection::NotApplicable,
-                    None,
-                    &[],
-                    &crate::annotation_markers::AnnotationMarkers::default(),
-                    Locale::English,
-                );
-            })
-            .expect("draw");
-
-        let text = buffer_text(&terminal);
-        assert!(!text.contains("Update available"));
-    }
-
-    #[test]
-    fn should_redraw_update_prompt_when_reopened_after_dismissal() {
-        let report = report_with_one_symbol();
-        let mut app = App::new(&report);
-        app.notify_update_available("1.2.3");
-        let app = app
-            .handle_key(crate::app::InputKey::OpenUpdatePrompt)
-            .handle_key(crate::app::InputKey::PopupCancel)
-            .handle_key(crate::app::InputKey::OpenUpdatePrompt);
-        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
-
-        terminal
-            .draw(|frame| {
-                draw(
-                    frame,
-                    &app,
-                    &report,
-                    &crate::diff_shape::DiffPaneContent::Empty,
-                    &[],
-                    &BlastRadiusSelection::NotApplicable,
-                    None,
-                    &[],
-                    &crate::annotation_markers::AnnotationMarkers::default(),
-                    Locale::English,
-                );
-            })
-            .expect("draw");
-
-        let text = buffer_text(&terminal);
-        assert!(text.contains("Update available"));
-        assert!(text.contains("Update rinkaku to v1.2.3?"));
     }
 }

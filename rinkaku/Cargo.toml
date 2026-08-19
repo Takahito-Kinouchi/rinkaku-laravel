@@ -1,5 +1,12 @@
 [package]
-name = "rinkaku"
+# ADR 0083: renamed from `rinkaku` so the installed command
+# (`rinkaku-laravel`) can never collide with, or be confused for, an
+# `hiro-o918/rinkaku` install of the same binary name on the same
+# machine. No `[[bin]]` table: the bin target's name defaults to the
+# package name, which is exactly `rinkaku-laravel` now — an explicit
+# `[[bin]] name = "rinkaku"` alias would recreate the collision this
+# rename exists to remove.
+name = "rinkaku-laravel"
 # See rinkaku-core/Cargo.toml for why this is a literal version instead
 # of `version.workspace = true`.
 version = "0.6.22"
@@ -13,10 +20,6 @@ readme = "../README.md"
 keywords = ["diff", "tree-sitter", "code-review", "llm"]
 categories = ["command-line-utilities", "development-tools"]
 
-[[bin]]
-name = "rinkaku"
-path = "src/main.rs"
-
 [lints]
 workspace = true
 
@@ -29,7 +32,6 @@ clap = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
-self_update = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 indicatif = { workspace = true }

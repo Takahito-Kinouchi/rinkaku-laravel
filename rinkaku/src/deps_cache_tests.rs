@@ -213,7 +213,6 @@ diff --git a/src/main.rs b/src/main.rs
 
     fn cli_with_deps_cache(no_deps_cache: bool) -> Cli {
         Cli {
-            command: None,
             base: None,
             head: "HEAD".to_string(),
             pr: None,

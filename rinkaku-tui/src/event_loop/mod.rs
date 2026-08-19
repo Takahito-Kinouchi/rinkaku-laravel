@@ -60,11 +60,11 @@ pub struct ReviewPorts<'a> {
 /// function's own doc comment.
 ///
 /// [`TuiSession::run`]: crate::session::TuiSession::run
-// `update_check` (ADR 0054) pushed this past clippy's 7-argument
-// threshold; every parameter is already independently load-bearing (see
-// this function's own doc comment and `TuiSession::run`'s, which has the
-// same allow for the same reason), so bundling them into a struct now
-// would only rename the same values one level deeper.
+// `dependency_update` pushed this past clippy's 7-argument threshold;
+// every parameter is already independently load-bearing (see this
+// function's own doc comment and `TuiSession::run`'s, which has the same
+// allow for the same reason), so bundling them into a struct now would
+// only rename the same values one level deeper.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_app(
     terminal: &mut ratatui::DefaultTerminal,
@@ -74,10 +74,9 @@ pub(crate) fn run_app(
     repo_root: &std::path::Path,
     source_reader: &dyn source::SourceReader,
     review_ports: ReviewPorts<'_>,
-    update_check: Option<std::sync::mpsc::Receiver<String>>,
     dependency_update: Option<std::sync::mpsc::Receiver<DependencyResolutionUpdate>>,
     locale: Locale,
-) -> std::io::Result<bool> {
+) -> std::io::Result<()> {
     // ADR 0081: owned rather than a plain `&Report` borrow of the caller's
     // value, specifically so the `dependency_update` poll below can replace
     // it in place once a background-resolved file list arrives — every
@@ -274,36 +273,27 @@ pub(crate) fn run_app(
         }
 
         if app.should_quit() {
-            return Ok(app.update_requested());
+            return Ok(());
         }
 
-        // ADR 0054: `try_recv` never blocks, so polling the version-check
-        // channel here cannot delay input handling. `Err` (sender dropped
-        // without sending) is silently ignored, matching
-        // `check_update_available`'s silent-on-failure contract.
-        if let Some(receiver) = &update_check
-            && let Ok(version) = receiver.try_recv()
-        {
-            app.notify_update_available(version);
-        }
-
-        // ADR 0081: same non-blocking `try_recv` shape as `update_check`
-        // just above. `owned_report`/`report` are mutated here rather than
-        // through a builder method on `App` (which holds no `Report` of its
-        // own — every other function in this loop already takes `report`
-        // fresh as a parameter, `App::selected_detail`'s own doc comment on
-        // why): `owned_report`'s last-drawn borrow (`report`, from either
-        // the previous iteration or the initial assignment above) has
-        // already had its final read for this iteration by this point (the
-        // `terminal.draw` call above, and nothing between it and here reads
-        // `report`), so replacing `owned_report`'s value and re-deriving
-        // `report` from it immediately after is sound — every read of
-        // `report` for the rest of *this* iteration, and every iteration
-        // after, sees the merged value. `Err` (sender dropped without
-        // sending — the background thread panicked, an unreachable case
-        // given `DeferredResolver::resolve`'s own `Result`-returning
-        // contract, but not one this loop needs to distinguish from "still
-        // running") is silently ignored, same as `update_check` above.
+        // ADR 0081: non-blocking `try_recv` so polling this channel here
+        // cannot delay input handling. `owned_report`/`report` are mutated
+        // here rather than through a builder method on `App` (which holds
+        // no `Report` of its own — every other function in this loop
+        // already takes `report` fresh as a parameter,
+        // `App::selected_detail`'s own doc comment on why): `owned_report`'s
+        // last-drawn borrow (`report`, from either the previous iteration or
+        // the initial assignment above) has already had its final read for
+        // this iteration by this point (the `terminal.draw` call above, and
+        // nothing between it and here reads `report`), so replacing
+        // `owned_report`'s value and re-deriving `report` from it
+        // immediately after is sound — every read of `report` for the rest
+        // of *this* iteration, and every iteration after, sees the merged
+        // value. `Err` (sender dropped without sending — the background
+        // thread panicked, an unreachable case given
+        // `DeferredResolver::resolve`'s own `Result`-returning contract, but
+        // not one this loop needs to distinguish from "still running") is
+        // silently ignored.
         if let Some(receiver) = &dependency_update
             && let Ok(update) = receiver.try_recv()
         {
