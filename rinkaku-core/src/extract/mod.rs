@@ -442,6 +442,12 @@ fn with_definition_nodes<T>(
     lang: &dyn LanguageSupport,
     f: impl FnOnce(&[DefinitionNode], &[u8], &tree_sitter::Query) -> T,
 ) -> T {
+    // `source_for_parse` is line- and offset-preserving (see its doc
+    // comment), so every downstream consumer — changed-range overlap,
+    // signature slicing, reference collection — reads the rewritten text
+    // at the same positions the raw file has.
+    let source = lang.source_for_parse(source);
+    let source = source.as_ref();
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&lang.grammar())
@@ -601,6 +607,14 @@ fn symbol_kind(node: tree_sitter::Node, source: &[u8]) -> Option<SymbolKind> {
         // style arrow-function bindings (see the TypeScript definition
         // query); other declarators are never captured.
         "variable_declarator" => Some(SymbolKind::Function),
+        // PHP. Its other captured kinds reuse strings already mapped
+        // above: `function_definition` (Python), `method_declaration`
+        // (Go), `class_declaration`/`interface_declaration`/
+        // `enum_declaration` (TypeScript) — the flat matching here is
+        // per-captured-node, and only each language's own
+        // `definition_query` decides what gets captured, so the sharing
+        // is safe (same reasoning as HCL's `block` below).
+        "trait_declaration" => Some(SymbolKind::Trait),
         // HCL (ADR 0066): every definition is a `block`; the block-type
         // keyword decides whether it is reported. `locals` blocks are
         // expanded per attribute in `build_symbols` instead.
@@ -682,7 +696,17 @@ fn slice_signature(
 
     if matches!(
         node.kind(),
-        "class_definition" | "class_declaration" | "abstract_class_declaration"
+        // `trait_declaration` and `enum_declaration` join the class-like
+        // branch for PHP's sake: like a class, their methods carry full
+        // bodies that are implementation detail, not API surface. A
+        // TypeScript `enum_declaration` also lands here but is unaffected
+        // — its members are plain name/value pairs, so there is no method
+        // body to strip and no member definition to narrow away.
+        "class_definition"
+            | "class_declaration"
+            | "abstract_class_declaration"
+            | "trait_declaration"
+            | "enum_declaration"
     ) {
         let mut removed_ranges: Vec<std::ops::Range<usize>> = Vec::new();
         collect_method_body_ranges(node, &mut removed_ranges);
@@ -796,7 +820,13 @@ fn text_with_ranges_removed(
 fn collect_method_body_ranges(node: tree_sitter::Node, ranges: &mut Vec<std::ops::Range<usize>>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        let is_method = matches!(child.kind(), "function_definition" | "method_definition");
+        let is_method = matches!(
+            child.kind(),
+            // `method_declaration` is PHP's (Go's same-named methods are
+            // never nested inside a class-like node, so this walk never
+            // sees them).
+            "function_definition" | "method_definition" | "method_declaration"
+        );
         if is_method && let Some(body) = child.child_by_field_name("body") {
             ranges.push(body.start_byte()..child.end_byte());
             continue; // Don't descend into the stripped body.
@@ -1021,8 +1051,14 @@ fn tidy_signature_lines(text: &str, first_line_column: usize) -> String {
 /// so its container is read directly off its own `receiver` field rather
 /// than by walking ancestors.
 fn find_container(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
-    if node.kind() == "method_declaration" {
-        return go_receiver_type_name(node, source);
+    // A Go method carries its receiver on the node itself; a PHP
+    // `method_declaration` (same node kind name, different grammar) has
+    // no `receiver` field, so it falls through to the ancestor walk and
+    // picks up its enclosing class/interface/trait/enum below.
+    if node.kind() == "method_declaration"
+        && let Some(receiver) = go_receiver_type_name(node, source)
+    {
+        return Some(receiver);
     }
 
     let mut current = node.parent();
@@ -1041,6 +1077,22 @@ fn find_container(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
             "class_definition" | "class_declaration" | "abstract_class_declaration" => {
                 let name = definition_name(candidate, source)?;
                 return Some(format!("class {name}"));
+            }
+            // PHP nests captured `method_declaration` definitions inside
+            // all three of these; TypeScript shares the node kind names
+            // but never captures a definition nested inside its
+            // interface/enum bodies, so the arms are unreachable there.
+            "trait_declaration" => {
+                let name = definition_name(candidate, source)?;
+                return Some(format!("trait {name}"));
+            }
+            "interface_declaration" => {
+                let name = definition_name(candidate, source)?;
+                return Some(format!("interface {name}"));
+            }
+            "enum_declaration" => {
+                let name = definition_name(candidate, source)?;
+                return Some(format!("enum {name}"));
             }
             _ => current = candidate.parent(),
         }
