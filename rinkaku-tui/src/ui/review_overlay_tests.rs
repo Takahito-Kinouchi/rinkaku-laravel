@@ -4,6 +4,7 @@ use crate::review::{AnnotationTarget, ReviewState, SelectionSnapshot};
 use crate::ui::draw;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
+use ratatui::layout::{Position, Rect};
 use rinkaku_core::diff::LineRange;
 use rinkaku_core::extract::{ExtractedSymbol, SymbolKind};
 use rinkaku_core::graph::SymbolGraph;
@@ -87,7 +88,12 @@ fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
         .join("\n")
 }
 
-fn draw_app(app: &App, report: &Report) -> String {
+/// Draws `app`/`report` onto a fresh 100x30 [`TestBackend`] and returns the
+/// [`Terminal`] itself (rather than just its rendered text, `draw_app`'s
+/// own return value below) — the compose-cursor tests need the terminal to
+/// query the backend's own cursor visibility/position after the draw,
+/// which `buffer_text` alone cannot expose.
+fn draw_terminal(app: &App, report: &Report) -> Terminal<TestBackend> {
     let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
     terminal
         .draw(|frame| {
@@ -105,7 +111,11 @@ fn draw_app(app: &App, report: &Report) -> String {
             );
         })
         .expect("draw");
-    buffer_text(&terminal)
+    terminal
+}
+
+fn draw_app(app: &App, report: &Report) -> String {
+    buffer_text(&draw_terminal(app, report))
 }
 
 #[test]
@@ -303,4 +313,87 @@ fn should_show_last_status_message_in_annotations_list_overlay() {
     let text = draw_app(&app, &report);
 
     assert!(text.contains("posted 1 review comment(s) to PR #7"));
+}
+
+// IME-anchoring cursor tests (ADR 0085): a terminal IME anchors/engages
+// composition at the terminal's own hardware cursor, which ratatui
+// otherwise leaves hidden — these pin that the compose overlay places it
+// at the buffer's insertion point, and nowhere else.
+
+/// The compose overlay's own `70% x 50%` box (`draw_compose_overlay`'s own
+/// `centered_rect` call), computed independently of `compose_cursor_position`
+/// itself so these tests exercise real layout math rather than assert
+/// against a copy of the same private helper's own arithmetic.
+fn compose_overlay_area() -> Rect {
+    let full_area = Rect::new(0, 0, 100, 30);
+    super::centered_rect(full_area, 70, 50)
+}
+
+#[test]
+fn should_place_cursor_after_the_last_ascii_char_in_the_compose_buffer() {
+    let report = report_with_one_symbol();
+    let review = ReviewState::default()
+        .begin_compose(snapshot())
+        .push_char('h')
+        .push_char('i');
+    let app = App::new(&report).with_review(review);
+
+    let terminal = draw_terminal(&app, &report);
+
+    let overlay_area = compose_overlay_area();
+    // "hi" is 2 ASCII characters, 2 display columns wide.
+    let expected = Position::new(overlay_area.x + 1 + 2, overlay_area.y + 1);
+
+    assert!(terminal.backend().cursor_visible());
+    assert_eq!(expected, terminal.backend().cursor_position());
+}
+
+#[test]
+fn should_advance_cursor_two_columns_per_fullwidth_char_in_the_compose_buffer() {
+    // The bug this whole feature exists to fix: full-width (Japanese IME)
+    // characters occupy two terminal columns each — using char *count*
+    // instead of display *width* would anchor the cursor two columns short
+    // after "あい" (a 4-column buffer, but only 2 chars).
+    let report = report_with_one_symbol();
+    let review = ReviewState::default()
+        .begin_compose(snapshot())
+        .push_char('あ')
+        .push_char('い');
+    let app = App::new(&report).with_review(review);
+
+    let terminal = draw_terminal(&app, &report);
+
+    let overlay_area = compose_overlay_area();
+    let expected = Position::new(overlay_area.x + 1 + 4, overlay_area.y + 1);
+
+    assert!(terminal.backend().cursor_visible());
+    assert_eq!(expected, terminal.backend().cursor_position());
+}
+
+#[test]
+fn should_not_show_a_visible_cursor_when_review_is_idle() {
+    let report = report_with_one_symbol();
+    let app = App::new(&report);
+
+    let terminal = draw_terminal(&app, &report);
+
+    assert!(!terminal.backend().cursor_visible());
+}
+
+#[test]
+fn should_not_show_a_visible_cursor_in_the_annotations_list_overlay() {
+    // The cursor must appear only while composing — every other review
+    // overlay mode (list/export-menu/verdict-menu) keeps it hidden the
+    // same way every non-review screen does.
+    let report = report_with_one_symbol();
+    let review = ReviewState::default()
+        .begin_compose(snapshot())
+        .push_char('x')
+        .confirm_compose()
+        .open_list();
+    let app = App::new(&report).with_review(review);
+
+    let terminal = draw_terminal(&app, &report);
+
+    assert!(!terminal.backend().cursor_visible());
 }

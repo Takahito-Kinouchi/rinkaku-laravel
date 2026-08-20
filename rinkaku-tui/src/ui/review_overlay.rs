@@ -12,6 +12,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use unicode_width::UnicodeWidthStr;
 
 /// Draws whichever review overlay `review.mode()` currently calls for
 /// (compose, list, export menu, verdict menu), or nothing at all while
@@ -62,6 +63,72 @@ fn draw_compose_overlay(
         .block(block)
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, overlay_area);
+
+    // IME anchoring (ADR 0085): a terminal-based Japanese/CJK IME anchors
+    // and engages composition at the terminal's own hardware cursor —
+    // ratatui otherwise keeps that cursor hidden (never calling
+    // `Frame::set_cursor_position` at all, which is exactly what every
+    // *other* mode/overlay in this crate still does, keeping the cursor
+    // hidden there by construction rather than by an explicit "hide" call
+    // — `Frame::set_cursor_position`'s own doc comment: "If this method is
+    // not called, the cursor will be hidden"). Without this, a reviewer
+    // typing 全角 (full-width/Japanese) text into this box saw nothing
+    // appear until they switched the IME to 半角 and typed one ASCII
+    // character first — that stray keypress was landing in the buffer
+    // (`crate::input_translate::translate_key`'s own `ReviewMode::Compose`
+    // early return already forwarded raw multibyte input correctly), it
+    // just had nowhere visible to anchor composition against.
+    if let Some(position) = compose_cursor_position(overlay_area, buffer) {
+        frame.set_cursor_position(position);
+    }
+}
+
+/// Where the terminal's hardware cursor belongs while the compose overlay
+/// is open (ADR 0085): immediately after the buffer's last character, on
+/// the popup's own first content row, in cells relative to `overlay_area`'s
+/// origin plus its border. `None` only when the popup has no interior cell
+/// at all (`overlay_area` narrower/shorter than the 2-cell border itself —
+/// not reachable from `centered_rect`'s own percentages against any
+/// realistic terminal size, but guarded defensively rather than assumed).
+///
+/// Column math is DISPLAY width ([`UnicodeWidthStr::width`]), not char
+/// count: the buffer can hold full-width (CJK) characters, which occupy
+/// two terminal columns each, so a plain `buffer.chars().count()` would
+/// anchor the cursor short of the last character whenever one is typed.
+///
+/// The buffer renders as a single `Wrap { trim: false }` `Line` above, so
+/// once its display width exceeds the box's inner width it visually wraps
+/// onto further rows — this mirrors that with a plain `width / inner_width`
+/// (row) / `width % inner_width` (column) division rather than
+/// reimplementing `ratatui::widgets::Wrap`'s own word-wrap algorithm. That
+/// is not pixel-identical to `Wrap`'s word-boundary behavior for a long
+/// buffer with spaces in it, but this function's one hard requirement —
+/// the cursor must never land outside the popup's own borders, onto
+/// whatever pane is rendered underneath — holds regardless: both `row` and
+/// `col` are computed modulo/divided by the inner dimensions, so they are
+/// always within `0..inner_width`/`0..inner_height` by construction, and
+/// `row` is additionally clamped to the last available content row so an
+/// extremely long buffer cannot push the cursor below the box either. The
+/// common case this most needs to be exact for — an annotation's first few
+/// characters, which is also exactly when a reviewer's IME needs the
+/// anchor most — never wraps at all, so `row` is `0` and `col` is exact.
+fn compose_cursor_position(overlay_area: Rect, buffer: &str) -> Option<(u16, u16)> {
+    let inner_width = overlay_area.width.checked_sub(2)?;
+    let inner_height = overlay_area.height.checked_sub(2)?;
+    if inner_width == 0 || inner_height == 0 {
+        return None;
+    }
+    let inner_width = inner_width as usize;
+    let inner_height = inner_height as usize;
+
+    let width = UnicodeWidthStr::width(buffer);
+    let row = (width / inner_width).min(inner_height - 1);
+    let col = width % inner_width;
+
+    Some((
+        overlay_area.x + 1 + col as u16,
+        overlay_area.y + 1 + row as u16,
+    ))
 }
 
 /// The compose overlay's title location text: `"{path}:{start}-{end}
