@@ -47,7 +47,7 @@ help:
     jump_forward: "jumplist の次の位置へ進む"
     open_pr_in_browser: "現在の PR のページをブラウザで開く（--pr モードのみ）"
     toggle_help_overlay: "このヘルプ画面を切り替え"
-    quit: "終了（ソースビューでは esc/q でエントリービューに戻る）"
+    quit: "終了（q は確認ポップアップを表示、ctrl-c は確認なしで終了。ソースビューでは esc/q でエントリービューに戻る）"
   marker:
     expand_marker: "展開マーカー: 子要素の表示/非表示（空欄はリーフで展開対象なし）"
     symbol_kind_prefix: "シンボル行の種別プレフィックス（各言語のキーワードを略記）"
@@ -74,3 +74,6 @@ help:
     blast_radius: "選択したディレクトリ/ファイルを起点とする依存ツリー — 変更した場合に影響する範囲を示す"
     cycle: "依存の循環: 複数のシンボルが互いに依存し合っており、ツリーが最初に現れた地点を指して止まる"
     jumplist: "gd/gr のジャンプ履歴 — ctrl-o/ctrl-i で前後に移動できる"
+quit_confirm:
+  title: "終了確認"
+  prompt: "終了しますか？ (y/Enter: 終了, n/Esc: キャンセル)"

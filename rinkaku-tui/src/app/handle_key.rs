@@ -59,6 +59,17 @@ impl App {
     /// the same "no future variant can accidentally bypass it" reason the
     /// help overlay's own check does.
     ///
+    /// The quit-confirmation popup (ADR 0085) is handled right after the
+    /// jump popup, the same "takes over the whole key space while open"
+    /// shape once more: `PopupConfirm` (`y`/Enter) and `Quit` (Ctrl-C, kept
+    /// deliberately ungated — see that variant's own doc comment) both
+    /// quit, `PopupCancel` (`n`/Esc/`q`) closes the popup without quitting,
+    /// and every other key is swallowed (`Self::handle_quit_confirm_key`).
+    /// Opening it is `InputKey::RequestQuit`'s own arm further down this
+    /// match, not handled here — `quit_confirm_open` only ever starts
+    /// `false`, so this early return is a pure no-op on the very keypress
+    /// that sets it.
+    ///
     /// `pending_prefix` (ADR 0022's minimal `g`-prefix state machine) is
     /// cleared by every key except [`InputKey::PendingGoto`] itself, which
     /// sets it — a blanket rule applied *unconditionally at the very top of
@@ -172,6 +183,23 @@ impl App {
             return self.handle_key_with_popup_open(key);
         }
 
+        // The quit-confirmation popup (ADR 0085) takes over the whole key
+        // space next, mirroring the jump-target popup's own "takes over
+        // the whole key space while open" structure just above (and, one
+        // level up, the review overlay's/help overlay's own identical
+        // shape) — checked here, after every other popup/overlay this
+        // function already special-cases, since by construction
+        // `quit_confirm_open` can only become `true` via
+        // `InputKey::RequestQuit`'s own arm below, which
+        // `crate::input_translate::translate_key` only ever emits from its
+        // lowest-priority fallback (reachable only once none of the modes
+        // above are active) — so this check can never actually race any
+        // of the earlier ones for the same keypress, only defensively
+        // guard the *next* one once the popup is up.
+        if self.quit_confirm_open {
+            return self.handle_quit_confirm_key(key);
+        }
+
         let preserve_scroll = matches!(
             (&self.screen, self.focus, key),
             (Screen::Entry, Focus::Right, InputKey::Up)
@@ -221,6 +249,15 @@ impl App {
                 | (Screen::Entry, _, InputKey::PendingGoto)
                 | (Screen::Entry, _, InputKey::GotoDefinition)
                 | (Screen::Entry, _, InputKey::GotoReferences)
+                // ADR 0085: opening the quit-confirmation popup must not
+                // itself disturb the right pane's scroll offset — a
+                // reviewer who presses `q` by mistake and then cancels
+                // (`n`/Esc/`q`, `Self::handle_quit_confirm_key`'s
+                // `PopupCancel` arm, which returns before this function's
+                // own blanket reset ever runs again) should find their
+                // reading position exactly where they left it, not reset
+                // to the top just from the popup having briefly been open.
+                | (Screen::Entry, _, InputKey::RequestQuit)
         ) || matches!(
             (&self.screen, self.focus, self.right_pane, key),
             // Map-assisted-review finding (`InputKey::Open`'s own doc
@@ -383,6 +420,14 @@ impl App {
 
             (Screen::Entry, _, InputKey::Quit) => {
                 self.should_quit = true;
+            }
+            // ADR 0085: top-level `q` opens the confirmation popup rather
+            // than quitting directly — `Self::handle_quit_confirm_key`
+            // (dispatched by this function's own top-of-function priority
+            // check once `quit_confirm_open` is set) resolves the popup's
+            // own `y`/Enter/`n`/Esc/`q` answers from here on.
+            (Screen::Entry, _, InputKey::RequestQuit) => {
+                self.quit_confirm_open = true;
             }
             (Screen::Entry, Focus::Tree, InputKey::Up) => {
                 self.nav = self.nav.handle(Action::CursorUp, &self.tree);

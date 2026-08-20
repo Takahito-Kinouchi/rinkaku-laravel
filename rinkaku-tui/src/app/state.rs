@@ -109,6 +109,17 @@ pub struct App {
     /// stale error doesn't linger forever once the user has moved on.
     pub(super) status: Option<String>,
     pub(super) should_quit: bool,
+    /// Whether the quit-confirmation popup (ADR 0085) is open — mirrors
+    /// [`Self::help_open`]'s flag-not-`Screen` design for the identical
+    /// reason: the popup sits on top of whatever was already showing and
+    /// closing it without confirming must not disturb that underlying
+    /// state. Set by [`super::InputKey::RequestQuit`] (the entry view's
+    /// top-level `q`, `App::handle_key`'s own arm), cleared by
+    /// [`super::App::handle_quit_confirm_key`]'s `PopupConfirm`/
+    /// `PopupCancel` arms — the `PopupConfirm` arm also flips
+    /// [`Self::should_quit`] in the same step, so the popup never lingers
+    /// open past the frame that decides the app's fate either way.
+    pub(super) quit_confirm_open: bool,
     /// The review-annotations feature's own state (ADR 0048) — `App` holds
     /// exactly this one field of it, per the ADR's Module boundary
     /// decision; every review-specific transition lives on [`ReviewState`]
@@ -173,6 +184,7 @@ impl App {
             jump_forward: Vec::new(),
             status: None,
             should_quit: false,
+            quit_confirm_open: false,
             review: ReviewState::default(),
             search: SearchState::default(),
             review_sink_a_available: false,
@@ -365,6 +377,12 @@ impl App {
 
     pub fn should_quit(&self) -> bool {
         self.should_quit
+    }
+
+    /// Whether the quit-confirmation popup (ADR 0085) is currently open —
+    /// see [`Self::quit_confirm_open`]'s own doc comment.
+    pub fn quit_confirm_open(&self) -> bool {
+        self.quit_confirm_open
     }
 
     /// `--tui` mode's background dependency-resolution job status (ADR

@@ -123,8 +123,36 @@ pub enum InputKey {
     /// `total_lines - viewport_height` at draw time, matching
     /// [`Screen::Source::scroll_top`]'s own sentinel convention.
     ScrollToBottom,
-    /// `q` or Ctrl-C on the entry view: exit the application.
+    /// Ctrl-C on the entry view, unconditionally — or `y`/Enter (via
+    /// [`Self::PopupConfirm`]) while the quit-confirmation popup (ADR 0085)
+    /// is open: exit the application. Plain `q` on the entry view no
+    /// longer resolves to this variant directly (see [`Self::RequestQuit`])
+    /// — Ctrl-C stays this crate's one deliberately-ungated "just exit"
+    /// escape hatch, honored the same way whether or not the confirmation
+    /// popup happens to be open (`crate::input_translate::translate_key`'s
+    /// own quit-confirm-open early return still maps Ctrl-C to this
+    /// variant, and `App::handle_quit_confirm_key` still applies it,
+    /// rather than swallowing it as just another key while the popup is
+    /// up).
     Quit,
+    /// `q` on the entry view (ADR 0085): opens the quit-confirmation popup
+    /// instead of exiting immediately — accidentally brushing `q` used to
+    /// discard the whole TUI session (tree state, scroll position, review
+    /// annotations in progress) with a single mistyped key. The reviewer
+    /// must additionally press `y`/Enter ([`Self::PopupConfirm`] while the
+    /// popup is open) to actually quit, or `n`/Esc/`q`
+    /// ([`Self::PopupCancel`]) to back out and keep the session. Reuses
+    /// [`Self::PopupConfirm`]/[`Self::PopupCancel`] for the popup's own
+    /// two answers rather than adding dedicated variants, mirroring how
+    /// the jump-target popup and every review overlay mode already share
+    /// that same pair (`App::handle_key`'s own top-priority dispatch on
+    /// `quit_confirm_open`, mirroring [`super::jump::JumpPopup`]'s
+    /// "takes over the whole key space while open" structure). `q` inside
+    /// any *other* popup/overlay keeps its own existing meaning
+    /// unchanged — `crate::input_translate::translate_key` only ever
+    /// produces this variant from its lowest-priority fallback arm, the
+    /// one reached solely on [`Screen::Entry`] with nothing else open.
+    RequestQuit,
     /// `?`: opens the help overlay (ADR 0020). While the overlay is open,
     /// `?` instead closes it — `crate::run`'s `translate_key` maps the same
     /// physical key to this one variant either way, and `App::handle_key`

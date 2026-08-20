@@ -28,7 +28,7 @@ use crate::locale::Locale;
 use crate::source::HighlightedSourceView;
 use entry::draw_entry_screen;
 use help_overlay::draw_help_overlay;
-use overlay::draw_jump_popup;
+use overlay::{draw_jump_popup, draw_quit_confirm_popup};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use rinkaku_core::render::Report;
@@ -158,9 +158,10 @@ pub struct DrawOutcome {
 /// the source screen can composite it onto the drilled-into symbol's file
 /// as an added/removed overlay.
 ///
-/// `locale` (ADR 0055) governs only the `?` help overlay's own prose —
-/// every other pane this function draws is English-only regardless of its
-/// value (ADR 0055's scope decision).
+/// `locale` (ADR 0055) governs the `?` help overlay's own prose and, per
+/// ADR 0085's narrow amendment to ADR 0055's scope decision, the
+/// quit-confirmation popup's prompt — every other pane this function draws
+/// stays English-only regardless of its value.
 // This function's parameter list already sat at clippy's 7-argument
 // threshold before ADR 0046 added `diff_hunks`/ADR 0048 added
 // `annotation_markers`/ADR 0055 added `locale`; every existing parameter is an
@@ -276,6 +277,9 @@ pub fn draw(
     }
     if let Some(popup) = app.jump_popup() {
         draw_jump_popup(frame, popup, area);
+    }
+    if app.quit_confirm_open() {
+        draw_quit_confirm_popup(frame, area, locale);
     }
 
     // ADR 0048: the review overlay (compose/list/export/verdict) draws

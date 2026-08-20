@@ -20,13 +20,17 @@ fn should_translate_ctrl_c_to_quit_regardless_of_screen() {
 }
 
 #[test]
-fn should_translate_q_to_quit_on_entry_screen() {
+fn should_translate_q_to_request_quit_on_entry_screen() {
+    // ADR 0085: plain `q` no longer quits directly — it opens the
+    // confirmation popup (`InputKey::RequestQuit`). Only Ctrl-C
+    // (`should_translate_ctrl_c_to_quit_regardless_of_screen` above) still
+    // maps straight to `InputKey::Quit`.
     let report = empty_report();
     let app = App::new(&report);
 
     let actual = translate_key(KeyCode::Char('q'), KeyModifiers::NONE, &app);
 
-    assert_eq!(Some(InputKey::Quit), actual);
+    assert_eq!(Some(InputKey::RequestQuit), actual);
 }
 
 #[test]
@@ -591,13 +595,13 @@ fn should_translate_fullwidth_j_to_down_regardless_of_focus() {
 }
 
 #[test]
-fn should_translate_fullwidth_q_to_quit_on_entry_screen() {
+fn should_translate_fullwidth_q_to_request_quit_on_entry_screen() {
     let report = empty_report();
     let app = App::new(&report);
 
     let actual = translate_key(KeyCode::Char('ｑ'), KeyModifiers::NONE, &app);
 
-    assert_eq!(Some(InputKey::Quit), actual);
+    assert_eq!(Some(InputKey::RequestQuit), actual);
 }
 
 #[test]
@@ -672,4 +676,103 @@ fn should_not_normalize_fullwidth_characters_while_composing_an_annotation() {
     let actual = translate_key(KeyCode::Char('ｎ'), KeyModifiers::NONE, &app);
 
     assert_eq!(Some(InputKey::ComposeChar('ｎ')), actual);
+}
+
+// Quit-confirmation popup translate_key tests (ADR 0085).
+
+fn quit_confirm_open_app() -> App {
+    let report = empty_report();
+    let app = App::new(&report).handle_key(InputKey::RequestQuit);
+    assert!(app.quit_confirm_open());
+    app
+}
+
+#[test]
+fn should_translate_enter_to_popup_confirm_while_quit_confirm_is_open() {
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Enter, KeyModifiers::NONE, &app);
+
+    assert_eq!(Some(InputKey::PopupConfirm), actual);
+}
+
+#[test]
+fn should_translate_y_to_popup_confirm_while_quit_confirm_is_open() {
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Char('y'), KeyModifiers::NONE, &app);
+
+    assert_eq!(Some(InputKey::PopupConfirm), actual);
+}
+
+#[test]
+fn should_translate_esc_to_popup_cancel_while_quit_confirm_is_open() {
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Esc, KeyModifiers::NONE, &app);
+
+    assert_eq!(Some(InputKey::PopupCancel), actual);
+}
+
+#[test]
+fn should_translate_n_to_popup_cancel_while_quit_confirm_is_open() {
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Char('n'), KeyModifiers::NONE, &app);
+
+    assert_eq!(Some(InputKey::PopupCancel), actual);
+}
+
+#[test]
+fn should_translate_q_to_popup_cancel_while_quit_confirm_is_open() {
+    // `q` inside the popup closes it (back to the app) rather than
+    // quitting again — only `y`/Enter actually quit from here.
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Char('q'), KeyModifiers::NONE, &app);
+
+    assert_eq!(Some(InputKey::PopupCancel), actual);
+}
+
+#[test]
+fn should_translate_ctrl_c_to_quit_while_quit_confirm_is_open() {
+    // Ctrl-C stays the unconditional escape hatch even with the popup
+    // open — it must not be swallowed like every other unbound key.
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Char('c'), KeyModifiers::CONTROL, &app);
+
+    assert_eq!(Some(InputKey::Quit), actual);
+}
+
+#[test]
+fn should_translate_unbound_key_to_none_while_quit_confirm_is_open() {
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Char('j'), KeyModifiers::NONE, &app);
+
+    assert_eq!(None, actual);
+}
+
+#[test]
+fn should_translate_fullwidth_y_to_popup_confirm_while_quit_confirm_is_open() {
+    // Full-width normalization (`normalize_fullwidth_key`) runs before
+    // this popup's own check, so a reviewer who left a Japanese IME on
+    // gets the same answer as the half-width key (ADR on full-width
+    // normalization — see `should_translate_fullwidth_a_to_the_same_input_key_as_halfwidth_a`
+    // above for the same contract on the ordinary keymap).
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Char('ｙ'), KeyModifiers::NONE, &app);
+
+    assert_eq!(Some(InputKey::PopupConfirm), actual);
+}
+
+#[test]
+fn should_translate_fullwidth_n_to_popup_cancel_while_quit_confirm_is_open() {
+    let app = quit_confirm_open_app();
+
+    let actual = translate_key(KeyCode::Char('ｎ'), KeyModifiers::NONE, &app);
+
+    assert_eq!(Some(InputKey::PopupCancel), actual);
 }

@@ -30,6 +30,10 @@
 //! - `jump` — `selected_symbol_id`, `jump_to_symbol`, the jump popup's
 //!   own key handling, `PendingPrefix::G` bookkeeping, and the
 //!   `JumpBack`/`JumpForward` jumplist (ADR 0022)
+//! - `quit_confirm` — `RequestQuit` opening the popup,
+//!   `handle_quit_confirm_key`'s `PopupConfirm`/`PopupCancel`/`Quit`/
+//!   swallow dispatch, and the scroll-preservation guard around opening
+//!   it (ADR 0085)
 //! - `review` — `handle_review_key`'s annotations-list overlay dispatch
 //!   (ADR 0048)
 //! - `search` — Source-view search composing/cancel/next/prev dispatch
@@ -46,6 +50,7 @@ mod basics;
 mod focus;
 mod help_overlay;
 mod jump;
+mod quit_confirm;
 mod review;
 mod right_pane;
 mod scroll_reset;
