@@ -12,6 +12,7 @@
 mod handle_key;
 mod input_key;
 mod jump;
+mod quit_confirm;
 mod review_key;
 mod scroll_key;
 mod selection;

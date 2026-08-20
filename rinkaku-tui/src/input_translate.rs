@@ -14,7 +14,7 @@ use ratatui::crossterm::event::{self, KeyCode, KeyModifiers};
 
 /// Translates a raw `crossterm` key press into this crate's
 /// terminal-agnostic [`InputKey`], or `None` for a key the app does not
-/// react to. Depends on `app.screen()` to disambiguate `q`/Esc (`Quit`/
+/// react to. Depends on `app.screen()` to disambiguate `q`/Esc (`RequestQuit`/
 /// `FocusLeft` on the entry view depending on focus, `Back` on the source
 /// view) and on `app.focus()` (ADR 0020) to route Esc between `FocusLeft`
 /// and its other meanings — every other mapping is context-free.
@@ -23,7 +23,7 @@ use ratatui::crossterm::event::{self, KeyCode, KeyModifiers};
 /// help overlay is open, `?`/Esc/`q` all translate to `ToggleHelp` (closing
 /// it) regardless of what they would otherwise mean, and this check runs
 /// before every other arm so none of them — especially `q`, which would
-/// otherwise mean `Quit` — can reach past the overlay. `App::handle_key`'s
+/// otherwise mean `RequestQuit` — can reach past the overlay. `App::handle_key`'s
 /// own `help_open` guard is a second, independent layer of the same rule
 /// (swallowing every non-`ToggleHelp` key while open) — belt and braces,
 /// since "the overlay is a safe action that can never accidentally quit
@@ -33,6 +33,22 @@ use ratatui::crossterm::event::{self, KeyCode, KeyModifiers};
 /// help overlay's own structure: while the jump-target popup is open,
 /// `j`/`k`/Up/Down move its own selection, Enter confirms (`PopupConfirm`),
 /// Esc cancels (`PopupCancel`), and every other key is swallowed.
+///
+/// `app.quit_confirm_open()` (ADR 0085) is the next short-circuit after
+/// that: while the quit-confirmation popup is open, `y`/Enter confirm
+/// (`PopupConfirm`), `n`/Esc/`q` cancel (`PopupCancel`), Ctrl-C still quits
+/// unconditionally (`Quit` — see that variant's own doc comment on why it
+/// alone is exempt from this popup's swallow), and every other key is
+/// swallowed. This popup can only ever be opened by this same function's
+/// own lowest-priority `q` fallback arm near the bottom (`RequestQuit`),
+/// which is itself only reachable once every check above — including this
+/// one — has already declined the keypress, so this check can never
+/// observe `quit_confirm_open` and one of the higher-priority states
+/// (`help_open`, a `jump_popup`, an active review overlay, a composing
+/// search) simultaneously true in practice; it is still placed as its own
+/// early return, not folded into the bottom fallback, for the same
+/// defensive "no future arm can accidentally bypass it" reason every
+/// popup above it already is.
 ///
 /// `app.pending_prefix()` (ADR 0022) is consulted only for `d`/`r`: when a
 /// `g` press is still pending, `d` resolves to `GotoDefinition` and `r` to
@@ -142,6 +158,30 @@ pub(crate) fn translate_key(code: KeyCode, modifiers: KeyModifiers, app: &App) -
             KeyCode::Down | KeyCode::Char('j') => Some(InputKey::Down),
             KeyCode::Enter => Some(InputKey::PopupConfirm),
             KeyCode::Esc => Some(InputKey::PopupCancel),
+            _ => None,
+        };
+    }
+
+    // The quit-confirmation popup (ADR 0085) is the next short-circuit,
+    // mirroring the jump popup's own structure just above: `y`/Enter
+    // confirm (`PopupConfirm`), `n`/Esc/`q` cancel (`PopupCancel`) — reused
+    // from the jump popup/review overlay rather than adding dedicated
+    // variants, since `App::handle_key`'s own top-priority dispatch on
+    // `quit_confirm_open` already disambiguates which popup a given
+    // `PopupConfirm`/`PopupCancel` resolves against. Ctrl-C is the one key
+    // *not* swallowed by this early return's catch-all `_ => None` below —
+    // it keeps mapping to `Quit` even while this popup is open, matching
+    // that variant's own doc comment on staying an unconditional escape
+    // hatch. Checked after the jump popup (this codebase's precedent for
+    // "no other popup can be open while this one already is," since the
+    // key that opens this popup — `q`'s lowest-priority fallback arm,
+    // below — is itself only reachable once every check above has already
+    // declined the keypress).
+    if app.quit_confirm_open() {
+        return match code {
+            KeyCode::Enter | KeyCode::Char('y') => Some(InputKey::PopupConfirm),
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => Some(InputKey::PopupCancel),
+            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => Some(InputKey::Quit),
             _ => None,
         };
     }
@@ -288,7 +328,16 @@ pub(crate) fn translate_key(code: KeyCode, modifiers: KeyModifiers, app: &App) -
         }
         KeyCode::Esc if on_source_screen => Some(InputKey::Back),
         KeyCode::Char('q') if on_source_screen => Some(InputKey::Back),
-        KeyCode::Char('q') => Some(InputKey::Quit),
+        // ADR 0085: top-level `q` on the entry view opens the
+        // quit-confirmation popup rather than quitting directly — see
+        // `InputKey::RequestQuit`'s own doc comment. This is the lowest-
+        // priority arm in the whole function, reached only once every
+        // check above (review overlay, search composing, help overlay,
+        // jump popup, quit-confirm popup itself) has already declined the
+        // keypress, which is exactly why `quit_confirm_open` can never
+        // already be `true` here (this arm is the only thing that ever
+        // sets it).
+        KeyCode::Char('q') => Some(InputKey::RequestQuit),
         _ => None,
     }
 }

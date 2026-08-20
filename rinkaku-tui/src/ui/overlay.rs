@@ -1,16 +1,18 @@
 //! Small popups composited on top of whatever screen was already rendered
 //! underneath, after the pane split has drawn everything else: the
-//! jump-target popup (ADR 0022). [`centered_rect`] is this module's own
-//! layout primitive, shared with the larger `?` help overlay in
-//! [`super::help_overlay`] (ADR 0028 split, once this module's combined
-//! help-overlay + popup content grew past the file-size threshold).
+//! jump-target popup (ADR 0022) and the quit-confirmation popup (ADR
+//! 0085). [`centered_rect`] is this module's own layout primitive, shared
+//! with the larger `?` help overlay in [`super::help_overlay`] (ADR 0028
+//! split, once this module's combined help-overlay + popup content grew
+//! past the file-size threshold).
 
 use super::scroll::{truncate_to_width, windowed_rows_with_indicators};
+use crate::locale::Locale;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
 /// A `Rect` centered within `area`, `percent_width`/`percent_height` of
 /// `area`'s own dimensions — the standard `ratatui` centered-popup layout
@@ -115,6 +117,36 @@ pub(crate) fn draw_jump_popup(frame: &mut Frame, popup: &crate::app::JumpPopup, 
 
     let block = Block::bordered().title(" Jump to (enter: go, esc: cancel) ");
     let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, overlay_area);
+}
+
+/// Draws the quit-confirmation popup (ADR 0085) centered over `full_area`:
+/// a short title plus a `y`/Enter-quit, `n`/Esc-cancel prompt, reusing the
+/// same `Clear`-first, centered-bordered-box compositing every other popup
+/// in this module already uses — just smaller (40% x 20%) than the
+/// jump-target popup above, since its content is a single fixed-length
+/// prompt rather than a variable-length candidate list.
+///
+/// `locale` selects the prompt's language via `rust_i18n::t!`, the same
+/// mechanism [`super::help_overlay::draw_help_overlay`] already uses for
+/// the `?` overlay's own prose (ADR 0055) — an intentional, narrow
+/// amendment to ADR 0055's "every other screen stays English-only" scope
+/// decision (see ADR 0085's own Consequences): an accidental-quit guard is
+/// exactly the kind of low-frequency, high-stakes prompt worth reading
+/// correctly regardless of locale, unlike the rest of this crate's
+/// English-only chrome.
+pub(crate) fn draw_quit_confirm_popup(frame: &mut Frame, full_area: Rect, locale: Locale) {
+    let overlay_area = centered_rect(full_area, 40, 20);
+    frame.render_widget(Clear, overlay_area);
+
+    let tag = locale.tag();
+    let title = format!(" {} ", rust_i18n::t!("quit_confirm.title", locale = tag));
+    let prompt = rust_i18n::t!("quit_confirm.prompt", locale = tag).into_owned();
+
+    let block = Block::bordered().title(title);
+    let paragraph = Paragraph::new(prompt)
+        .block(block)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, overlay_area);
 }
 
@@ -359,5 +391,110 @@ mod tests {
 
         let text = buffer_text(&terminal);
         assert!(!text.contains("Jump to"));
+    }
+
+    // Quit-confirmation popup (ADR 0085).
+
+    #[test]
+    fn should_draw_quit_confirm_popup_when_open() {
+        let report = report_with_one_symbol();
+        let app = App::new(&report).handle_key(crate::app::InputKey::RequestQuit);
+        assert!(app.quit_confirm_open());
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+
+        terminal
+            .draw(|frame| {
+                draw(
+                    frame,
+                    &app,
+                    &report,
+                    &crate::diff_shape::DiffPaneContent::Empty,
+                    &[],
+                    &BlastRadiusSelection::NotApplicable,
+                    None,
+                    &[],
+                    &crate::annotation_markers::AnnotationMarkers::default(),
+                    Locale::English,
+                );
+            })
+            .expect("draw");
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("Quit?"));
+        assert!(text.contains("Quit rinkaku-laravel?"));
+        assert!(text.contains("y/Enter: quit"));
+        assert!(text.contains("n/Esc: cancel"));
+    }
+
+    #[test]
+    fn should_draw_quit_confirm_popup_in_japanese_when_locale_is_japanese() {
+        let report = report_with_one_symbol();
+        let app = App::new(&report).handle_key(crate::app::InputKey::RequestQuit);
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+
+        terminal
+            .draw(|frame| {
+                draw(
+                    frame,
+                    &app,
+                    &report,
+                    &crate::diff_shape::DiffPaneContent::Empty,
+                    &[],
+                    &BlastRadiusSelection::NotApplicable,
+                    None,
+                    &[],
+                    &crate::annotation_markers::AnnotationMarkers::default(),
+                    Locale::Japanese,
+                );
+            })
+            .expect("draw");
+
+        let text = buffer_text(&terminal);
+        // `TestBackend`'s buffer devotes two cells to every double-width
+        // CJK glyph (the second cell an empty-symbol placeholder that
+        // `Cell::symbol` renders as a literal space), so a run of CJK
+        // characters reads back with one extra space after each
+        // double-width char — mirrors `ui::help_overlay::tests`'s own
+        // `widened` helper for the identical reason.
+        let widened = |s: &str| -> String {
+            s.chars()
+                .map(|c| {
+                    if unicode_width::UnicodeWidthChar::width(c) == Some(2) {
+                        format!("{c} ")
+                    } else {
+                        c.to_string()
+                    }
+                })
+                .collect()
+        };
+        assert!(text.contains(&widened("終了確認")));
+        assert!(text.contains(&widened("終了しますか？")));
+    }
+
+    #[test]
+    fn should_not_draw_quit_confirm_popup_when_closed() {
+        let report = report_with_one_symbol();
+        let app = App::new(&report);
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+
+        terminal
+            .draw(|frame| {
+                draw(
+                    frame,
+                    &app,
+                    &report,
+                    &crate::diff_shape::DiffPaneContent::Empty,
+                    &[],
+                    &BlastRadiusSelection::NotApplicable,
+                    None,
+                    &[],
+                    &crate::annotation_markers::AnnotationMarkers::default(),
+                    Locale::English,
+                );
+            })
+            .expect("draw");
+
+        let text = buffer_text(&terminal);
+        assert!(!text.contains("Quit rinkaku-laravel?"));
     }
 }

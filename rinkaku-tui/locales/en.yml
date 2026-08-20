@@ -47,7 +47,7 @@ help:
     jump_forward: "Jump forward to the next location in the jumplist"
     open_pr_in_browser: "Open the current PR's page in a web browser (--pr mode only)"
     toggle_help_overlay: "Toggle this help overlay"
-    quit: "Quit (esc/q return to the entry view from the source view)"
+    quit: "Quit, with a confirmation popup on q (ctrl-c skips it); esc/q return to the entry view from the source view"
   marker:
     expand_marker: "Expand marker: children shown / hidden (blank = leaf, nothing to expand)"
     symbol_kind_prefix: "Symbol row's kind prefix, abbreviated from the language's own keyword"
@@ -74,3 +74,6 @@ help:
     blast_radius: "The dependency tree rooted at a selected directory or file, showing what would be affected if it changed"
     cycle: "A dependency loop: two or more symbols depend on each other, so the tree stops and points back to where it first appeared"
     jumplist: "The history of gd/gr jump locations — ctrl-o/ctrl-i move back/forward through it"
+quit_confirm:
+  title: "Quit?"
+  prompt: "Quit rinkaku-laravel? (y/Enter: quit, n/Esc: cancel)"
