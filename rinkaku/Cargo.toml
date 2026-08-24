@@ -9,7 +9,7 @@
 name = "rinkaku-laravel"
 # See rinkaku-core/Cargo.toml for why this is a literal version instead
 # of `version.workspace = true`.
-version = "0.6.22"
+version = "0.6.23"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true

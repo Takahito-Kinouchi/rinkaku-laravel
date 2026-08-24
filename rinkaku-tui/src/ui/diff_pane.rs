@@ -6,7 +6,8 @@
 
 use super::RightPaneRender;
 use super::scroll::{
-    Body, render_marked_scrollable_pane, truncate_line_to_width, truncate_to_width_keeping_tail,
+    Body, ReadThroughRows, render_marked_scrollable_pane, truncate_line_to_width,
+    truncate_to_width_keeping_tail,
 };
 use super::style::{expand_tabs_text, pane_border_style, styled_content_spans};
 use crate::app::{App, DiffTarget, DiffViewMode, Focus, ReadThrough};
@@ -272,7 +273,7 @@ pub(crate) fn draw_diff_pane(
         app.right_pane_scroll(),
         area,
         focused,
-        &marked_rows,
+        read_through_rows(&marked_rows),
     );
     RightPaneRender {
         clamped_scroll: Some(render.clamped_scroll),
@@ -324,6 +325,25 @@ fn range_bar_lines(
         return Vec::new();
     };
     diff_shape::marked_body_rows(diff_content, range, view_mode)
+}
+
+/// What this frame offers to read through (ADR 0088 amendment), given the
+/// range bar's own marked rows: the selected symbol when there is one, and
+/// otherwise the whole pane body.
+///
+/// `marked_rows` is empty exactly when the cursor sits on a row with no
+/// [`crate::app::DiffFocus`] — a file row, or a changed file rinkaku
+/// extracted no symbols from at all (a Blade template, a config file, a
+/// migration). Those are the diffs a reviewer can least afford `ctrl-f` to
+/// skip: the pane is showing the file's whole diff and nothing else in the
+/// tree will ever show it again. Scoping the measurement to a symbol left
+/// them measuring zero, so `ctrl-f` moved the cursor straight past them.
+fn read_through_rows(marked_rows: &[usize]) -> ReadThroughRows<'_> {
+    if marked_rows.is_empty() {
+        ReadThroughRows::WholeBody
+    } else {
+        ReadThroughRows::Symbol(marked_rows)
+    }
 }
 
 /// Whether the row currently under the cursor is a present (non-removed)

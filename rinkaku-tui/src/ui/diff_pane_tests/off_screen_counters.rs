@@ -58,14 +58,35 @@ index e69de29..4b825dc 100644
     (report, diff_text)
 }
 
+/// [`draw_tall_symbol_frame`] with the cursor left on the *file* row (row
+/// 0, `App::new`'s own default position) instead of stepping down onto the
+/// symbol — the selection that carries no `DiffFocus`, and so the one ADR
+/// 0088's amendment widened the measurement for.
+fn draw_tall_file_row_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
+    draw_frame(scroll, lines, false)
+}
+
 /// Draws one frame of the entry screen at 80x20 with the cursor on the
 /// symbol row and unified view forced (split is the default per ADR 0044's
 /// amendment; unified keeps this module's row arithmetic to one column),
 /// returning the frame's [`crate::ui::DrawOutcome`] and its rendered text.
 fn draw_tall_symbol_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
+    draw_frame(scroll, lines, true)
+}
+
+fn draw_frame(
+    scroll: usize,
+    lines: usize,
+    on_symbol_row: bool,
+) -> (crate::ui::DrawOutcome, String) {
     let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
-    let app = App::new(&report)
-        .handle_key(InputKey::Down)
+    let app = App::new(&report);
+    let app = if on_symbol_row {
+        app.handle_key(InputKey::Down)
+    } else {
+        app
+    };
+    let app = app
         .handle_key(InputKey::ToggleSplitView)
         .with_right_pane_scroll(scroll);
     let diff_files = crate::diff_view::parse_diff_hunks(&diff_text);
@@ -160,4 +181,57 @@ fn should_report_no_counters_and_show_no_marker_when_the_whole_symbol_fits() {
     );
     assert!(!text.contains('▼'), "rendered frame was:\n{text}");
     assert!(!text.contains('▲'), "rendered frame was:\n{text}");
+}
+
+#[test]
+fn should_offer_the_whole_file_to_read_through_when_the_cursor_is_on_a_file_row() {
+    // Dogfooding finding, the reason for ADR 0088's amendment: a file row
+    // carries no `DiffFocus`, so the original symbol-scoped measurement
+    // reported nothing to read and `ctrl-f` moved the cursor straight past
+    // a diff the pane was only showing a screenful of. The whole body is
+    // 41 rows (a `@@` header plus 40 changed lines) and 14 fit, so 27 are
+    // still below.
+    let (outcome, _) = draw_tall_file_row_frame(0, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 27,
+            step: 13,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_leave_the_title_counters_to_symbol_selections() {
+    // The file-scoped `(1-14/41)` indicator already answers "is there more"
+    // for this same content, and the counters' bold yellow means "this is
+    // the range bar's symbol" — a file row paints no bar.
+    let (_, text) = draw_tall_file_row_frame(0, 40);
+
+    let title_row = text
+        .lines()
+        .find(|line| line.contains("Diff"))
+        .unwrap_or_else(|| panic!("expected a Diff pane title, got:\n{text}"));
+    assert!(
+        title_row.contains("(1-14/41)"),
+        "title row was: {title_row}"
+    );
+    assert!(!title_row.contains('▼'), "title row was: {title_row}");
+    assert!(!title_row.contains('▲'), "title row was: {title_row}");
+}
+
+#[test]
+fn should_report_the_rows_left_above_a_scrolled_file_row_selection() {
+    let (outcome, _) = draw_tall_file_row_frame(20, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 20,
+            rows_below: 7,
+            step: 13,
+        }),
+        outcome.diff_read_through
+    );
 }
