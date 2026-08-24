@@ -252,6 +252,20 @@ pub(crate) fn translate_key(code: KeyCode, modifiers: KeyModifiers, app: &App) -
         KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
             Some(InputKey::ScrollHalfPageUp)
         }
+        // `Ctrl-f`/`Ctrl-b` (ADR 0088): read one screen further through the
+        // selected symbol's change, spilling over into a tree-cursor move
+        // once none of it is left off-screen. Placed with the `Ctrl-d`/
+        // `Ctrl-u` arms above — and, like them, before any plain
+        // `Char('f')`/`Char('b')` arm a future binding might add — so the
+        // modifier can never be silently dropped. Emitted regardless of
+        // screen/focus; `App::handle_read_through_key` picks the right
+        // target (and no-ops off `Screen::Entry`).
+        KeyCode::Char('f') if modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(InputKey::ReadThroughDown)
+        }
+        KeyCode::Char('b') if modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(InputKey::ReadThroughUp)
+        }
         KeyCode::Char('d') => Some(InputKey::ToggleDiff),
         KeyCode::Char('r') => Some(InputKey::ToggleBlastRadius),
         KeyCode::Char('v') => Some(InputKey::ToggleSplitView),

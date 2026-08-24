@@ -258,6 +258,16 @@ impl App {
                 // reading position exactly where they left it, not reset
                 // to the top just from the popup having briefly been open.
                 | (Screen::Entry, _, InputKey::RequestQuit)
+                // ADR 0088: the read-through keys are dispatched through
+                // `handle_read_through_key` after this method returns, the
+                // same third-step shape ADR 0026's four scroll variants
+                // already use — and for the same reason they are listed
+                // here: their scrolling branch would otherwise be zeroed a
+                // moment before that step ran. Their *other* branch (move
+                // the cursor) does its own reset there, so exempting them
+                // here loses nothing.
+                | (Screen::Entry, _, InputKey::ReadThroughDown)
+                | (Screen::Entry, _, InputKey::ReadThroughUp)
         ) || matches!(
             (&self.screen, self.focus, self.right_pane, key),
             // Map-assisted-review finding (`InputKey::Open`'s own doc
@@ -355,13 +365,19 @@ impl App {
             // `pending_prefix = None` reset at the top of this function
             // runs on this path too; the actual state mutation happens
             // when `crate::run_app` calls `handle_scroll_key` next.
+            // ADR 0088's read-through keys join them for the same reason
+            // (their step size, and whether they scroll at all, is measured
+            // at draw time) — plus, on this screen, they have nothing to act
+            // on: `handle_read_through_key` returns early off `Screen::Entry`.
             (
                 Screen::Source { .. },
                 _,
                 InputKey::ScrollHalfPageDown
                 | InputKey::ScrollHalfPageUp
                 | InputKey::ScrollToTop
-                | InputKey::ScrollToBottom,
+                | InputKey::ScrollToBottom
+                | InputKey::ReadThroughDown
+                | InputKey::ReadThroughUp,
             ) => {}
             // ADR 0049: `v`/`V` is a genuinely global toggle, not scoped to
             // `Screen::Entry`'s diff pane — it flips the same
@@ -733,7 +749,9 @@ impl App {
                 InputKey::ScrollHalfPageDown
                 | InputKey::ScrollHalfPageUp
                 | InputKey::ScrollToTop
-                | InputKey::ScrollToBottom,
+                | InputKey::ScrollToBottom
+                | InputKey::ReadThroughDown
+                | InputKey::ReadThroughUp,
             ) => {}
             // Unreachable while `handle_key` is entered directly (the popup
             // interception above returns before this match whenever

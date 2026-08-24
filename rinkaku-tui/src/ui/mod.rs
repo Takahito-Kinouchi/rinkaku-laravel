@@ -118,6 +118,34 @@ pub struct DrawOutcome {
     /// the requested one — decision 4 amendment's "narrow-terminal
     /// fallback wrong-symbol sync" hazard, closed.
     pub effective_diff_view_mode: Option<crate::app::DiffViewMode>,
+    /// ADR 0088's read-through report for the frame just drawn: how much of
+    /// the selected symbol's change the Diff pane left off-screen, and how
+    /// far one screen of it advances. `None` whenever the Diff pane did not
+    /// render its hunks this frame (a different right pane, the source
+    /// screen, or the placeholder path) — and `crate::run_app` reads this
+    /// field off the frame it just drew rather than remembering it across
+    /// frames the way it does the viewport heights above, so that `None`
+    /// means "nothing to read through" for the very next key rather than
+    /// "keep whatever the last Diff frame said". A stale count would
+    /// otherwise scroll a pane it never described (the Detail pane, say,
+    /// one keypress after `d`).
+    pub diff_read_through: Option<crate::app::ReadThrough>,
+}
+
+/// What a right-pane draw reports back to [`draw`]: the clamped scroll
+/// offset `crate::run_app` folds into `App` (`None` when the pane rendered
+/// a placeholder with nothing to scroll) and, for the Diff pane only, ADR
+/// 0088's [`crate::app::ReadThrough`] measurement of the same frame.
+///
+/// One struct shared by all three right panes rather than the Diff pane
+/// returning a wider type of its own: `draw_entry_screen` returns whichever
+/// pane ran, so a per-pane return type would have to be unified there
+/// anyway — and a bare tuple would leave the two `Option`s positionally
+/// interchangeable at every seam they pass through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct RightPaneRender {
+    pub(crate) clamped_scroll: Option<usize>,
+    pub(crate) read_through: Option<crate::app::ReadThrough>,
 }
 
 /// Draws one full frame: the entry view (tree + right pane split) or the
@@ -190,7 +218,7 @@ pub fn draw(
 
     let mut outcome = match app.screen() {
         Screen::Entry => {
-            let clamped = draw_entry_screen(
+            let right_pane_render = draw_entry_screen(
                 frame,
                 app,
                 report,
@@ -226,12 +254,13 @@ pub fn draw(
                 None
             };
             DrawOutcome {
-                clamped_right_pane_scroll: clamped,
+                clamped_right_pane_scroll: right_pane_render.clamped_scroll,
                 scroll_viewport_height,
                 tree_viewport_height,
                 clamped_help_scroll: None,
                 help_scroll_viewport_height: None,
                 effective_diff_view_mode,
+                diff_read_through: right_pane_render.read_through,
             }
         }
         Screen::Source {
@@ -257,6 +286,7 @@ pub fn draw(
                 clamped_help_scroll: None,
                 help_scroll_viewport_height: None,
                 effective_diff_view_mode: None,
+                diff_read_through: None,
             }
         }
     };

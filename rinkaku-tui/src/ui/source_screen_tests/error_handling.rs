@@ -117,6 +117,7 @@ fn should_report_none_clamped_scroll_but_source_viewport_height_when_source_scre
         clamped_help_scroll: None,
         help_scroll_viewport_height: None,
         effective_diff_view_mode: None,
+        diff_read_through: None,
     };
     terminal
         .draw(|frame| {

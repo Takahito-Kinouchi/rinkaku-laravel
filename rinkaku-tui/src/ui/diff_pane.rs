@@ -4,11 +4,12 @@
 //! row within it is selected — a symbol selection only changes where the
 //! pane auto-scrolls to.
 
+use super::RightPaneRender;
 use super::scroll::{
-    Body, render_scrollable_pane, truncate_line_to_width, truncate_to_width_keeping_tail,
+    Body, render_marked_scrollable_pane, truncate_line_to_width, truncate_to_width_keeping_tail,
 };
 use super::style::{expand_tabs_text, pane_border_style, styled_content_spans};
-use crate::app::{App, DiffTarget, DiffViewMode, Focus};
+use crate::app::{App, DiffTarget, DiffViewMode, Focus, ReadThrough};
 use crate::diff_shape::{self, AttributedHunk, DiffPaneContent};
 use crate::diff_view::{DiffLine, DiffLineKind};
 use crate::highlight::{self, HighlightedFile, TokenSpan};
@@ -142,9 +143,13 @@ pub(crate) fn diff_pane_header_lines(
 /// applies — it is an O(rows) lookup, not the O(diff size) hunk-walk
 /// `diff_content` itself avoids recomputing.
 ///
-/// Returns the clamped scroll offset actually applied, or `None` when the
-/// placeholder path was taken — mirrors `draw_detail_pane`'s own return
-/// value for the identical reason (`render_scrollable_pane`'s doc comment).
+/// Returns the clamped scroll offset actually applied — `None` when the
+/// placeholder path was taken, mirroring `draw_detail_pane`'s own return
+/// value for the identical reason (`render_scrollable_pane`'s doc comment)
+/// — together with ADR 0088's [`ReadThrough`] report for the selected
+/// symbol, likewise `None` on the placeholder path (nothing rendered means
+/// nothing measured, and `crate::run_app` must not read a stale count as
+/// if it described the frame just drawn).
 pub(crate) fn draw_diff_pane(
     frame: &mut Frame,
     app: &App,
@@ -153,7 +158,7 @@ pub(crate) fn draw_diff_pane(
     diff_highlights: &[HighlightedFile],
     annotation_markers: &crate::annotation_markers::AnnotationMarkers,
     area: Rect,
-) -> Option<usize> {
+) -> RightPaneRender {
     use crate::diff_shape::DiffPaneContent;
 
     let focused = app.focus() == Focus::Right;
@@ -176,7 +181,7 @@ pub(crate) fn draw_diff_pane(
                 .block(block)
                 .wrap(ratatui::widgets::Wrap { trim: false });
             frame.render_widget(paragraph, area);
-            return None;
+            return RightPaneRender::default();
         }
         DiffPaneContent::File(hunks) => hunks,
     };
@@ -259,7 +264,7 @@ pub(crate) fn draw_diff_pane(
         Body::Single(&unified_lines)
     };
 
-    Some(render_scrollable_pane(
+    let render = render_marked_scrollable_pane(
         frame,
         DIFF_PANE_TITLE,
         &header_lines,
@@ -267,7 +272,20 @@ pub(crate) fn draw_diff_pane(
         app.right_pane_scroll(),
         area,
         focused,
-    ))
+        &marked_rows,
+    );
+    RightPaneRender {
+        clamped_scroll: Some(render.clamped_scroll),
+        read_through: Some(ReadThrough {
+            rows_above: render.outside.above,
+            rows_below: render.outside.below,
+            // One row of overlap between consecutive screens (`less`'s own
+            // convention): stepping by the full visible span would drop the
+            // bottom row, which is routinely only *partly* visible — the
+            // one row a reviewer has read least of.
+            step: render.visible_logical_span.saturating_sub(1).max(1),
+        }),
+    }
 }
 
 /// The logical-line offsets (the same unit [`crate::diff_shape::marked_body_rows`]

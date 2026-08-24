@@ -38,6 +38,8 @@
 //!   (ADR 0048)
 //! - `search` — Source-view search composing/cancel/next/prev dispatch
 //!   (ADR 0057)
+//! - `read_through` — `handle_read_through_key`'s scroll-then-advance
+//!   dispatch and its scoping (ADR 0088)
 
 use crate::app::App;
 use crate::app::InputKey;
@@ -51,6 +53,7 @@ mod focus;
 mod help_overlay;
 mod jump;
 mod quit_confirm;
+mod read_through;
 mod review;
 mod right_pane;
 mod scroll_reset;

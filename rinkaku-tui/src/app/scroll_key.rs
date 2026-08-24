@@ -5,7 +5,7 @@
 //! ~20 [`InputKey`] variants that don't need viewport height don't pay the
 //! plumbing cost.
 
-use super::{App, Focus, InputKey, Screen};
+use super::{App, Focus, InputKey, ReadThrough, Screen};
 use crate::nav::Action;
 
 impl App {
@@ -151,6 +151,64 @@ impl App {
             // Any non-scroll key on the source screen — deliberate no-op.
             // `crate::run_app` only calls this for the four scroll
             // variants, so this arm is defensive.
+            _ => {}
+        }
+        self
+    }
+
+    /// Applies ADR 0088's read-through keys (`ctrl-f`/`ctrl-b`) given
+    /// `read_through` — what the last drawn Diff pane frame measured about
+    /// the selected symbol's own extent, threaded in by `crate::run_app`
+    /// for the same reason [`Self::handle_scroll_key`]'s viewport height
+    /// is: `App` cannot know it.
+    ///
+    /// One rule, in both directions: **while part of the selected symbol is
+    /// still off-screen that way, scroll the pane; otherwise move the tree
+    /// cursor.** That is what lets a single held key walk a whole PR without
+    /// the reviewer having to notice in advance which symbols overflow the
+    /// pane — the gap ADR 0088 exists to close.
+    ///
+    /// `None` (no Diff pane drawn yet, a different right pane, or the Diff
+    /// pane's placeholder path) means nothing was measured, so there is
+    /// nothing to read through and both keys are plain cursor movement.
+    ///
+    /// Moving the cursor resets `right_pane_scroll` to 0, exactly as a plain
+    /// `j`/`k` does via [`Self::handle_key`]'s own blanket reset (which this
+    /// key is exempt from — it has to be, since the scrolling branch must
+    /// survive it). ADR 0027's auto-scroll then re-aims the pane if the row
+    /// landed on has a diff focus of its own; the reset is what keeps a row
+    /// that has *no* focus (a file or directory row) from inheriting the
+    /// previous symbol's reading position.
+    ///
+    /// Only [`Screen::Entry`] acts: the source screen has its own scroll
+    /// keys and no tree cursor to spill over into.
+    pub fn handle_read_through_key(
+        mut self,
+        key: InputKey,
+        read_through: Option<ReadThrough>,
+    ) -> Self {
+        if !matches!(self.screen, Screen::Entry) {
+            return self;
+        }
+        let read_through = read_through.unwrap_or_default();
+        match key {
+            InputKey::ReadThroughDown if read_through.rows_below > 0 => {
+                self.right_pane_scroll = self.right_pane_scroll.saturating_add(read_through.step);
+            }
+            InputKey::ReadThroughDown => {
+                self.nav = self.nav.handle(Action::CursorDown, &self.tree);
+                self.right_pane_scroll = 0;
+            }
+            InputKey::ReadThroughUp if read_through.rows_above > 0 => {
+                self.right_pane_scroll = self.right_pane_scroll.saturating_sub(read_through.step);
+            }
+            InputKey::ReadThroughUp => {
+                self.nav = self.nav.handle(Action::CursorUp, &self.tree);
+                self.right_pane_scroll = 0;
+            }
+            // `crate::run_app` only routes the two read-through variants
+            // here, mirroring [`Self::handle_scroll_key`]'s own defensive
+            // catch-all.
             _ => {}
         }
         self

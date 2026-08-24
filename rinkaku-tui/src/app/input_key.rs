@@ -112,6 +112,26 @@ pub enum InputKey {
     ScrollHalfPageDown,
     /// `Ctrl-u`: the reverse of [`Self::ScrollHalfPageDown`].
     ScrollHalfPageUp,
+    /// `Ctrl-f` (ADR 0088): read one screen further through the change,
+    /// wherever that screen happens to live. While any part of the selected
+    /// symbol's diff is still below the viewport this scrolls the Diff pane
+    /// by one screen; once none is, it moves the tree cursor down a row
+    /// instead, letting a reviewer walk an entire PR — including the symbols
+    /// whose changed block is several screens tall — on one key.
+    ///
+    /// Distinct from [`Self::ScrollHalfPageDown`] precisely because it can
+    /// move the cursor: it is a reading motion, not a scroll. Like the
+    /// scroll variants it depends on the pane's rendered height (and on how
+    /// much of the symbol that height covered), so it is handled by
+    /// [`App::handle_read_through_key`] rather than [`App::handle_key`].
+    /// Works in either focus on [`Screen::Entry`]; with a right pane other
+    /// than [`RightPane::Diff`] there are no symbol rows to measure, so it
+    /// degrades to plain cursor movement.
+    ReadThroughDown,
+    /// `Ctrl-b`: the reverse of [`Self::ReadThroughDown`] — scrolls back
+    /// while part of the selected symbol is above the viewport, then moves
+    /// the tree cursor up a row.
+    ReadThroughUp,
     /// `gg` (ADR 0026, resolved by `crate::lib::translate_key`'s `pending_prefix`
     /// arm the same way `gd`/`gr` are, ADR 0022): scroll the reading pane
     /// to the top (line 0). Handled by [`App::handle_scroll_key`] alongside
