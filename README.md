@@ -30,8 +30,25 @@ cargo install --git https://github.com/Takahito-Kinouchi/rinkaku-laravel rinkaku
 
 コマンド名は `rinkaku-laravel`（上流の `rinkaku` とは別名 — ADR 0083）。
 自動アップデート機能は持たない（本フォークに GitHub Releases が無いため）ので、
-更新は `cargo install` の再実行で行う。以前アップストリーム版の `rinkaku` を
-インストールしていた場合は `cargo uninstall rinkaku` で削除しておくこと。
+更新は `cargo install` の再実行で行う。確実に入れ直したいときは `--force` を付ける。
+以前アップストリーム版の `rinkaku` をインストールしていた場合は
+`cargo uninstall rinkaku` で削除しておくこと。
+
+## バージョン
+
+`<上流のバージョン>+laravel.<n>` 形式（ADR 0089）。`+` の前が、このフォークが
+ベースにしている上流 [hiro-o918/rinkaku](https://github.com/hiro-o918/rinkaku)
+のバージョンで、`<n>` がその上に積んだフォーク側の版数です。
+
+```sh
+rinkaku-laravel --version
+# rinkaku-laravel 0.6.22+laravel.1 (fork of hiro-o918/rinkaku)
+#                 ^^^^^^ 上流ベース  ^ フォーク版数
+```
+
+上流のどのコミットを取り込んだかは [`docs/UPSTREAM.md`](docs/UPSTREAM.md) に
+記録しています（取り込み手順もそちら）。上流の `CHANGELOG.md` はフォーク時点で
+凍結されており、フォーク側の変更履歴は `docs/adr/` と PR にあります。
 
 ## 使い方（最小）
 
