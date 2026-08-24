@@ -9,7 +9,13 @@
 name = "rinkaku-laravel"
 # See rinkaku-core/Cargo.toml for why this is a literal version instead
 # of `version.workspace = true`.
-version = "0.6.23"
+#
+# ADR 0089: `<upstream base>+laravel.<n>` — the number itself records which
+# `hiro-o918/rinkaku` release this fork is built on, and can never collide
+# with a version upstream will mint. Bump `n` for each fork change; on
+# taking upstream in, raise the base to upstream's own version and reset
+# `n` to 1. `docs/UPSTREAM.md` carries the exact base commit.
+version = "0.6.22+laravel.1"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
