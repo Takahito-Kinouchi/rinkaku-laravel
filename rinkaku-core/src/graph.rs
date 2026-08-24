@@ -16,6 +16,7 @@
 //! one root always exists, even when literally every node participates in
 //! some cycle.
 
+use crate::path_proximity::path_proximity_rank;
 use crate::render::FileReport;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -496,9 +497,10 @@ fn collect_nodes(files: &[FileReport]) -> Vec<Node> {
 /// rationale as `deps::resolve_dependencies`'s self-reference exclusion.
 /// A referenced name matching more than one changed symbol (possible once
 /// duplicate `(path, name)` pairs get distinct node IDs) produces an edge
-/// to each match, not just one — the caller has no way to disambiguate
-/// under v1's name-only matching (ADR 0003), so all plausible edges are
-/// kept rather than arbitrarily picking one.
+/// only to the matches closest to the referencing file in the repository
+/// tree, ties kept in full — see [`push_nearest`] for why name-only
+/// matching (ADR 0003) needs that narrowing in a monorepo, and why an
+/// equidistant tie is still not disambiguated (ADR 0087).
 ///
 /// The two reference sets are matched by different rules (ADR 0068): a
 /// `referenced_method_names` entry (a receiver-based call or method-spec
@@ -641,13 +643,16 @@ fn push_container_member_edges<'a>(
     let Some(members) = members_by_container.get(name) else {
         return;
     };
-    for member in members {
-        let is_sibling = member.path == from.path && member.container == from.container;
-        if member.id == from.id || is_sibling {
-            continue;
-        }
-        push_edge(from, member, seen, edges);
-    }
+    let eligible: Vec<&'a Node> = members
+        .iter()
+        .copied()
+        .filter(|member| {
+            let is_sibling = member.path == from.path && member.container == from.container;
+            member.id != from.id && !is_sibling
+        })
+        .collect();
+
+    push_nearest(from, &eligible, seen, edges);
 }
 
 /// The container-matching rule [`push_matching_edges`] applies to one
@@ -682,24 +687,65 @@ fn push_matching_edges<'a>(
     let Some(targets) = nodes_by_name.get(name) else {
         return false;
     };
-    let mut matched = false;
-    for target in targets {
-        if target.id == from.id {
-            continue;
-        }
-        let container_ok = match rule {
-            ContainerRule::Any => true,
-            ContainerRule::SameOrNone => {
-                target.container.is_none() || target.container == from.container
+    let eligible: Vec<&'a Node> = targets
+        .iter()
+        .copied()
+        .filter(|target| {
+            if target.id == from.id {
+                return false;
             }
-        };
-        if !container_ok {
-            continue;
+            match rule {
+                ContainerRule::Any => true,
+                ContainerRule::SameOrNone => {
+                    target.container.is_none() || target.container == from.container
+                }
+            }
+        })
+        .collect();
+
+    push_nearest(from, &eligible, seen, edges)
+}
+
+/// Appends an edge from `from` to each candidate tied at the best
+/// [`path_proximity_rank`], dropping the rest, and reports whether there
+/// was any candidate at all.
+///
+/// Name-only resolution (ADR 0003) cannot tell two same-named definitions
+/// apart, and `collect_edges` used to answer that by linking every one of
+/// them. In a monorepo that is reliably wrong: Laravel's naming
+/// conventions put an `OrderController` and a `StoreOrderRequest` in every
+/// application, so a diff touching two of them linked each application's
+/// controller to *both* applications' request classes, inflated the fan-in
+/// counts derived from those edges, and mis-shaped the very tree the
+/// ordering is read from (ADR 0087).
+///
+/// Proximity is the same proxy `deps` already ranks its "Depends on"
+/// candidates by — nearer in the directory tree is likelier to be the
+/// intended target, absent type information. Ties are all kept: candidates
+/// at equal distance are equally plausible, and picking among them would
+/// be the arbitrary choice this deliberately avoids. The common Laravel
+/// shape relies on that — a container's changed members share one file, so
+/// they tie and all survive.
+fn push_nearest<'a>(
+    from: &'a Node,
+    candidates: &[&'a Node],
+    seen: &mut HashSet<(&'a str, &'a str)>,
+    edges: &mut Vec<Edge>,
+) -> bool {
+    let Some(best) = candidates
+        .iter()
+        .map(|candidate| path_proximity_rank(&from.path, &candidate.path))
+        .min()
+    else {
+        return false;
+    };
+
+    for candidate in candidates {
+        if path_proximity_rank(&from.path, &candidate.path) == best {
+            push_edge(from, candidate, seen, edges);
         }
-        matched = true;
-        push_edge(from, target, seen, edges);
     }
-    matched
+    true
 }
 
 /// Appends a non-cycle edge unless one with the same `(from, to)` pair was
