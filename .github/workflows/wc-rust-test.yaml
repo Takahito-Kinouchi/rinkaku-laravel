@@ -3,6 +3,9 @@ name: Rust Tests
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test Suite (${{ matrix.os }})
