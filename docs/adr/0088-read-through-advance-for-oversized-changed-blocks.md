@@ -131,6 +131,33 @@ a diff focus of its own.
   the title would then describe the state *before* the last keypress,
   which is exactly when the reviewer is looking at it.
 
+## Amendment (2026-08-24): read-through covers a symbol-less selection too
+
+Decision 3 as first written scoped the measurement to the **selected
+symbol**, and the very first real session found the hole that leaves.
+
+A file row carries no `crate::app::DiffFocus`, so `range_bar_lines`
+returns nothing, the count is zero, and `ctrl-f` moves the cursor —
+past a pane that was showing one screenful of a diff several screens
+tall. The same holds for every changed file rinkaku extracts no symbols
+from at all: in this fork's own target codebases that is Blade
+templates, config files, migrations, JSON. Those files never acquire a
+symbol row, so the file row is the *only* place their diff is ever
+shown, and it was exactly the place read-through declined to work.
+
+**When the selection carries no symbol, the whole pane body is what
+there is to read through.** `ui::scroll::ReadThroughRows` makes the
+three cases explicit — `Symbol(rows)`, `WholeBody`, `Unmeasured` (every
+pane but the Diff pane) — so the measurement no longer infers "nothing
+to read" from "no symbol here".
+
+The `▲N`/`▼N` counters stay symbol-scoped. On a `WholeBody` selection
+the title's own `(first-last/total)` indicator already answers the same
+question about the same content, and the counters' bold yellow earns its
+meaning by matching a range bar that a symbol-less selection does not
+paint; a second pair of numbers beside the first would add noise, not
+information.
+
 ## Consequences
 
 - `render_scrollable_pane` keeps its current signature and return type

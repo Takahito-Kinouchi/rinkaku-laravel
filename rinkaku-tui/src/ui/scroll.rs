@@ -107,7 +107,7 @@ pub(crate) fn render_scrollable_pane(
         requested_scroll,
         area,
         focused,
-        &[],
+        ReadThroughRows::Unmeasured,
     )
     .clamped_scroll
 }
@@ -135,11 +135,10 @@ pub(crate) struct ScrollablePaneRender {
     pub(crate) visible_logical_span: usize,
 }
 
-/// [`render_scrollable_pane`] plus ADR 0088's marks accounting: `marked_rows`
-/// are logical row offsets into `body` that belong to the selected symbol
-/// (the same `crate::diff_shape::marked_body_rows` output the Diff pane's
-/// range bar already paints), and the returned [`ScrollablePaneRender`]
-/// reports how many of them the frame just drawn left off-screen.
+/// [`render_scrollable_pane`] plus ADR 0088's read-through accounting:
+/// `rows` says what the pane offers to read through (see
+/// [`ReadThroughRows`]), and the returned [`ScrollablePaneRender`] reports
+/// how much of it the frame just drawn left off-screen.
 ///
 /// Kept as the shared implementation of both entry points, rather than the
 /// Diff pane growing its own copy of the wrap/clamp sequence: the counts
@@ -168,7 +167,7 @@ pub(crate) fn render_marked_scrollable_pane(
     requested_scroll: usize,
     area: Rect,
     focused: bool,
-    marked_rows: &[usize],
+    rows: ReadThroughRows<'_>,
 ) -> ScrollablePaneRender {
     // `Block::inner` already folds in the border's own row/column, matching
     // `draw_source_screen`'s `saturating_sub(2)` convention for a bordered
@@ -240,9 +239,12 @@ pub(crate) fn render_marked_scrollable_pane(
         Some(indicator) => format!("{}{indicator} ", title.trim_end()),
         None => title.to_string(),
     };
-    let outside = marked_rows_outside_viewport(&origins, marked_rows, display_row, viewport_height);
+    let outside = marked_rows_outside_viewport(&origins, rows, display_row, viewport_height);
     let block = Block::bordered()
-        .title(marked_title_line(title, outside))
+        .title(marked_title_line(
+            title,
+            symbol_scoped_counters(rows, outside),
+        ))
         .border_style(pane_border_style(focused));
 
     frame.render_widget(block, area);
@@ -254,6 +256,25 @@ pub(crate) fn render_marked_scrollable_pane(
         clamped_scroll: logical_scroll,
         outside,
         visible_logical_span: visible_logical_span(&origins, display_row, viewport_height),
+    }
+}
+
+/// The counters the title should show: ADR 0088's amendment keeps them
+/// scoped to a *symbol* selection. On a [`ReadThroughRows::WholeBody`] pane
+/// the title's own `(first-last/total)` indicator already answers the same
+/// question for the same content, so a second pair of numbers beside it
+/// would say nothing new — and the counters' bold yellow is meaningful
+/// precisely because it matches a range bar that a symbol-less selection
+/// does not paint.
+fn symbol_scoped_counters(
+    rows: ReadThroughRows<'_>,
+    outside: MarkedRowsOutsideViewport,
+) -> MarkedRowsOutsideViewport {
+    match rows {
+        ReadThroughRows::Symbol(_) => outside,
+        ReadThroughRows::WholeBody | ReadThroughRows::Unmeasured => {
+            MarkedRowsOutsideViewport::default()
+        }
     }
 }
 
@@ -324,7 +345,29 @@ pub(crate) struct MarkedRowsOutsideViewport {
     pub(crate) below: usize,
 }
 
-/// Counts the `marked_rows` that fall outside the display rows
+/// What a pane offers to read through (ADR 0088, scope widened by its own
+/// amendment) — the input [`marked_rows_outside_viewport`] counts against.
+///
+/// The two non-empty variants exist because a reviewer's reading unit is
+/// not always a symbol. A file row (and any changed file rinkaku extracts
+/// no symbols from at all — a Blade template, a config file, a migration)
+/// carries no [`crate::app::DiffFocus`], so scoping the measurement to the
+/// selected symbol left those rows with nothing to read through and
+/// degraded `ctrl-f` to a plain cursor move over exactly the diffs that
+/// most need paging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadThroughRows<'a> {
+    /// The selected symbol's own rows — the same slice the Diff pane's
+    /// range bar paints.
+    Symbol(&'a [usize]),
+    /// No symbol is selected, so the whole pane body is the thing to read.
+    WholeBody,
+    /// This pane does not participate in read-through at all (every pane
+    /// except the Diff pane).
+    Unmeasured,
+}
+
+/// Counts the rows of `rows` that fall outside the display rows
 /// `[display_row, display_row + viewport_height)`, given `origins`
 /// (either wrap helper's per-display-row logical-line index).
 ///
@@ -342,7 +385,7 @@ pub(crate) struct MarkedRowsOutsideViewport {
 /// all", and a row the reviewer is already looking at is not that.
 pub(crate) fn marked_rows_outside_viewport(
     origins: &[usize],
-    marked_rows: &[usize],
+    rows: ReadThroughRows<'_>,
     display_row: usize,
     viewport_height: usize,
 ) -> MarkedRowsOutsideViewport {
@@ -352,15 +395,28 @@ pub(crate) fn marked_rows_outside_viewport(
         return MarkedRowsOutsideViewport::default();
     };
 
-    MarkedRowsOutsideViewport {
-        above: marked_rows
-            .iter()
-            .filter(|&&row| row < first_visible)
-            .count(),
-        below: marked_rows
-            .iter()
-            .filter(|&&row| row > last_visible)
-            .count(),
+    match rows {
+        ReadThroughRows::Unmeasured => MarkedRowsOutsideViewport::default(),
+        ReadThroughRows::Symbol(marked_rows) => MarkedRowsOutsideViewport {
+            above: marked_rows
+                .iter()
+                .filter(|&&row| row < first_visible)
+                .count(),
+            below: marked_rows
+                .iter()
+                .filter(|&&row| row > last_visible)
+                .count(),
+        },
+        // Every logical row is in play, so the counts are the distances to
+        // the body's own two ends rather than a scan: rows `0..first_visible`
+        // above, and `last_visible+1..=last_logical` below.
+        ReadThroughRows::WholeBody => {
+            let last_logical = origins.last().copied().unwrap_or(0);
+            MarkedRowsOutsideViewport {
+                above: first_visible,
+                below: last_logical.saturating_sub(last_visible),
+            }
+        }
     }
 }
 
