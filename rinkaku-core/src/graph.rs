@@ -511,28 +511,60 @@ fn collect_nodes(files: &[FileReport]) -> Vec<Node> {
 /// grammar shape), so matching it against every same-named symbol
 /// regardless of container produces false edges into unrelated classes/
 /// interfaces/traits.
-fn collect_edges(files: &[FileReport], nodes: &[Node]) -> Vec<Edge> {
-    let mut nodes_by_name: HashMap<&str, Vec<&Node>> = HashMap::new();
+///
+/// A `referenced_names` entry that matches no changed symbol by name at
+/// all falls back to matching a *container* name, linking the referrer to
+/// that container's changed members (ADR 0086) — see
+/// [`push_container_member_edges`]. Only as a fallback: when the container
+/// is itself among the changed symbols, it is the precise target the
+/// reference denotes, and reaching past it to its members would add edges
+/// that say nothing the direct one does not.
+///
+/// Duplicate edges (same `from`, same `to`) are collapsed. A name can
+/// appear in both reference sets — a method called through a receiver in
+/// one place and named as a bare reference in another — and would
+/// otherwise emit the same edge twice, rendering the target a second time
+/// as a `(see above)` line in the change graph.
+fn collect_edges<'a>(files: &[FileReport], nodes: &'a [Node]) -> Vec<Edge> {
+    let mut nodes_by_name: HashMap<&'a str, Vec<&'a Node>> = HashMap::new();
+    let mut members_by_container: HashMap<&'a str, Vec<&'a Node>> = HashMap::new();
     for node in nodes {
         nodes_by_name
             .entry(node.name.as_str())
             .or_default()
             .push(node);
+        if let Some(container_type) = node.container.as_deref().and_then(container_type_name) {
+            members_by_container
+                .entry(container_type)
+                .or_default()
+                .push(node);
+        }
     }
 
     let mut edges = Vec::new();
+    let mut seen: HashSet<(&'a str, &'a str)> = HashSet::new();
     let mut node_index = 0;
     for file in files {
         for symbol in &file.symbols {
             let from = &nodes[node_index];
             for referenced_name in &symbol.referenced_names {
-                push_matching_edges(
+                let matched_a_symbol = push_matching_edges(
                     &nodes_by_name,
                     referenced_name,
                     from,
                     ContainerRule::SameOrNone,
+                    &mut seen,
                     &mut edges,
                 );
+                if !matched_a_symbol {
+                    push_container_member_edges(
+                        &members_by_container,
+                        referenced_name,
+                        from,
+                        &mut seen,
+                        &mut edges,
+                    );
+                }
             }
             for referenced_method_name in &symbol.referenced_method_names {
                 push_matching_edges(
@@ -540,6 +572,7 @@ fn collect_edges(files: &[FileReport], nodes: &[Node]) -> Vec<Edge> {
                     referenced_method_name,
                     from,
                     ContainerRule::Any,
+                    &mut seen,
                     &mut edges,
                 );
             }
@@ -547,6 +580,74 @@ fn collect_edges(files: &[FileReport], nodes: &[Node]) -> Vec<Edge> {
         }
     }
     edges
+}
+
+/// The type name inside a [`Node::container`] label, or `None` for a label
+/// carrying no name.
+///
+/// `extract::find_container` builds the label from a fixed set of shapes —
+/// `impl X`, `trait X`, `class X`, `interface X`, `enum X`, or a Go
+/// method's bare receiver type name — so the type name is the label minus
+/// a known leading keyword. Recovering it here (rather than carrying it as
+/// a second field on every `ExtractedSymbol`) keeps the change to the one
+/// consumer that needs it.
+///
+/// A generic Rust `impl` (`impl Cache<K, V>`) yields the parameterized
+/// text `Cache<K, V>`, which no reference name will equal — such an impl's
+/// members simply stay unlinked, the same as before ADR 0086.
+fn container_type_name(container: &str) -> Option<&str> {
+    const CONTAINER_KEYWORDS: [&str; 5] = ["impl ", "trait ", "class ", "interface ", "enum "];
+
+    let name = CONTAINER_KEYWORDS
+        .iter()
+        .find_map(|keyword| container.strip_prefix(keyword))
+        .unwrap_or(container)
+        .trim();
+
+    (!name.is_empty()).then_some(name)
+}
+
+/// Pushes an edge from `from` to every changed symbol contained in the
+/// container named `name` (ADR 0086). Called only for a reference that
+/// matched no changed symbol by name — see [`collect_edges`].
+///
+/// A diff's changed symbols are usually *members* — a controller action, a
+/// service method — while the references that reach them across files name
+/// the *container*: a `StoreOrderRequest $request` type hint, a `new
+/// Invoice()`, an `Order::query()` scope. Under name-only matching (ADR
+/// 0003) those two granularities never meet, so every changed member of a
+/// referenced class was left with no incoming edge at all — it became its
+/// own graph root and rendered as a top-level entry beside the code that
+/// depends on it, in file order rather than dependency order.
+///
+/// Linking a container reference to all of that container's changed
+/// members over-approximates: the referrer may only use some of them. That
+/// is the same trade `compute_test_coverage` already makes for coverage
+/// (ADR 0063) and for the same reason — the graph allocates a reviewer's
+/// attention rather than proving reachability, and a member that outranks
+/// its dependents in the tree is the more misleading error.
+///
+/// A reference from inside the named container itself (`self::`,
+/// `static::`, `Foo::class` written within `Foo`) is skipped: it would fan
+/// an edge out to every changed sibling, turning each class into a mesh
+/// that says nothing about which member depends on which.
+fn push_container_member_edges<'a>(
+    members_by_container: &HashMap<&'a str, Vec<&'a Node>>,
+    name: &str,
+    from: &'a Node,
+    seen: &mut HashSet<(&'a str, &'a str)>,
+    edges: &mut Vec<Edge>,
+) {
+    let Some(members) = members_by_container.get(name) else {
+        return;
+    };
+    for member in members {
+        let is_sibling = member.path == from.path && member.container == from.container;
+        if member.id == from.id || is_sibling {
+            continue;
+        }
+        push_edge(from, member, seen, edges);
+    }
 }
 
 /// The container-matching rule [`push_matching_edges`] applies to one
@@ -563,16 +664,25 @@ enum ContainerRule {
 
 /// Pushes an edge from `from` to every node in `nodes_by_name[name]` that
 /// passes the self-reference exclusion and `rule`'s container check.
-fn push_matching_edges(
-    nodes_by_name: &HashMap<&str, Vec<&Node>>,
+///
+/// Returns whether `name` named at least one legitimate target, which is
+/// what [`collect_edges`] tests before falling back to container matching
+/// (ADR 0086). Deliberately "a target was found" rather than "an edge was
+/// appended": [`push_edge`] suppresses a duplicate pair, and a reference
+/// whose only edge was already recorded has still resolved to a symbol and
+/// must not fall back.
+fn push_matching_edges<'a>(
+    nodes_by_name: &HashMap<&'a str, Vec<&'a Node>>,
     name: &str,
-    from: &Node,
+    from: &'a Node,
     rule: ContainerRule,
+    seen: &mut HashSet<(&'a str, &'a str)>,
     edges: &mut Vec<Edge>,
-) {
+) -> bool {
     let Some(targets) = nodes_by_name.get(name) else {
-        return;
+        return false;
     };
+    let mut matched = false;
     for target in targets {
         if target.id == from.id {
             continue;
@@ -586,12 +696,29 @@ fn push_matching_edges(
         if !container_ok {
             continue;
         }
-        edges.push(Edge {
-            from: from.id.clone(),
-            to: target.id.clone(),
-            is_cycle: false,
-        });
+        matched = true;
+        push_edge(from, target, seen, edges);
     }
+    matched
+}
+
+/// Appends a non-cycle edge unless one with the same `(from, to)` pair was
+/// already appended — see [`collect_edges`]'s doc comment for how the same
+/// pair can be derived twice.
+fn push_edge<'a>(
+    from: &'a Node,
+    to: &'a Node,
+    seen: &mut HashSet<(&'a str, &'a str)>,
+    edges: &mut Vec<Edge>,
+) {
+    if !seen.insert((from.id.as_str(), to.id.as_str())) {
+        return;
+    }
+    edges.push(Edge {
+        from: from.id.clone(),
+        to: to.id.clone(),
+        is_cycle: false,
+    });
 }
 
 /// Maps each node's [`NodeId`] to its position in `nodes`, letting the
