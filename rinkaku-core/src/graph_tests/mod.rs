@@ -10,6 +10,10 @@
 //!   match stays unrestricted (ADR 0068), and a bare reference that
 //!   matched no name falls back to the changed members of the container
 //!   it names (ADR 0086)
+//! - `path_proximity_edges` — `collect_edges`'s proximity narrowing
+//!   (ADR 0087): a name matching several changed symbols links only to
+//!   the closest, so a monorepo's per-application name collisions do not
+//!   link one application to another
 //! - `roots_and_cycles` — `find_roots` (via SCC condensation) and
 //!   `mark_cycle_edges`, including multi-cycle and shared-descendant
 //!   non-cycle cases
@@ -31,6 +35,7 @@ mod build_graph;
 mod compute_fan_ins;
 mod compute_test_coverage;
 mod container_aware_edges;
+mod path_proximity_edges;
 mod pivot;
 mod roots_and_cycles;
 mod stamp_ids;

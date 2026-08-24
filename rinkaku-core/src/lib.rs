@@ -13,6 +13,7 @@ pub mod file_size;
 pub mod graph;
 pub mod language;
 pub mod non_symbol_changes;
+pub(crate) mod path_proximity;
 pub mod pipeline;
 pub mod progress;
 pub mod project_scope;
