@@ -137,6 +137,13 @@ pub struct ExtractedSymbol {
     /// `crate::graph::collect_edges` restricts a `referenced_names`
     /// match to changed symbols with no container, or the same container
     /// as the referencing symbol itself (ADR 0068).
+    ///
+    /// A bare reference can, however, name a *container* — most of these
+    /// captures are type references, and a diff's changed symbols are
+    /// usually that container's members rather than the container itself
+    /// — so `collect_edges` also matches an entry here against
+    /// [`container`](Self::container), linking the referrer to the
+    /// container's changed members (ADR 0086).
     #[serde(skip)]
     pub referenced_names: Vec<String>,
     /// Names this definition references via a receiver or method-spec

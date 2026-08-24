@@ -12,12 +12,18 @@ use std::collections::{HashMap, HashSet};
 
 #[test]
 fn should_link_trait_methodspec_to_impl_but_not_a_stoplisted_receiver_call_on_the_same_name() {
+    // `build` reaches its receiver through `default_store()` rather than
+    // through a `Store` parameter, so the stoplisted `.get()` call is the
+    // only thing that could link `build` to the impl's `get`. Naming
+    // `Store` in `build`'s signature would link the two through the
+    // container rule (ADR 0086) — a real dependency, but not the one this
+    // test pins.
     let diff = "\
 diff --git a/src/lib.rs b/src/lib.rs
 index 57b03c6..1e5c9a1 100644
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -1,15 +1,15 @@
+@@ -1,19 +1,19 @@
 -trait Cache {
 +pub trait Cache {
      fn get(&self) -> i32;
@@ -33,9 +39,13 @@ index 57b03c6..1e5c9a1 100644
      }
  }
 
- fn build(state: Store) -> i32 {
--    state.get()
-+    state.get() as i32
+ fn default_store() -> Store {
+     Store
+ }
+
+ fn build() -> i32 {
+-    default_store().get()
++    default_store().get() as i32
  }
 ";
     let source = "\
@@ -51,8 +61,12 @@ impl Cache for Store {
     }
 }
 
-fn build(state: Store) -> i32 {
-    state.get() as i32
+fn default_store() -> Store {
+    Store
+}
+
+fn build() -> i32 {
+    default_store().get() as i32
 }
 ";
     let read_file = fake_reader(HashMap::from([("src/lib.rs", source)]));
