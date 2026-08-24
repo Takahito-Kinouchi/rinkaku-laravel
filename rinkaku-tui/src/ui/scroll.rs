@@ -17,7 +17,7 @@
 use super::style::pane_border_style;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use unicode_width::UnicodeWidthChar;
@@ -99,6 +99,77 @@ pub(crate) fn render_scrollable_pane(
     area: Rect,
     focused: bool,
 ) -> usize {
+    render_marked_scrollable_pane(
+        frame,
+        title,
+        header_lines,
+        body,
+        requested_scroll,
+        area,
+        focused,
+        &[],
+    )
+    .clamped_scroll
+}
+
+/// What [`render_marked_scrollable_pane`] reports back about the frame it
+/// just drew: the clamped scroll offset every caller already folds back
+/// into `App`, plus ADR 0088's two marks-derived values the Diff pane
+/// needs — how much of the selected symbol is off-screen, and how far one
+/// screen actually advances.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct ScrollablePaneRender {
+    /// The actually-applied (clamped) scroll offset, in `requested_scroll`'s
+    /// own logical-line unit — see [`render_scrollable_pane`]'s doc comment
+    /// on why every caller folds this back into `App`.
+    pub(crate) clamped_scroll: usize,
+    /// How many `marked_rows` fall above/below the viewport this frame
+    /// ([`marked_rows_outside_viewport`]). All-zero for a caller that
+    /// passes no marks.
+    pub(crate) outside: MarkedRowsOutsideViewport,
+    /// How many *logical* rows the viewport currently spans — the read-
+    /// through step (ADR 0088) is derived from this rather than from
+    /// `viewport_height`, since a wrapped body shows fewer logical rows
+    /// than it has display rows and stepping by the display count would
+    /// scroll clean past content that was never drawn.
+    pub(crate) visible_logical_span: usize,
+}
+
+/// [`render_scrollable_pane`] plus ADR 0088's marks accounting: `marked_rows`
+/// are logical row offsets into `body` that belong to the selected symbol
+/// (the same `crate::diff_shape::marked_body_rows` output the Diff pane's
+/// range bar already paints), and the returned [`ScrollablePaneRender`]
+/// reports how many of them the frame just drawn left off-screen.
+///
+/// Kept as the shared implementation of both entry points, rather than the
+/// Diff pane growing its own copy of the wrap/clamp sequence: the counts
+/// are only correct if they are measured against the very wrap origins and
+/// clamped display row this same call handed to `Paragraph::scroll`, and
+/// two copies of that sequence would be two chances for them to disagree.
+///
+/// The title carries the counts as a bold-yellow `▲N`/`▼N` suffix after
+/// the existing `(first-last/total)` indicator — bold yellow because that
+/// is the range bar's own color (`crate::ui::diff_pane::range_bar_span`),
+/// which is what ties the numbers to the selected symbol rather than to
+/// the file-scoped indicator sitting immediately to their left. Written
+/// after that indicator so a title too narrow to hold both loses the
+/// symbol-scoped half first — the file-scoped one is the half that is
+/// meaningful for every pane.
+// One parameter past clippy's threshold, and every one of them is an
+// independent piece of already-computed content (see `crate::ui::draw`'s
+// own identical allowance) — `marked_rows` in particular is computed by
+// the caller for the range bar and passed through, not derived here.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_marked_scrollable_pane(
+    frame: &mut Frame,
+    title: &str,
+    header_lines: &[Line<'static>],
+    body: Body<'_>,
+    requested_scroll: usize,
+    area: Rect,
+    focused: bool,
+    marked_rows: &[usize],
+) -> ScrollablePaneRender {
     // `Block::inner` already folds in the border's own row/column, matching
     // `draw_source_screen`'s `saturating_sub(2)` convention for a bordered
     // pane's inner height without a manual subtraction here.
@@ -108,7 +179,7 @@ pub(crate) fn render_scrollable_pane(
         Layout::vertical([Constraint::Length(header_rows), Constraint::Min(0)]).areas(inner_area);
 
     let viewport_height = body_area.height as usize;
-    let (content_len, display_row, logical_scroll) = match body {
+    let (content_len, display_row, logical_scroll, origins) = match body {
         Body::Single(lines) => {
             let viewport_width = body_area.width as usize;
             let (wrapped, origins) = wrap_lines_with_origins(lines, viewport_width);
@@ -118,7 +189,7 @@ pub(crate) fn render_scrollable_pane(
             frame.render_widget(paragraph, body_area);
             let logical_scroll =
                 resolve_folded_back_logical_line(&origins, display_row, requested_scroll);
-            (wrapped.len(), display_row, logical_scroll)
+            (wrapped.len(), display_row, logical_scroll, origins)
         }
         Body::Split(left, right) => {
             // A 1-column gutter between the two sides, mirroring a border's
@@ -154,7 +225,7 @@ pub(crate) fn render_scrollable_pane(
             );
             let logical_scroll =
                 resolve_folded_back_logical_line(&origins, display_row, requested_scroll);
-            (left_rows.len(), display_row, logical_scroll)
+            (left_rows.len(), display_row, logical_scroll, origins)
         }
     };
 
@@ -169,8 +240,9 @@ pub(crate) fn render_scrollable_pane(
         Some(indicator) => format!("{}{indicator} ", title.trim_end()),
         None => title.to_string(),
     };
+    let outside = marked_rows_outside_viewport(&origins, marked_rows, display_row, viewport_height);
     let block = Block::bordered()
-        .title(title)
+        .title(marked_title_line(title, outside))
         .border_style(pane_border_style(focused));
 
     frame.render_widget(block, area);
@@ -178,7 +250,118 @@ pub(crate) fn render_scrollable_pane(
         let header = Paragraph::new(header_lines[..header_rows as usize].to_vec());
         frame.render_widget(header, header_area);
     }
-    logical_scroll
+    ScrollablePaneRender {
+        clamped_scroll: logical_scroll,
+        outside,
+        visible_logical_span: visible_logical_span(&origins, display_row, viewport_height),
+    }
+}
+
+/// The pane title with ADR 0088's off-screen counters appended: `▲N` for
+/// marked rows above the viewport, `▼N` for those below, each omitted when
+/// its count is zero (so a pane with no marks, or a symbol that fits on
+/// screen, renders exactly the title it did before this feature existed).
+///
+/// Bold yellow, matching `crate::ui::diff_pane::range_bar_span` — see
+/// [`render_marked_scrollable_pane`]'s doc comment on why the color is
+/// load-bearing here rather than decorative.
+fn marked_title_line(title: String, outside: MarkedRowsOutsideViewport) -> Line<'static> {
+    let mut spans = vec![Span::raw(title)];
+    let counter_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    if outside.above > 0 {
+        spans.push(Span::styled(format!("▲{} ", outside.above), counter_style));
+    }
+    if outside.below > 0 {
+        spans.push(Span::styled(format!("▼{} ", outside.below), counter_style));
+    }
+    Line::from(spans)
+}
+
+/// How many distinct logical rows the viewport currently shows —
+/// [`ScrollablePaneRender::visible_logical_span`]'s value. `0` when there is
+/// nothing to show at all; otherwise at least 1, since a visible display row
+/// was wrapped from exactly one logical row.
+fn visible_logical_span(origins: &[usize], display_row: usize, viewport_height: usize) -> usize {
+    match visible_logical_range(origins, display_row, viewport_height) {
+        Some((first, last)) => last.saturating_sub(first) + 1,
+        None => 0,
+    }
+}
+
+/// The first and last *logical* rows any part of which is visible in the
+/// display rows `[display_row, display_row + viewport_height)`, or `None`
+/// when the pane shows nothing at all (empty content, or zero height).
+/// The one place ADR 0088's two derived values agree on what "on screen"
+/// means.
+fn visible_logical_range(
+    origins: &[usize],
+    display_row: usize,
+    viewport_height: usize,
+) -> Option<(usize, usize)> {
+    if origins.is_empty() || viewport_height == 0 {
+        return None;
+    }
+    let last_display_row = display_row
+        .saturating_add(viewport_height)
+        .saturating_sub(1)
+        .min(origins.len() - 1);
+    Some((
+        display_row_to_logical_line(origins, display_row),
+        display_row_to_logical_line(origins, last_display_row),
+    ))
+}
+
+/// How many *marked* logical rows sit outside the viewport (ADR 0088) —
+/// the Diff pane's answer to "does the selected symbol's change continue
+/// past this screen, and by how much", counted in the same logical-line
+/// unit `App::right_pane_scroll` and `crate::diff_shape::marked_body_rows`
+/// already share.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct MarkedRowsOutsideViewport {
+    pub(crate) above: usize,
+    pub(crate) below: usize,
+}
+
+/// Counts the `marked_rows` that fall outside the display rows
+/// `[display_row, display_row + viewport_height)`, given `origins`
+/// (either wrap helper's per-display-row logical-line index).
+///
+/// Defined against the *visible logical range* — the logical rows the
+/// first and last visible display rows were wrapped from — rather than
+/// against each marked row's own display position, so one pass over
+/// `marked_rows` suffices no matter how large the wrapped body is
+/// (`logical_line_to_display_row` is itself a scan, and calling it per
+/// marked row would make this O(marked × display rows) on every frame).
+///
+/// A logical row that is only *partly* visible (a wrapped row whose later
+/// fragments fall past the bottom edge) counts as visible, not as below:
+/// it is on screen, and its own continuation is visible as a wrap. The
+/// counts exist to answer "is there something here I have not seen at
+/// all", and a row the reviewer is already looking at is not that.
+pub(crate) fn marked_rows_outside_viewport(
+    origins: &[usize],
+    marked_rows: &[usize],
+    display_row: usize,
+    viewport_height: usize,
+) -> MarkedRowsOutsideViewport {
+    let Some((first_visible, last_visible)) =
+        visible_logical_range(origins, display_row, viewport_height)
+    else {
+        return MarkedRowsOutsideViewport::default();
+    };
+
+    MarkedRowsOutsideViewport {
+        above: marked_rows
+            .iter()
+            .filter(|&&row| row < first_visible)
+            .count(),
+        below: marked_rows
+            .iter()
+            .filter(|&&row| row > last_visible)
+            .count(),
+    }
 }
 
 /// [`render_scrollable_pane`]'s scrollable content, either a single column

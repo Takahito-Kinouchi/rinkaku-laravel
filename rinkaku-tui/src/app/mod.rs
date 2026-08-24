@@ -131,3 +131,26 @@ pub enum DiffViewMode {
     #[default]
     Split,
 }
+
+/// What the last drawn Diff pane frame reported about the selected symbol's
+/// own extent (ADR 0088), threaded in by `crate::run_app` exactly the way
+/// ADR 0026's viewport height already is: `App` has no notion of the pane's
+/// layout or of line wrapping, so the two counts and the step size can only
+/// be measured where the frame was actually rendered
+/// (`crate::ui::scroll::render_marked_scrollable_pane`).
+///
+/// [`App::handle_read_through_key`] is the only consumer — it needs exactly
+/// one bit of judgment ("is any of this symbol still off-screen in the
+/// direction I am moving") plus the distance to move if so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReadThrough {
+    /// Rows of the selected symbol above the viewport's top edge.
+    pub rows_above: usize,
+    /// Rows of the selected symbol below the viewport's bottom edge.
+    pub rows_below: usize,
+    /// How far one read-through press scrolls the pane, in
+    /// [`App::right_pane_scroll`]'s logical-line unit — one screen less a
+    /// row of overlap (`crate::ui::diff_pane::draw_diff_pane`'s own comment
+    /// on why the overlap), never 0.
+    pub step: usize,
+}

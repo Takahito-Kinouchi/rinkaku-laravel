@@ -482,6 +482,45 @@ fn should_translate_ctrl_d_to_scroll_half_page_down() {
     assert_eq!(Some(InputKey::ScrollHalfPageDown), actual);
 }
 
+// ADR 0088 read-through bindings.
+
+#[test]
+fn should_translate_ctrl_f_to_read_through_down() {
+    let report = empty_report();
+    let app = App::new(&report);
+
+    let actual = translate_key(KeyCode::Char('f'), KeyModifiers::CONTROL, &app);
+
+    assert_eq!(Some(InputKey::ReadThroughDown), actual);
+}
+
+#[test]
+fn should_translate_ctrl_b_to_read_through_up() {
+    let report = empty_report();
+    let app = App::new(&report);
+
+    let actual = translate_key(KeyCode::Char('b'), KeyModifiers::CONTROL, &app);
+
+    assert_eq!(Some(InputKey::ReadThroughUp), actual);
+}
+
+#[test]
+fn should_not_translate_plain_f_or_b_to_a_read_through_key() {
+    // Both letters are unbound today; the read-through gesture is the
+    // modifier form only, so a stray `f`/`b` press must stay inert
+    // rather than moving the reviewer's position.
+    let report = empty_report();
+    let app = App::new(&report);
+
+    assert_eq!(
+        (None, None),
+        (
+            translate_key(KeyCode::Char('f'), KeyModifiers::NONE, &app),
+            translate_key(KeyCode::Char('b'), KeyModifiers::NONE, &app),
+        )
+    );
+}
+
 #[test]
 fn should_translate_ctrl_u_to_scroll_half_page_up() {
     let report = empty_report();

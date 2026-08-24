@@ -2,7 +2,8 @@
 //! recompute gates (`should_recompute_diff_pane_content`,
 //! `should_recompute_blast_radius_selection`), the source-cache reload gate
 //! (`should_reload_source_content`), the scroll-key classifier
-//! (`is_scroll_input_key`), `dispatch_non_source_key`'s `gd`/`gr`
+//! (`is_scroll_input_key`) and the read-through classifier
+//! (`is_read_through_input_key`), `dispatch_non_source_key`'s `gd`/`gr`
 //! pending-prefix/jumplist regression coverage, and `dispatch_search_confirm`'s
 //! loaded-vs-failed source content branching. `resolve_goto` and
 //! `apply_diff_pane_selection_effects`/`sync_target_for_scroll`/
@@ -11,7 +12,10 @@
 
 use crate::app::{self, App, InputKey, Screen};
 use crate::diff_shape;
-use crate::event_loop::{dispatch_non_source_key, dispatch_search_confirm, is_scroll_input_key};
+use crate::event_loop::{
+    dispatch_non_source_key, dispatch_search_confirm, is_read_through_input_key,
+    is_scroll_input_key,
+};
 use pretty_assertions::assert_eq;
 use rinkaku_core::graph::SymbolGraph;
 use rinkaku_core::render::Report;
@@ -347,6 +351,37 @@ fn should_not_treat_up_or_down_as_scroll_input_keys() {
     // that boundary stays where `run_app`'s own dispatch expects it.
     assert!(!is_scroll_input_key(InputKey::Up));
     assert!(!is_scroll_input_key(InputKey::Down));
+}
+
+// --- is_read_through_input_key ---
+
+#[test]
+fn should_treat_the_two_adr_0088_read_through_variants_as_read_through_input_keys() {
+    for key in [InputKey::ReadThroughDown, InputKey::ReadThroughUp] {
+        assert!(
+            is_read_through_input_key(key),
+            "{key:?} should be a read-through key"
+        );
+    }
+}
+
+#[test]
+fn should_keep_the_scroll_and_read_through_classifiers_disjoint() {
+    // The two dispatch steps take different arguments, so a key claimed
+    // by both would be mutated twice per press — `run_app`'s `else if`
+    // chain silently prefers the scroll step, which would drop the
+    // cursor-advance half of the read-through gesture.
+    for key in [
+        InputKey::ScrollHalfPageDown,
+        InputKey::ScrollHalfPageUp,
+        InputKey::ScrollToTop,
+        InputKey::ScrollToBottom,
+    ] {
+        assert!(!is_read_through_input_key(key), "{key:?}");
+    }
+    for key in [InputKey::ReadThroughDown, InputKey::ReadThroughUp] {
+        assert!(!is_scroll_input_key(key), "{key:?}");
+    }
 }
 
 // --- dispatch_non_source_key regression tests: the `run_app`-equivalent

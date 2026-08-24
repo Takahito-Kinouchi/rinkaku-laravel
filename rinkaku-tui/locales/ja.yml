@@ -14,6 +14,7 @@ help:
     move_cursor: "カーソルを移動"
     scroll_tree_half_page: "カーソルを半ページ分移動"
     jump_tree_top_bottom: "ツリーの先頭/末尾へジャンプ"
+    read_through: "選択シンボルの変更を1画面ずつ読み進め、読み終えたら次/前の行へ移動"
     expand_collapse_open: "ディレクトリ行を開閉、またはファイル/シンボル行を開く（フォーカスが右に移動）"
     expand_collapse_row: "ディレクトリ/ファイル行を開閉（フォーカスは移動しない）"
     expand_every_row: "全行を展開"
@@ -67,6 +68,7 @@ help:
     lines_count: "このファイル自体の行数（file-size band: normal/watch/warn/split で色分け）"
     warn_count: "ディレクトリ行: このサブツリー内の Warn band ファイル数"
     split_count: "ディレクトリ行: このサブツリー内の Split band ファイル数"
+    off_screen_rows: "Diff ペインのタイトル: 選択シンボルの変更のうち、画面の上/下にまだ残っている行数（ctrl-f / ctrl-b で読み進められる）"
     tests_count: "シンボル行: このシンボルを参照するテストシンボルが0件"
   glossary:
     topological_order: "依存が少ないディレクトリから並べる順序（基盤となるものほど後ろ）"

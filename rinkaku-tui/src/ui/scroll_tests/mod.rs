@@ -12,10 +12,13 @@
 //! - `wrap_origins` — the logical-line <-> display-row conversion
 //!   (`logical_line_to_display_row`/`display_row_to_logical_line`) this
 //!   scroll-unit fix adds
+//! - `marked_rows` — ADR 0088's off-screen accounting for the selected
+//!   symbol (`marked_rows_outside_viewport`/`visible_logical_span`)
 
 use super::*;
 
 mod clamp_and_indicator;
+mod marked_rows;
 mod pair_wrap;
 mod truncation;
 mod windowing;

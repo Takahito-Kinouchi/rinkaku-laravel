@@ -7,7 +7,7 @@ use super::detail_pane::draw_detail_pane;
 use super::diff_pane::draw_diff_pane;
 use super::scroll::{scroll_indicator, truncate_line_to_width, windowed_rows_with_indicators};
 use super::style::pane_border_style;
-use super::{ENTRY_RIGHT_WIDTH_PERCENT, ENTRY_TREE_WIDTH_PERCENT};
+use super::{ENTRY_RIGHT_WIDTH_PERCENT, ENTRY_TREE_WIDTH_PERCENT, RightPaneRender};
 use crate::app::{App, BlastRadiusSelection, Focus, RightPane};
 use crate::highlight::HighlightedFile;
 use crate::row_view::{entry_row_line, relative_labels};
@@ -28,10 +28,12 @@ use rinkaku_core::render::Report;
 /// pane itself shows either the detail view or the diff view depending on
 /// `app.right_pane()` (`d`/`D` toggles between them, TUI iteration 2).
 ///
-/// Returns the clamped right-pane scroll offset actually applied — whichever
-/// of `draw_detail_pane`/`draw_diff_pane`/`draw_blast_radius_pane` ran for
-/// `app.right_pane()` (`render_scrollable_pane`'s doc comment on why
-/// `crate::run_app` needs this).
+/// Returns whichever of `draw_detail_pane`/`draw_diff_pane`/
+/// `draw_blast_radius_pane` ran for `app.right_pane()` reported about the
+/// frame — the clamped right-pane scroll offset actually applied
+/// (`render_scrollable_pane`'s doc comment on why `crate::run_app` needs
+/// this), plus ADR 0088's read-through measurement, which only the Diff
+/// pane produces.
 // See `crate::ui::draw`'s own `#[allow(clippy::too_many_arguments)]`
 // comment — this function is that one's direct pass-through and shares
 // the identical "each parameter is independently-cached content, not
@@ -46,7 +48,7 @@ pub(crate) fn draw_entry_screen(
     blast_radius_selection: &BlastRadiusSelection,
     annotation_markers: &crate::annotation_markers::AnnotationMarkers,
     area: Rect,
-) -> Option<usize> {
+) -> RightPaneRender {
     let [tree_area, right_area] = Layout::horizontal([
         Constraint::Percentage(ENTRY_TREE_WIDTH_PERCENT),
         Constraint::Percentage(ENTRY_RIGHT_WIDTH_PERCENT),
@@ -55,7 +57,10 @@ pub(crate) fn draw_entry_screen(
 
     draw_tree_pane(frame, app, annotation_markers, tree_area);
     match app.right_pane() {
-        RightPane::Detail => draw_detail_pane(frame, app, report, right_area),
+        RightPane::Detail => RightPaneRender {
+            clamped_scroll: draw_detail_pane(frame, app, report, right_area),
+            read_through: None,
+        },
         RightPane::Diff => draw_diff_pane(
             frame,
             app,
@@ -65,9 +70,10 @@ pub(crate) fn draw_entry_screen(
             annotation_markers,
             right_area,
         ),
-        RightPane::BlastRadius => {
-            draw_blast_radius_pane(frame, app, blast_radius_selection, right_area)
-        }
+        RightPane::BlastRadius => RightPaneRender {
+            clamped_scroll: draw_blast_radius_pane(frame, app, blast_radius_selection, right_area),
+            read_through: None,
+        },
     }
 }
 

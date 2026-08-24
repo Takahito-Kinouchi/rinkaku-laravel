@@ -109,6 +109,14 @@ fn tree_focus_bindings(locale: Locale) -> Vec<KeyBinding> {
             description: rust_i18n::t!("help.binding.jump_tree_top_bottom", locale = tag)
                 .into_owned(),
         },
+        // ADR 0088: listed in both focus groups (`right_focus_bindings`
+        // below carries the identical entry) because the gesture is the
+        // same in either one — it reads on through the change wherever the
+        // reviewer happens to be standing.
+        KeyBinding {
+            keys: "ctrl-f / ctrl-b",
+            description: rust_i18n::t!("help.binding.read_through", locale = tag).into_owned(),
+        },
         // ADR 0057 amendment: tree search reuses Source view's own `/`/
         // `n`/`N` bindings and descriptions (`source_screen_bindings`
         // below) — same gesture, different search target.
@@ -160,6 +168,10 @@ fn right_focus_bindings(locale: Locale) -> Vec<KeyBinding> {
             keys: "gg / G",
             description: rust_i18n::t!("help.binding.jump_right_pane_top_bottom", locale = tag)
                 .into_owned(),
+        },
+        KeyBinding {
+            keys: "ctrl-f / ctrl-b",
+            description: rust_i18n::t!("help.binding.read_through", locale = tag).into_owned(),
         },
         KeyBinding {
             keys: "h / esc",
@@ -488,6 +500,14 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
         MarkerLegendEntry {
             swatch: "tests:0",
             explanation: rust_i18n::t!("help.marker.tests_count", locale = tag).into_owned(),
+        },
+        // ADR 0088: a Diff pane *title* marker rather than a tree-row one,
+        // listed here anyway — this legend answers "what is that thing on
+        // my screen", and the counters share the range bar's own color
+        // precisely so the two read as one signal.
+        MarkerLegendEntry {
+            swatch: "▲N / ▼N",
+            explanation: rust_i18n::t!("help.marker.off_screen_rows", locale = tag).into_owned(),
         },
     ]
 }

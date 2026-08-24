@@ -473,6 +473,22 @@ pub(crate) fn run_app(
                     last_scroll_viewport_height.unwrap_or(DEFAULT_SCROLL_VIEWPORT_HEIGHT)
                 };
                 app = app.handle_scroll_key(input_key, viewport_height);
+            } else if is_read_through_input_key(input_key) {
+                // ADR 0088, the same two-step shape the scroll keys use
+                // just above: `handle_key` first for the blanket
+                // `status`/`pending_prefix` bookkeeping every key needs
+                // (its own arm for these two variants is a documented
+                // no-op), then `handle_read_through_key` with the last
+                // drawn frame's measurement for the actual mutation.
+                app = app.handle_key(input_key);
+                // Read straight off *this* iteration's `outcome` rather than
+                // a remembered value the way the viewport heights above are:
+                // the measurement describes the frame the reviewer was
+                // looking at when they pressed the key, and it is deliberately
+                // `None` whenever that frame had no Diff pane hunks to
+                // measure — carrying the last real one forward would let a
+                // stale count scroll a pane it never described.
+                app = app.handle_read_through_key(input_key, outcome.diff_read_through);
             } else {
                 // Every non-`Source` key's dispatch is pure (no IO), so it
                 // lives in its own function rather than inline here — see
@@ -555,6 +571,19 @@ fn is_scroll_input_key(input_key: InputKey) -> bool {
             | InputKey::ScrollHalfPageUp
             | InputKey::ScrollToTop
             | InputKey::ScrollToBottom,
+    )
+}
+
+/// Whether `input_key` is one of ADR 0088's two read-through variants —
+/// [`is_scroll_input_key`]'s counterpart for the third dispatch step, kept
+/// separate rather than folded into that predicate because the two steps
+/// take different arguments (a viewport height vs. a whole
+/// [`ReadThrough`]) and a single predicate would have to be
+/// re-inspected at both call sites to tell which.
+fn is_read_through_input_key(input_key: InputKey) -> bool {
+    matches!(
+        input_key,
+        InputKey::ReadThroughDown | InputKey::ReadThroughUp,
     )
 }
 
