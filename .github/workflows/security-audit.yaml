@@ -8,22 +8,16 @@
 name: Security Audit
 
 on:
+  # Deliberately unfiltered by path. Restricting this to manifest changes
+  # would be cheaper, but a path-filtered workflow simply does not report
+  # a check run on a PR that misses the filter — and a required status
+  # check that never reports blocks the PR forever. Since this job is the
+  # one that would sensibly be required, it has to run on every PR. With
+  # the cache warm it takes about 30 seconds.
   pull_request:
     branches: [main]
-    paths:
-      - Cargo.toml
-      - Cargo.lock
-      - "**/Cargo.toml"
-      - Makefile
-      - .github/workflows/security-audit.yaml
   push:
     branches: [main]
-    paths:
-      - Cargo.toml
-      - Cargo.lock
-      - "**/Cargo.toml"
-      - Makefile
-      - .github/workflows/security-audit.yaml
   schedule:
     # Mondays 00:00 UTC — catches advisories published against a lockfile
     # nothing has touched.
