@@ -1,5 +1,7 @@
 //! GitHub remote URL parsing and `git remote get-url origin` lookup.
 
+use super::slug::is_valid_repo_segment;
+
 /// Extracts `(owner, repo)` from a git remote URL, if it points at
 /// GitHub. Accepts the forms `git remote get-url` can return for a GitHub
 /// remote: `https://github.com/<owner>/<repo>`, the same with a `.git`
@@ -19,7 +21,13 @@ pub(crate) fn parse_github_remote(url: &str) -> Option<(String, String)> {
 
     let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
     match segments.as_slice() {
-        [owner, repo] => Some((owner.to_string(), repo.to_string())),
+        // ADR 0092: same check `parse_pr_arg` applies to a `--pr` URL's
+        // segments — a bare `--pr <number>` resolves owner/repo from this
+        // remote instead, and they reach the same `gh api` route from
+        // here.
+        [owner, repo] if is_valid_repo_segment(owner) && is_valid_repo_segment(repo) => {
+            Some((owner.to_string(), repo.to_string()))
+        }
         _ => None,
     }
 }
@@ -105,6 +113,10 @@ mod tests {
         None
     )]
     #[case::should_reject_empty_string("", None)]
+    // ADR 0092: a bare `--pr <number>` takes owner/repo from `origin`, so
+    // an implausible remote must not become a `gh api` route segment.
+    #[case::should_reject_parent_directory_segment("https://github.com/../hello-world", None)]
+    #[case::should_reject_segment_that_reads_as_an_option("git@github.com:-x/hello-world", None)]
     fn should_parse_github_remote(#[case] url: &str, #[case] expected: Option<(String, String)>) {
         let actual = parse_github_remote(url);
 

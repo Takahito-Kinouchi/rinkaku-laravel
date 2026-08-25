@@ -41,7 +41,7 @@ serde_json = "1.0"
 # `rinkaku` bin crate depends on it directly; declared at the workspace
 # level to match the convention every other bin-crate-only dependency
 # here follows.
-indicatif = "0.17"
+indicatif = "0.18"
 # Only rinkaku-tui depends on this (ADR 0016 decision 2): rinkaku-core's
 # dependency set stays untouched. Most crossterm usage goes through
 # ratatui's own `ratatui::crossterm` re-export rather than a direct

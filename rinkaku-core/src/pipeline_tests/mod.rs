@@ -4,12 +4,16 @@
 //! Topic modules:
 //!
 //! - [`analyze_diff`] — top-level `analyze_diff` behavior: empty input,
-//!   per-file skip cases (deleted / binary / unsupported-language / pure
-//!   rename), diff-parse and read-file error paths, multi-file mixed
+//!   diff-parse and read-file error paths, multi-file mixed
 //!   outcomes, Go interface/receiver nesting end-to-end,
 //!   container-aware bare-reference edge matching end-to-end (ADR 0068),
 //!   resolver invocation contract (`Some`/`None`), and fan-in wiring
 //!   (ADR 0013, named per ADR 0034, end-to-end).
+//! - [`analyze_diff_skips`] — the per-file skip cases `analyze_diff`
+//!   reports rather than analyzes: deleted, binary, a path outside the
+//!   repository (ADR 0090), unsupported language, and a pure rename with
+//!   no changed ranges. Each asserts both the `SkippedFile` entry and
+//!   that the file was never read.
 //! - [`is_generated_content`] — ADR 0011: the `is_generated_content`
 //!   marker-detection helper's positive and negative cases (rstest).
 //! - [`test_symbol_exclusion`] — ADR 0009: `partition_test_symbols`'s
@@ -69,6 +73,7 @@
 use std::collections::HashMap;
 
 mod analyze_diff;
+mod analyze_diff_skips;
 mod analyze_repo;
 mod classification_wiring;
 mod collect_referenced_names;

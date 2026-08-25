@@ -9,7 +9,12 @@ pub(crate) fn run_git_diff(
 ) -> anyhow::Result<String> {
     let range = format!("{base}...{head}");
     let mut command = std::process::Command::new("git");
-    command.args(["diff", &range]);
+    // `--end-of-options` immediately before the range (ADR 0092): `base`
+    // and `head` come from `--base`/`--pr` and from `gh pr view`, and a
+    // value starting with `-` would otherwise be read as a `git diff`
+    // option. It must come after every other option, since everything
+    // following it is taken as a revision or path.
+    command.args(["diff", "--end-of-options", &range]);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
@@ -134,12 +139,17 @@ pub(crate) fn list_blob_oids(
     rev: &str,
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
     let mut command = std::process::Command::new("git");
+    // `--end-of-options` goes last, immediately before `rev` (ADR 0092):
+    // anything after it is a revision or path, so `-z`/`--format` have to
+    // precede it or they are silently taken as pathspecs — which produces
+    // an empty listing rather than an error.
     command.args([
         "ls-tree",
         "-r",
-        rev,
         "-z",
         "--format=%(objectname)%x09%(path)",
+        "--end-of-options",
+        rev,
     ]);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);

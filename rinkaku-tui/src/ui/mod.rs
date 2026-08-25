@@ -389,3 +389,49 @@ fn effective_diff_view_mode_for_body(
 /// drift.
 pub(crate) const ENTRY_TREE_WIDTH_PERCENT: u16 = 40;
 pub(crate) const ENTRY_RIGHT_WIDTH_PERCENT: u16 = 60;
+
+// ADR 0091 rests on a property of the rendering backend rather than on
+// rinkaku's own code, so it is pinned here rather than assumed: `ratatui`
+// writes a `Line`'s content through `Buffer::set_stringn`, which skips
+// zero-width graphemes — and every control character is zero-width. No
+// raw control byte can therefore reach the terminal through any pane,
+// including the tree and detail panes this crate does not escape itself.
+//
+// If a future `ratatui` stops filtering them, this test fails, and the
+// escaping ADR 0091 applies at the diff/source ingress points has to be
+// extended to the panes that render `Report` strings directly.
+#[cfg(test)]
+mod control_character_rendering_tests {
+    use pretty_assertions::assert_eq;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{Paragraph, Widget};
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::escape("a\u{1b}b")]
+    #[case::carriage_return("a\rb")]
+    #[case::bell("a\u{7}b")]
+    #[case::delete("a\u{7f}b")]
+    #[case::c1_control_sequence_introducer("a\u{9b}b")]
+    fn should_drop_control_characters_when_ratatui_renders_a_line(#[case] content: &str) {
+        let area = Rect::new(0, 0, 4, 1);
+        let mut buffer = Buffer::empty(area);
+
+        Paragraph::new(Line::from(vec![Span::raw(content.to_string())])).render(area, &mut buffer);
+
+        let rendered: Vec<String> = (0..4)
+            .map(|x| buffer[(x, 0)].symbol().to_string())
+            .collect();
+        assert_eq!(
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                " ".to_string(),
+                " ".to_string()
+            ],
+            rendered
+        );
+    }
+}

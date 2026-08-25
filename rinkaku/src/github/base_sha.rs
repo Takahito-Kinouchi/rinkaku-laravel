@@ -95,7 +95,12 @@ pub(crate) fn resolve_pr_base_sha(
 /// `resolve_pr_base_sha`'s cascade, run before attempting any fetch.
 pub(crate) fn object_exists_locally(cwd: Option<&std::path::Path>, oid: &str) -> bool {
     let mut command = std::process::Command::new("git");
-    command.args(["cat-file", "-e", &format!("{oid}^{{commit}}")]);
+    command.args([
+        "cat-file",
+        "-e",
+        "--end-of-options",
+        &format!("{oid}^{{commit}}"),
+    ]);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
@@ -110,7 +115,7 @@ pub(crate) fn object_exists_locally(cwd: Option<&std::path::Path>, oid: &str) ->
 /// instead, since fetching a bare oid doesn't update any ref.
 pub(crate) fn fetch_oid(cwd: Option<&std::path::Path>, oid: &str) -> anyhow::Result<()> {
     let mut command = std::process::Command::new("git");
-    command.args(["fetch", "origin", oid]);
+    command.args(["fetch", "origin", "--end-of-options", oid]);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
@@ -135,7 +140,11 @@ pub(crate) fn fetch_oid(cwd: Option<&std::path::Path>, oid: &str) -> anyhow::Res
 /// `read_git_show_file`'s `cwd`.
 fn run_git_fetch(refspec: &str, cwd: Option<&std::path::Path>) -> anyhow::Result<String> {
     let mut fetch_command = std::process::Command::new("git");
-    fetch_command.args(["fetch", "origin", refspec]);
+    // ADR 0092: `refspec` is a branch name `gh pr view` reported, or the
+    // `refs/pull/<n>/head` this module builds. git's own ref-name rules
+    // already forbid a leading `-`, so this closes the shape of the hole
+    // rather than a reachable one.
+    fetch_command.args(["fetch", "origin", "--end-of-options", refspec]);
     if let Some(cwd) = cwd {
         fetch_command.current_dir(cwd);
     }

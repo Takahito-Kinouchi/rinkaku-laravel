@@ -15,7 +15,7 @@ name = "rinkaku-laravel"
 # with a version upstream will mint. Bump `n` for each fork change; on
 # taking upstream in, raise the base to upstream's own version and reset
 # `n` to 1. `docs/UPSTREAM.md` carries the exact base commit.
-version = "0.6.22+laravel.1"
+version = "0.6.22+laravel.2"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
