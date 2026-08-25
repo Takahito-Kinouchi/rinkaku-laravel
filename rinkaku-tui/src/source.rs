@@ -127,7 +127,15 @@ pub fn load_symbol_source(
 
     Ok(SourceView {
         path: location.path,
-        lines: content.lines().map(str::to_string).collect(),
+        // ADR 0091: the file's own content is written to the terminal by
+        // the source screen, and a file under review can contain terminal
+        // control sequences (in a string literal, or a whole file of
+        // them). Escaped here, before the highlighter runs over the same
+        // lines, so highlight spans and rendered text stay in step.
+        lines: content
+            .lines()
+            .map(|line| rinkaku_core::render::escape_control_chars(line).into_owned())
+            .collect(),
         highlight_start: location.start_line,
         highlight_end: location.end_line,
     })
@@ -579,6 +587,50 @@ mod tests {
             Ok(SourceView {
                 path: "src/lib.rs".to_string(),
                 lines: vec!["fn foo() { /* head snapshot */ }".to_string()],
+                highlight_start: 1,
+                highlight_end: 1,
+            }),
+            actual
+        );
+    }
+
+    // ADR 0091: the source screen writes the file's own lines to the
+    // terminal, and a file under review can carry terminal control
+    // sequences — in a string literal, or as the whole file.
+    #[test]
+    fn should_escape_control_characters_in_file_content_when_loading_symbol_source() {
+        let report = Report {
+            origin: rinkaku_core::render::ReportOrigin::Diff,
+            files: vec![FileReport {
+                path: "src/lib.rs".to_string(),
+                symbols: vec![symbol(
+                    "src/lib.rs::foo",
+                    "foo",
+                    LineRange { start: 1, end: 1 },
+                )],
+            }],
+            ..empty_report()
+        };
+        let reader = FakeSourceReader {
+            content: Ok(
+                "fn foo() { let banner = \"\u{1b}[2J\u{1b}[H\"; }\nfn bar() {}".to_string(),
+            ),
+        };
+
+        let actual = load_symbol_source(
+            &report,
+            "src/lib.rs::foo",
+            std::path::Path::new("/unused"),
+            &reader,
+        );
+
+        assert_eq!(
+            Ok(SourceView {
+                path: "src/lib.rs".to_string(),
+                lines: vec![
+                    "fn foo() { let banner = \"\\u{1b}[2J\\u{1b}[H\"; }".to_string(),
+                    "fn bar() {}".to_string(),
+                ],
                 highlight_start: 1,
                 highlight_end: 1,
             }),
