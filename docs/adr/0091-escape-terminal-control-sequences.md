@@ -25,9 +25,14 @@ which matters for output whose entire job is to be read as a summary of
 what a change does. Terminals configured to allow OSC 52 extend the reach
 to the reviewer's clipboard.
 
-The TUI has the same exposure by a different route: `ratatui` writes a
-cell's content through to the terminal, so an ESC byte in a diff line or
-in a file opened by the source screen is emitted as-is.
+The TUI turned out **not** to have the same exposure, which was measured
+rather than assumed: `ratatui` writes a line's content through
+`Buffer::set_stringn`, which skips zero-width graphemes — and every
+control character is zero-width. An ESC in a diff line is dropped, and
+the rest of the sequence renders as ordinary text. What the reviewer sees
+is `[31m` where the file actually contains `\u{1b}[31m`, which is
+harmless but misleading: the pane shows content the file does not have,
+and hides content it does.
 
 JSON output is not affected: `serde_json` already escapes control
 characters as ``.
@@ -54,6 +59,13 @@ It is applied at **choke points, not at call sites**:
   as it reads them, before the highlighter runs over the same lines so
   spans and text stay in step.
 
+The two TUI sites are **fidelity, not containment**: they make the
+sequence visible as `\u{1b}[31m` instead of leaving `ratatui` to swallow
+the ESC and show `[31m`. They also mean those two panes do not depend on
+a third-party rendering detail to be safe. `ui/mod.rs` pins that detail
+with a test, so a `ratatui` upgrade that stopped filtering zero-width
+graphemes would fail rather than silently open the hole.
+
 **Escaping happens at render time, not in the `Report`.** The `Report` is
 also the JSON payload and the TUI's model; a path stored escaped would no
 longer name a file anything could open.
@@ -79,10 +91,11 @@ longer name a file anything could open.
   characters changes shape: `\u{1b}` appears where a raw byte used to.
   For every ordinary report the output is byte-for-byte unchanged, and
   the escape function returns a borrowed string without allocating.
-- **The TUI's remaining surface is not covered yet.** Paths and
-  signatures that reach the tree and detail panes from the `Report` are
-  still rendered raw; unlike the diff and source panes, those are built
-  in many small `Span` construction sites with no single ingress point.
-  The helper is public and the pattern is set, so that pass is a
-  follow-up rather than a redesign.
+- **The tree and detail panes are deliberately left unescaped.** They
+  render `Report` strings through `ratatui`, which drops control
+  characters on the way to the buffer (pinned by
+  `ui::control_character_rendering_tests`), so there is nothing to
+  contain there — and escaping them would mean touching many small
+  `Span` construction sites for a display nicety. If the pinning test
+  ever fails, that trade changes and those sites need the helper.
 - `escape_control_chars` is public API of `rinkaku-core`.
