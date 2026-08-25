@@ -14,6 +14,7 @@ use crate::graph::FanIn;
 use crate::pipeline::{AnalyzeError, analyze_diff};
 use crate::render::{FileReport, Report, ReportOrigin, SkipReason, SkippedFile};
 use pretty_assertions::assert_eq;
+use rstest::rstest;
 use std::collections::{HashMap, HashSet};
 
 #[test]
@@ -180,6 +181,118 @@ Binary files a/assets/logo.png and b/assets/logo.png differ
         skipped: vec![SkippedFile {
             path: "assets/logo.png".to_string(),
             reason: SkipReason::Binary,
+        }],
+        graph: empty_graph(),
+        tests: vec![],
+        fan_ins: vec![],
+        test_coverage: vec![],
+        file_size_warnings: vec![],
+        file_size_bands: vec![],
+        removed: vec![],
+        non_symbol_changes: vec![],
+    };
+    let actual = analyze_diff(
+        diff,
+        read_file,
+        None,
+        None,
+        true,
+        &HashSet::new(),
+        true,
+        None,
+    )
+    .expect("analyze should succeed");
+
+    assert_eq!(expected, actual);
+}
+
+// ADR 0090. A diff arriving on stdin is attacker-controlled input, so a
+// path that walks out of the repository — through `..` or by being
+// absolute in the first place — must be reported and never read. The
+// reader here panics on any call, which is the actual claim: nothing
+// touches the filesystem for such an entry.
+#[rstest]
+#[case::parent_escape(
+    "\
+diff --git a/../secret/creds.py b/../secret/creds.py
+@@ -1,0 +1,1 @@
++API_TOKEN = \"leaked\"
+",
+    "../secret/creds.py"
+)]
+#[case::absolute_path(
+    // `diff --git a//etc/passwd b//etc/passwd` — the doubled slash is
+    // what survives stripping the `b/` prefix, and is how a crafted diff
+    // names an absolute path at all.
+    "\
+diff --git a//etc/shadow b//etc/shadow
+@@ -1,0 +1,1 @@
++root:x:0:0
+",
+    "/etc/shadow"
+)]
+fn should_skip_file_without_reading_it_when_diff_path_escapes_the_repository(
+    #[case] diff: &str,
+    #[case] expected_path: &str,
+) {
+    let read_file = |path: &str| -> std::io::Result<String> {
+        panic!("a path outside the repository must never be read, got: {path}")
+    };
+
+    let expected = Report {
+        origin: ReportOrigin::Diff,
+        files: vec![],
+        skipped: vec![SkippedFile {
+            path: expected_path.to_string(),
+            reason: SkipReason::OutsideRepository,
+        }],
+        graph: empty_graph(),
+        tests: vec![],
+        fan_ins: vec![],
+        test_coverage: vec![],
+        file_size_warnings: vec![],
+        file_size_bands: vec![],
+        removed: vec![],
+        non_symbol_changes: vec![],
+    };
+    let actual = analyze_diff(
+        diff,
+        read_file,
+        None,
+        None,
+        true,
+        &HashSet::new(),
+        true,
+        None,
+    )
+    .expect("analyze should succeed");
+
+    assert_eq!(expected, actual);
+}
+
+// A rename carries a second, independently chosen path: `rename from`
+// names the base side, which `analyze_diff` reads separately. Both sides
+// have to be contained, not just the one the entry is reported under.
+#[test]
+fn should_skip_rename_without_reading_it_when_only_its_base_side_path_escapes() {
+    let diff = "\
+diff --git a/../secret/creds.py b/src/lib.rs
+similarity index 90%
+rename from ../secret/creds.py
+rename to src/lib.rs
+@@ -1,0 +1,1 @@
++fn foo() {}
+";
+    let read_file = |path: &str| -> std::io::Result<String> {
+        panic!("a rename with an escaping base-side path must never be read, got: {path}")
+    };
+
+    let expected = Report {
+        origin: ReportOrigin::Diff,
+        files: vec![],
+        skipped: vec![SkippedFile {
+            path: "src/lib.rs".to_string(),
+            reason: SkipReason::OutsideRepository,
         }],
         graph: empty_graph(),
         tests: vec![],

@@ -447,7 +447,10 @@ pub(crate) fn has_no_readable_content(reason: rinkaku_core::render::SkipReason) 
         rinkaku_core::render::SkipReason::UnsupportedLanguage => false,
         rinkaku_core::render::SkipReason::Binary
         | rinkaku_core::render::SkipReason::Deleted
-        | rinkaku_core::render::SkipReason::Generated => true,
+        | rinkaku_core::render::SkipReason::Generated
+        // ADR 0090: the file was never read, and opening it is exactly
+        // what the skip exists to prevent.
+        | rinkaku_core::render::SkipReason::OutsideRepository => true,
     }
 }
 

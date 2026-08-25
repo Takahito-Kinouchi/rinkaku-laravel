@@ -20,6 +20,7 @@ use crate::language::{LanguageSupport, language_for_path};
 use crate::non_symbol_changes::compute_non_symbol_changes;
 use crate::progress::{OnProgress, should_report_progress};
 use crate::render::{FileReport, Report, ReportOrigin, SkipReason, SkippedFile, TestFileSummary};
+use crate::repo_path::is_repo_relative;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use thiserror::Error;
@@ -196,6 +197,23 @@ pub fn analyze_diff(
         // matching `analyze_repo`'s own "looked at" convention (see this
         // function's doc comment).
         'file: {
+            // ADR 0090: before anything reads or reports this entry, the
+            // path it names must actually be inside the repository. A
+            // diff arriving on stdin is attacker-controlled input, and
+            // every read below (head side, base side) and every renderer
+            // downstream treats `path` as repository-root-relative.
+            if !is_repo_relative(&changed_file.path)
+                || changed_file
+                    .old_path
+                    .as_deref()
+                    .is_some_and(|old_path| !is_repo_relative(old_path))
+            {
+                skipped.push(SkippedFile {
+                    path: changed_file.path,
+                    reason: SkipReason::OutsideRepository,
+                });
+                break 'file;
+            }
             if changed_file.kind == ChangeKind::Deleted {
                 removed.extend(removed_symbols_from_deleted_file(
                     &changed_file,
@@ -824,6 +842,14 @@ pub fn collect_referenced_names(
     let mut names = std::collections::HashSet::new();
 
     for changed_file in changed_files {
+        // ADR 0090: the same containment rule `analyze_diff` applies, for
+        // the same reason — this walk reads head-side content through the
+        // same untrusted diff paths. Skipping (rather than erroring) keeps
+        // one crafted entry from failing a whole run, and matches how the
+        // entry is already reported over there.
+        if !is_repo_relative(&changed_file.path) {
+            continue;
+        }
         if changed_file.kind == ChangeKind::Deleted || changed_file.is_binary {
             continue;
         }

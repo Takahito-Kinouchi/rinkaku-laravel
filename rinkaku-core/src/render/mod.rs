@@ -47,11 +47,13 @@
 //! signatures are noise (ADR 0009).
 
 mod digest;
+mod escape;
 mod markdown;
 mod mermaid;
 mod report;
 mod shared;
 
+pub use escape::escape_control_chars;
 pub use report::{
     FileReport, Report, ReportOrigin, SkipReason, SkippedFile, TestFileSummary, skip_reason_label,
 };
@@ -89,11 +91,25 @@ pub enum RenderError {
 }
 
 /// Renders a [`Report`] in the requested [`OutputFormat`].
+///
+/// ADR 0091: the three text formats pass through
+/// [`escape_control_chars`] on the way out — a path, symbol name, or
+/// signature carried into the report from the change under review can
+/// contain terminal control sequences, and these three formats are read
+/// on a terminal. `Json` is exempt because `serde_json` already escapes
+/// control characters, and because a JSON consumer needs the real path
+/// (an escaped one would no longer name a file it could open).
 pub fn render(report: &Report, format: OutputFormat) -> Result<String, RenderError> {
     match format {
-        OutputFormat::Markdown => markdown::render_markdown(report),
+        OutputFormat::Markdown => {
+            Ok(escape_control_chars(&markdown::render_markdown(report)?).into_owned())
+        }
         OutputFormat::Json => Ok(serde_json::to_string_pretty(report)?),
-        OutputFormat::Mermaid => Ok(mermaid::render_mermaid(report)),
-        OutputFormat::Digest => Ok(digest::render_digest(report)),
+        OutputFormat::Mermaid => {
+            Ok(escape_control_chars(&mermaid::render_mermaid(report)).into_owned())
+        }
+        OutputFormat::Digest => {
+            Ok(escape_control_chars(&digest::render_digest(report)).into_owned())
+        }
     }
 }

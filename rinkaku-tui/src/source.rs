@@ -83,7 +83,7 @@ pub struct WorkingTreeSourceReader;
 
 impl SourceReader for WorkingTreeSourceReader {
     fn read(&self, repo_root: &std::path::Path, relative_path: &str) -> Result<String, String> {
-        let full_path = resolve_source_path(repo_root, relative_path);
+        let full_path = resolve_source_path(repo_root, relative_path)?;
         std::fs::read_to_string(&full_path).map_err(|source| {
             format!(
                 "failed to read {}: {source} (not present in the working tree — expected for a \
@@ -127,7 +127,15 @@ pub fn load_symbol_source(
 
     Ok(SourceView {
         path: location.path,
-        lines: content.lines().map(str::to_string).collect(),
+        // ADR 0091: the file's own content is written to the terminal by
+        // the source screen, and a file under review can contain terminal
+        // control sequences (in a string literal, or a whole file of
+        // them). Escaped here, before the highlighter runs over the same
+        // lines, so highlight spans and rendered text stay in step.
+        lines: content
+            .lines()
+            .map(|line| rinkaku_core::render::escape_control_chars(line).into_owned())
+            .collect(),
         highlight_start: location.start_line,
         highlight_end: location.end_line,
     })
@@ -168,20 +176,26 @@ pub fn load_highlighted_symbol_source(
 /// Split out as its own pure function so the join logic is unit-testable
 /// without touching disk.
 ///
-/// Relies on `relative_path` genuinely being relative: `PathBuf::join`
+/// `Err` when `relative_path` does not stay inside the repository (ADR
+/// 0090). The join itself cannot be trusted to contain it: `PathBuf::join`
 /// silently *discards* `repo_root` entirely and returns `relative_path`
-/// unchanged whenever it is itself absolute (`Path::join`'s documented
-/// behavior) — every producer of `Report` (`git diff`/`git ls-files`
-/// output, see this module's doc comment) upholds that today, so this
-/// isn't reachable in practice, but the `debug_assert!` below turns a
-/// future violation of that premise into a loud failure in tests/debug
-/// builds instead of a silent wrong-file read.
-fn resolve_source_path(repo_root: &std::path::Path, relative_path: &str) -> std::path::PathBuf {
-    debug_assert!(
-        std::path::Path::new(relative_path).is_relative(),
-        "Report paths are always repository-root-relative, got absolute path: {relative_path}"
-    );
-    repo_root.join(relative_path)
+/// unchanged whenever that is absolute (`Path::join`'s documented
+/// behavior), and `..` components walk out of the root just as freely.
+/// This used to be a `debug_assert!` on the premise that every `Report`
+/// producer upholds the invariant — but a `Report` built from a diff
+/// arriving on stdin is built from attacker-controlled path strings, and
+/// a `debug_assert!` is compiled out of exactly the release build that
+/// would then read the wrong file.
+fn resolve_source_path(
+    repo_root: &std::path::Path,
+    relative_path: &str,
+) -> Result<std::path::PathBuf, String> {
+    if !rinkaku_core::repo_path::is_repo_relative(relative_path) {
+        return Err(format!(
+            "refusing to read {relative_path}: path is outside the repository"
+        ));
+    }
+    Ok(repo_root.join(relative_path))
 }
 
 /// Finds `id`'s file path and line range in `report.files`. `None` when no
@@ -248,6 +262,7 @@ pub fn visible_window(
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use rstest::rstest;
 
     #[test]
     fn should_center_window_around_highlight_when_file_is_larger_than_viewport() {
@@ -415,20 +430,42 @@ mod tests {
     fn should_join_repo_root_and_relative_path_when_resolving_source_path() {
         let actual = resolve_source_path(std::path::Path::new("/repo/root"), "src/lib.rs");
 
-        assert_eq!(std::path::PathBuf::from("/repo/root/src/lib.rs"), actual);
+        assert_eq!(
+            Ok(std::path::PathBuf::from("/repo/root/src/lib.rs")),
+            actual
+        );
+    }
+
+    // ADR 0090: `PathBuf::join` silently *discards* `repo_root` and
+    // returns the absolute path unchanged when the "relative" argument
+    // isn't actually relative (`resolve_source_path`'s own doc comment),
+    // and walks straight out of the root on `..`. A `Report` built from a
+    // diff piped in on stdin carries whatever path strings that diff
+    // named, so both must be refused in release builds, not merely
+    // asserted in debug ones.
+    #[rstest]
+    #[case::absolute("/etc/passwd")]
+    #[case::parent_escape("../../secret/creds.py")]
+    fn should_refuse_to_resolve_source_path_when_it_escapes_the_repository(#[case] path: &str) {
+        let actual = resolve_source_path(std::path::Path::new("/repo/root"), path);
+
+        assert_eq!(
+            Err(format!(
+                "refusing to read {path}: path is outside the repository"
+            )),
+            actual
+        );
     }
 
     #[test]
-    #[should_panic(expected = "Report paths are always repository-root-relative")]
-    fn should_panic_in_debug_builds_when_relative_path_is_actually_absolute() {
-        // Pins the `debug_assert!`'s intent: `PathBuf::join` silently
-        // *discards* `repo_root` and returns the absolute path unchanged
-        // when the "relative" argument isn't actually relative
-        // (`resolve_source_path`'s own doc comment) — every `Report`
-        // producer upholds relativity today, so this only guards against a
-        // future regression, but that regression must fail loudly in
-        // debug/test builds rather than silently reading the wrong file.
-        resolve_source_path(std::path::Path::new("/repo/root"), "/etc/passwd");
+    fn should_report_an_error_when_reading_a_source_path_that_escapes_the_repository() {
+        let actual =
+            WorkingTreeSourceReader.read(std::path::Path::new("/repo/root"), "/etc/passwd");
+
+        assert_eq!(
+            Err("refusing to read /etc/passwd: path is outside the repository".to_string()),
+            actual
+        );
     }
 
     #[test]
@@ -550,6 +587,50 @@ mod tests {
             Ok(SourceView {
                 path: "src/lib.rs".to_string(),
                 lines: vec!["fn foo() { /* head snapshot */ }".to_string()],
+                highlight_start: 1,
+                highlight_end: 1,
+            }),
+            actual
+        );
+    }
+
+    // ADR 0091: the source screen writes the file's own lines to the
+    // terminal, and a file under review can carry terminal control
+    // sequences — in a string literal, or as the whole file.
+    #[test]
+    fn should_escape_control_characters_in_file_content_when_loading_symbol_source() {
+        let report = Report {
+            origin: rinkaku_core::render::ReportOrigin::Diff,
+            files: vec![FileReport {
+                path: "src/lib.rs".to_string(),
+                symbols: vec![symbol(
+                    "src/lib.rs::foo",
+                    "foo",
+                    LineRange { start: 1, end: 1 },
+                )],
+            }],
+            ..empty_report()
+        };
+        let reader = FakeSourceReader {
+            content: Ok(
+                "fn foo() { let banner = \"\u{1b}[2J\u{1b}[H\"; }\nfn bar() {}".to_string(),
+            ),
+        };
+
+        let actual = load_symbol_source(
+            &report,
+            "src/lib.rs::foo",
+            std::path::Path::new("/unused"),
+            &reader,
+        );
+
+        assert_eq!(
+            Ok(SourceView {
+                path: "src/lib.rs".to_string(),
+                lines: vec![
+                    "fn foo() { let banner = \"\\u{1b}[2J\\u{1b}[H\"; }".to_string(),
+                    "fn bar() {}".to_string(),
+                ],
                 highlight_start: 1,
                 highlight_end: 1,
             }),

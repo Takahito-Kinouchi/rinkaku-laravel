@@ -104,6 +104,48 @@ pub fn parse_diff_hunks(diff_text: &str) -> Vec<FileHunks> {
     }
 
     files
+        .into_iter()
+        .map(escape_control_chars_in_file)
+        .collect()
+}
+
+/// Replaces terminal control sequences in one file's hunk text with
+/// printable escapes (ADR 0091). Applied once here, at the pane's only
+/// ingress point, rather than in the many `Span`-building call sites that
+/// consume the result: every string in a `FileHunks` — the path, the
+/// `@@ ... @@` header, every line of body — comes straight out of the
+/// diff under review, and the diff pane writes them to the same terminal
+/// that would act on an ESC byte.
+fn escape_control_chars_in_file(file: FileHunks) -> FileHunks {
+    let FileHunks { path, hunks } = file;
+    FileHunks {
+        path: escape(&path),
+        hunks: hunks
+            .into_iter()
+            .map(|hunk| {
+                let Hunk {
+                    header,
+                    new_range,
+                    lines,
+                } = hunk;
+                Hunk {
+                    header: escape(&header),
+                    new_range,
+                    lines: lines
+                        .into_iter()
+                        .map(|line| DiffLine {
+                            kind: line.kind,
+                            content: escape(&line.content),
+                        })
+                        .collect(),
+                }
+            })
+            .collect(),
+    }
+}
+
+fn escape(text: &str) -> String {
+    rinkaku_core::render::escape_control_chars(text).into_owned()
 }
 
 /// Extracts the new-side (`b/`) path from a `diff --git a/x b/y` header,
@@ -379,6 +421,40 @@ mod tests {
         let actual = parse_diff_hunks("");
 
         assert_eq!(Vec::<FileHunks>::new(), actual);
+    }
+
+    // ADR 0091: every string here comes out of the diff under review —
+    // the path (a file the PR author named), the hunk header, and the
+    // body lines — and the pane writes all three to the terminal.
+    #[test]
+    fn should_escape_control_characters_in_path_header_and_body_lines() {
+        let diff = "\
+diff --git a/src/\u{1b}[31mx.rs b/src/\u{1b}[31mx.rs
+@@ -1,1 +1,1 @@ fn \u{1b}]0;hijack\u{7}context()
+-let old = \"\u{1b}[2J\";
++let new = \"\u{7f}\";
+";
+
+        let actual = parse_diff_hunks(diff);
+
+        let expected = vec![FileHunks {
+            path: "src/\\u{1b}[31mx.rs".to_string(),
+            hunks: vec![Hunk {
+                header: "@@ -1,1 +1,1 @@ fn \\u{1b}]0;hijack\\u{7}context()".to_string(),
+                new_range: Some((1, 1)),
+                lines: vec![
+                    DiffLine {
+                        kind: DiffLineKind::Removed,
+                        content: "let old = \"\\u{1b}[2J\";".to_string(),
+                    },
+                    DiffLine {
+                        kind: DiffLineKind::Added,
+                        content: "let new = \"\\u{7f}\";".to_string(),
+                    },
+                ],
+            }],
+        }];
+        assert_eq!(expected, actual);
     }
 
     #[test]

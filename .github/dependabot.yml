@@ -1,0 +1,38 @@
+# Dependabot version updates (https://docs.github.com/code-security/dependabot).
+#
+# This file only configures *version* updates. Dependabot *alerts* and
+# *security* updates are repository settings rather than repository content
+# (Settings -> Code security), and are unaffected by anything here.
+#
+# `cargo audit` in CI (see .github/workflows/wc-rust-test.yaml and `make
+# audit`) is deliberately kept alongside this: Dependabot's alerts are driven
+# by the GitHub Advisory Database, which does not carry every RustSec
+# advisory — unmaintained and unsound advisories in particular — so the two
+# cover different halves of the same problem.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      # Conventional Commits, matching CLAUDE.md's convention for this repo.
+      prefix: chore
+      include: scope
+    groups:
+      # One PR per week for the routine patch/minor churn across ~280
+      # transitive crates; a major bump still arrives as its own PR, since
+      # those need a human to look at the changelog.
+      cargo-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope

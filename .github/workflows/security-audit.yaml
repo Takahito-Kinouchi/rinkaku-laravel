@@ -1,0 +1,57 @@
+# Dependency advisory check, kept separate from lint-and-test so it can also
+# run on a schedule: a new RustSec advisory lands against code that hasn't
+# changed, so a PR-only check would never see it.
+#
+# Runs `make audit` (i.e. `cargo audit`) rather than an advisory-checking
+# action, so CI and a local run execute the exact same command — the same
+# rule the test/lint workflow follows.
+name: Security Audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - "**/Cargo.toml"
+      - Makefile
+      - .github/workflows/security-audit.yaml
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - "**/Cargo.toml"
+      - Makefile
+      - .github/workflows/security-audit.yaml
+  schedule:
+    # Mondays 00:00 UTC — catches advisories published against a lockfile
+    # nothing has touched.
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          key: rust-audit
+
+      # `--locked` so cargo-audit itself is built from its published
+      # lockfile rather than whatever resolves today.
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      # Fails on advisories classed as vulnerabilities; `unmaintained` /
+      # `unsound` advisories are reported as warnings without failing the
+      # job, which is deliberate — those need a judgement call about the
+      # replacement, not an immediately red pipeline.
+      - name: Run audit
+        run: make audit

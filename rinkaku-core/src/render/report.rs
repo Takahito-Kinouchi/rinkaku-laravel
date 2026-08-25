@@ -156,10 +156,15 @@ pub enum SkipReason {
     /// `.gitattributes` marks this file `-diff` or `linguist-generated`
     /// (ADR 0010).
     Generated,
+    /// The diff named a path that does not stay inside the repository —
+    /// an absolute path, or one escaping through `..` (ADR 0090). The
+    /// file is never read, only reported, so a crafted diff cannot turn
+    /// a report into a window onto the rest of the filesystem.
+    OutsideRepository,
 }
 
 /// The short label shown for a [`SkipReason`] — `"unsupported language"`,
-/// `"binary"`, `"deleted"`, `"generated"`. `pub` (rather than private to
+/// `"binary"`, `"deleted"`, `"generated"`, `"outside the repository"`. `pub` (rather than private to
 /// this module) so other renderers of the same [`Report`] data — currently
 /// `rinkaku-tui`'s entry-tree view — can show the identical wording instead
 /// of maintaining a second copy of this match that could drift from
@@ -170,6 +175,7 @@ pub fn skip_reason_label(reason: SkipReason) -> &'static str {
         SkipReason::Binary => "binary",
         SkipReason::Deleted => "deleted",
         SkipReason::Generated => "generated",
+        SkipReason::OutsideRepository => "outside the repository",
     }
 }
 
@@ -501,6 +507,80 @@ mod tests {
         let actual = render(&report, OutputFormat::Json).expect("json render succeeds");
 
         assert_eq!(expected, actual);
+    }
+
+    // ADR 0091: a file whose *name* carries an ANSI sequence is enough
+    // to steer the terminal a reviewer reads the report on — the path is
+    // echoed into Markdown verbatim, and nothing about it is under the
+    // reviewer's control. Rendered output must carry no raw ESC byte.
+    #[test]
+    fn should_escape_control_characters_in_a_path_when_rendering_markdown() {
+        let hijacking_path = "src/\u{1b}[31mPWNED\u{1b}[0m\u{1b}]0;hijack\u{7}x.rs";
+        let report = Report {
+            origin: ReportOrigin::Diff,
+            files: vec![FileReport {
+                path: hijacking_path.to_string(),
+                symbols: vec![symbol("id", "foo", SymbolKind::Function, "fn foo()")],
+            }],
+            skipped: vec![],
+            graph: SymbolGraph {
+                nodes: vec![node("id", hijacking_path, "foo")],
+                edges: vec![],
+                roots: vec!["id".to_string()],
+            },
+            tests: vec![],
+            fan_ins: vec![],
+            test_coverage: vec![],
+            file_size_warnings: vec![],
+            file_size_bands: vec![],
+            removed: vec![],
+            non_symbol_changes: vec![],
+        };
+
+        let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+
+        assert_eq!(
+            false,
+            actual.contains('\u{1b}'),
+            "rendered Markdown still contains a raw ESC byte: {actual:?}"
+        );
+        assert_eq!(
+            true,
+            actual.contains("src/\\u{1b}[31mPWNED"),
+            "rendered Markdown did not carry the escaped path: {actual:?}"
+        );
+    }
+
+    // The JSON format is deliberately *not* escaped by ADR 0091:
+    // `serde_json` already emits control characters as `\u001b`, and a
+    // consumer needs the real path back so it can open the file.
+    #[test]
+    fn should_leave_json_escaping_to_serde_when_a_path_contains_control_characters() {
+        let report = Report {
+            origin: ReportOrigin::Diff,
+            files: vec![],
+            skipped: vec![SkippedFile {
+                path: "src/\u{1b}[31mx.rs".to_string(),
+                reason: SkipReason::Binary,
+            }],
+            graph: SymbolGraph {
+                nodes: vec![],
+                edges: vec![],
+                roots: vec![],
+            },
+            tests: vec![],
+            fan_ins: vec![],
+            test_coverage: vec![],
+            file_size_warnings: vec![],
+            file_size_bands: vec![],
+            removed: vec![],
+            non_symbol_changes: vec![],
+        };
+
+        let actual = render(&report, OutputFormat::Json).expect("json render succeeds");
+
+        assert_eq!(false, actual.contains('\u{1b}'));
+        assert_eq!(true, actual.contains("src/\\u001b[31mx.rs"));
     }
 
     // ADR 0060: a multi-line signature serializes as a JSON string with

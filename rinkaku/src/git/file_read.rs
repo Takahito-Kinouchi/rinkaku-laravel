@@ -27,7 +27,21 @@ pub(crate) fn read_prefetched_or_fallback(
 }
 
 /// Reads a changed file's new-side content off the working tree.
+///
+/// Refuses a path that does not stay inside the repository (ADR 0090).
+/// `rinkaku_core::pipeline::analyze_diff` already skips such an entry
+/// before it ever calls this port, so this is the second of the two
+/// checks rather than the only one: this function is the process's actual
+/// `std::fs` boundary for diff-supplied paths, and a boundary that only
+/// holds because of a check somewhere else is a boundary one refactor
+/// away from not holding at all.
 pub(crate) fn read_working_tree_file(path: &str) -> std::io::Result<String> {
+    if !rinkaku_core::repo_path::is_repo_relative(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("refusing to read {path}: path is outside the repository"),
+        ));
+    }
     std::fs::read_to_string(path)
 }
 
@@ -89,6 +103,43 @@ mod tests {
     use super::*;
     use crate::test_util::init_repo_with_committed_file;
     use pretty_assertions::assert_eq;
+
+    // ADR 0090: this port is the process's `std::fs` boundary for
+    // diff-supplied paths. `analyze_diff` already refuses such an entry
+    // upstream, so these pin the second check independently of the first.
+    mod read_working_tree_file_tests {
+        use super::*;
+        use pretty_assertions::assert_eq;
+        use rstest::rstest;
+
+        #[rstest]
+        #[case::parent_escape("../../etc/passwd")]
+        #[case::absolute("/etc/passwd")]
+        fn should_refuse_to_read_when_path_escapes_the_repository(#[case] path: &str) {
+            let actual = read_working_tree_file(path);
+
+            let error = actual.expect_err("an escaping path must not be read");
+            assert_eq!(std::io::ErrorKind::InvalidInput, error.kind());
+            assert_eq!(
+                format!("refusing to read {path}: path is outside the repository"),
+                error.to_string()
+            );
+        }
+
+        // The complement of the cases above: a repository-relative path
+        // reaches the filesystem, so a missing file comes back as the
+        // filesystem's own `NotFound` rather than the guard's refusal.
+        // Asserted this way round because a positive read would have to
+        // put a file at a path relative to the test process's current
+        // directory, which no test may mutate.
+        #[test]
+        fn should_reach_the_filesystem_when_path_is_repository_relative() {
+            let actual = read_working_tree_file("src/definitely-not-a-real-file.rs");
+
+            let error = actual.expect_err("the file does not exist");
+            assert_eq!(std::io::ErrorKind::NotFound, error.kind());
+        }
+    }
 
     mod read_prefetched_or_fallback_tests {
         use super::*;
