@@ -4,9 +4,16 @@
 
 Open a private security advisory on this repository —
 **Security → Advisories → Report a vulnerability** — rather than a public
-issue. If the finding also applies to the upstream project this fork is
-based on ([`hiro-o918/rinkaku`](https://github.com/hiro-o918/rinkaku)),
-please report it there too; the two share most of their code.
+issue.
+
+If that button is not there, private vulnerability reporting has not been
+turned on for this repository: open a normal issue saying only that you
+have a security finding and how to reach you, **without the details**, and
+wait to be contacted.
+
+If the finding also applies to the upstream project this fork is based on
+([`hiro-o918/rinkaku`](https://github.com/hiro-o918/rinkaku)), please
+report it there too; the two share most of their code.
 
 ## What rinkaku trusts, and what it does not
 
@@ -60,6 +67,12 @@ CLI. rinkaku never reads, stores, or forwards a token.
 and weekly on a schedule (`.github/workflows/security-audit.yaml`); run
 it locally with `make audit`. Dependabot keeps versions moving
 (`.github/dependabot.yml`).
+
+Note for maintainers: this repository is a fork, and GitHub disables
+scheduled workflows by default in a forked public repository. The weekly
+run only happens once Actions is enabled for the fork — check that the
+"Security Audit" workflow appears under the Actions tab, and use its
+**Run workflow** button to confirm it can run at all.
 
 Both exist because they cover different things: Dependabot's alerts come
 from the GitHub Advisory Database, which does not carry every RustSec
