@@ -32,7 +32,7 @@ aho-corasick = "1.1"
 # parse. Only rinkaku-core depends on it directly today; declared at the
 # workspace level to match the convention every other core crate follows.
 rayon = "1.10"
-rstest = "0.23"
+rstest = "0.26"
 pretty_assertions = "1.4"
 tempfile = "3.15"
 serde = { version = "1.0", features = ["derive"] }
