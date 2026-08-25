@@ -18,3 +18,4 @@ pub mod pipeline;
 pub mod progress;
 pub mod project_scope;
 pub mod render;
+pub mod repo_path;

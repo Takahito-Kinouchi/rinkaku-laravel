@@ -156,10 +156,15 @@ pub enum SkipReason {
     /// `.gitattributes` marks this file `-diff` or `linguist-generated`
     /// (ADR 0010).
     Generated,
+    /// The diff named a path that does not stay inside the repository —
+    /// an absolute path, or one escaping through `..` (ADR 0090). The
+    /// file is never read, only reported, so a crafted diff cannot turn
+    /// a report into a window onto the rest of the filesystem.
+    OutsideRepository,
 }
 
 /// The short label shown for a [`SkipReason`] — `"unsupported language"`,
-/// `"binary"`, `"deleted"`, `"generated"`. `pub` (rather than private to
+/// `"binary"`, `"deleted"`, `"generated"`, `"outside the repository"`. `pub` (rather than private to
 /// this module) so other renderers of the same [`Report`] data — currently
 /// `rinkaku-tui`'s entry-tree view — can show the identical wording instead
 /// of maintaining a second copy of this match that could drift from
@@ -170,6 +175,7 @@ pub fn skip_reason_label(reason: SkipReason) -> &'static str {
         SkipReason::Binary => "binary",
         SkipReason::Deleted => "deleted",
         SkipReason::Generated => "generated",
+        SkipReason::OutsideRepository => "outside the repository",
     }
 }
 
