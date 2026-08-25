@@ -83,7 +83,10 @@ pub(crate) fn read_git_show_file(
 ) -> std::io::Result<String> {
     let object = format!("{head}:{path}");
     let mut command = std::process::Command::new("git");
-    command.args(["show", &object]);
+    // ADR 0092: `head` is a revision from `--base`/`--pr` and `path` comes
+    // from the diff, so the joined object name is never trusted to not
+    // start with `-`.
+    command.args(["show", "--end-of-options", &object]);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }

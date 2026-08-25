@@ -1,5 +1,7 @@
 //! Validated `--pr` argument parsing: bare PR numbers and GitHub PR URLs.
 
+use super::slug::is_valid_repo_segment;
+
 /// A validated `--pr` argument. `Url` carries `owner`/`repo` (not just the
 /// PR number) so callers can decide, per ADR 0005, whether the current
 /// directory's clone matches the PR's repository or a cache clone is
@@ -43,11 +45,20 @@ pub(crate) fn parse_pr_arg(value: &str) -> anyhow::Result<PrArg> {
             // Expect `<owner>/<repo>/pull/<number>[/...]`.
             let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
             match segments.as_slice() {
-                [owner, repo, "pull", number, ..] => Ok(PrArg::Url {
-                    owner: owner.to_string(),
-                    repo: repo.to_string(),
-                    number: parse_positive_pr_number(number, value)?,
-                }),
+                [owner, repo, "pull", number, ..] => {
+                    // ADR 0092: owner/repo end up in a cache directory
+                    // path, a `gh repo clone` argument, and a `gh api`
+                    // route, so they are checked here — at the parse
+                    // boundary — rather than at each of those uses.
+                    if !is_valid_repo_segment(owner) || !is_valid_repo_segment(repo) {
+                        anyhow::bail!("--pr URL must name a GitHub <owner>/<repo>, got: {value}");
+                    }
+                    Ok(PrArg::Url {
+                        owner: owner.to_string(),
+                        repo: repo.to_string(),
+                        number: parse_positive_pr_number(number, value)?,
+                    })
+                }
                 _ => anyhow::bail!(
                     "--pr URL must look like https://github.com/<owner>/<repo>/pull/<number>, \
                      got: {value}"
@@ -150,6 +161,11 @@ mod tests {
     #[case::should_reject_non_pull_github_url("https://github.com/octocat/hello-world/issues/123")]
     #[case::should_reject_github_url_missing_number("https://github.com/octocat/hello-world/pull/")]
     #[case::should_reject_unrelated_url("https://example.com/pull/123")]
+    // ADR 0092: these two reach a cache directory path, a `gh repo clone`
+    // argument, and a `gh api` route.
+    #[case::should_reject_parent_directory_owner("https://github.com/../hello-world/pull/1")]
+    #[case::should_reject_parent_directory_repo("https://github.com/octocat/../pull/1")]
+    #[case::should_reject_owner_that_reads_as_an_option("https://github.com/-x/hello-world/pull/1")]
     fn should_reject_pr_arg_when_input_is_invalid(#[case] input: &str) {
         let actual = parse_pr_arg(input);
 
