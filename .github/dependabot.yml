@@ -15,6 +15,16 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Only bump to a version that has been public for two weeks. A
+    # compromised or broken release is usually yanked or fixed well
+    # inside that window, and nothing here needs to be on the newest
+    # version the day it ships. GitHub's own default is 3 days.
+    #
+    # Cooldown applies to *version* updates only — a Dependabot security
+    # update for a published advisory ignores it, so a vulnerability fix
+    # still arrives immediately.
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 5
     commit-message:
       # Conventional Commits, matching CLAUDE.md's convention for this repo.
@@ -33,6 +43,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
     commit-message:
       prefix: ci
       include: scope
