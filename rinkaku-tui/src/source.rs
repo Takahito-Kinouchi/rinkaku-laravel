@@ -205,14 +205,25 @@ fn resolve_source_path(
     // A canonicalization that fails leaves `joined` to the caller's read
     // rather than becoming a refusal: the file not being in the working
     // tree is this reader's ordinary case (a PR whose head is not checked
-    // out), and it deserves the caller's own explanatory message. Nothing
-    // escapes through that branch — a read can only succeed for a path
-    // that resolves, and a path that resolves canonicalizes.
+    // out), and it deserves the caller's own explanatory message naming
+    // the path it looked for. Nothing escapes through that branch — a
+    // read can only succeed for a path that resolves, and a path that
+    // resolves canonicalizes.
+    //
+    // The contained path is returned *resolved*, so the caller reads the
+    // very path this checked rather than re-resolving `joined` and
+    // walking whatever the symlink points at by then. `git::file_read`'s
+    // own boundary already reads its resolved path; this keeps the two
+    // halves of the same rule from differing on which path they trust.
     match (repo_root.canonicalize(), joined.canonicalize()) {
-        (Ok(root), Ok(resolved)) if !rinkaku_core::repo_path::is_inside_root(&root, &resolved) => {
-            Err(format!(
-                "refusing to read {relative_path}: it resolves outside the repository"
-            ))
+        (Ok(root), Ok(resolved)) => {
+            if rinkaku_core::repo_path::is_inside_root(&root, &resolved) {
+                Ok(resolved)
+            } else {
+                Err(format!(
+                    "refusing to read {relative_path}: it resolves outside the repository"
+                ))
+            }
         }
         _ => Ok(joined),
     }
@@ -477,6 +488,27 @@ mod tests {
         );
     }
 
+    // The resolved-path contract, on the ordinary case rather than the
+    // adversarial one: a plain in-tree file comes back resolved too, so
+    // the caller never re-walks a path this function already checked.
+    #[test]
+    fn should_return_the_resolved_path_when_a_plain_file_is_inside_the_repository() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        std::fs::create_dir_all(dir.path().join("src")).expect("create src dir");
+        std::fs::write(dir.path().join("src/lib.rs"), "fn foo() {}\n").expect("write file");
+
+        let actual = resolve_source_path(dir.path(), "src/lib.rs");
+
+        assert_eq!(
+            Ok(dir
+                .path()
+                .canonicalize()
+                .expect("canonicalize root")
+                .join("src/lib.rs")),
+            actual
+        );
+    }
+
     // ADR 0090's amendment: a lexically-clean path can still be a symlink
     // out of the tree, and the string check above cannot see that. These
     // need a real tree, so they build one rather than using the `/repo/root`
@@ -513,7 +545,15 @@ mod tests {
 
         let actual = resolve_source_path(root, "alias.rs");
 
-        assert_eq!(Ok(root.join("alias.rs")), actual);
+        // Resolved, not joined: the link's target is what the caller
+        // reads, so it is what this checked.
+        assert_eq!(
+            Ok(root
+                .canonicalize()
+                .expect("canonicalize root")
+                .join("src/lib.rs")),
+            actual
+        );
     }
 
     #[test]
