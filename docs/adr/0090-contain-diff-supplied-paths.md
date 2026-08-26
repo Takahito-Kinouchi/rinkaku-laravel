@@ -102,3 +102,91 @@ seeing.
   rather than analyzed.
 - `resolve_source_path` returns `Result` instead of `PathBuf`; its one
   caller already returns `Result<String, String>` and propagates it.
+
+## Amendment (2026-08-26): resolve symlinks at the `std::fs` boundary
+
+The "Canonicalize and compare against the repository root" alternative
+above is adopted, in addition to the string predicate rather than in
+place of it. Its rejection rested on a premise that does not hold for the
+mode this ADR was written to protect.
+
+### Why the original rationale does not hold
+
+The rejection reasoned that "a symlink in the tree is a property of the
+repository being reviewed, which is trusted under this threat model."
+`SECURITY.md` does draw that line, but it draws it around *the clone's
+own configuration* — `.git/config`, `diff.external`, textconv filters —
+which the reviewer chose to point rinkaku at. The working tree's
+*contents* are a different thing: in the stdin workflow the README leads
+with, the tree on disk is the change under review, materialized:
+
+```sh
+gh pr checkout 123 && gh pr diff 123 | rinkaku
+```
+
+After that checkout, every file the diff names is a file the PR author
+wrote. A symlink is one of them. So the containment ADR 0090 states —
+"a crafted diff cannot turn a report into a window onto the rest of the
+filesystem" — was only true of paths that *spell* an escape, and a
+symlink spells nothing:
+
+```
+diff --git a/stolen.py b/stolen.py
+new file mode 120000
+@@ -0,0 +1 @@
++/home/victim/.ssh/id_rsa
+```
+
+`stolen.py` passes `is_repo_relative` unchanged, and the unguarded
+`read_to_string` behind it followed the link. Reproduced against the
+Markdown and JSON renderers with both an absolute and a relative link
+target; the TUI's source view leaked more, since `SourceView.lines`
+carries every line of the file rather than a sliced signature.
+
+### Decision
+
+**The two `std::fs` boundaries canonicalize the read target and refuse
+it unless it resolves inside the canonicalized repository root** —
+`git::file_read::read_contained_file` (behind `read_working_tree_file`)
+and `rinkaku_tui::source::resolve_source_path`. The lexical predicate
+stays exactly where it was: it is still the check that runs before any
+IO, and still the one `analyze_diff` applies.
+
+Three points make this fit rather than fight the architecture:
+
+- **The IO stays out of core.** `rinkaku_core::repo_path` gains
+  `is_inside_root`, a pure component-wise comparison of two paths the
+  *caller* has already canonicalized. Core still reads nothing off disk;
+  the adapters that already own filesystem access do the resolving.
+- **The root is canonicalized too.** `git rev-parse --show-toplevel` and
+  `std::env::current_dir` can both reach the repository through a
+  symlink — macOS's `/tmp` -> `/private/tmp` is the everyday case — and
+  comparing a resolved target against an unresolved root would refuse
+  every legitimate read there.
+- **A refusal is still a skip, not a failed run.** The port reports it as
+  `io::ErrorKind::InvalidInput` (the kind `read_working_tree_file`
+  already used for the lexical refusal), and `analyze_diff` turns that
+  into `SkipReason::OutsideRepository` instead of `AnalyzeError::ReadFile`.
+  This preserves the original decision's "reported, not dropped", and its
+  rejection of failing a whole review over one crafted entry.
+
+### What this does not change
+
+- **`--base` and `--pr` were never exposed and still are not.** They read
+  through `git show <rev>:<path>`, which returns a symlink's blob — the
+  target *path as text* — rather than following it.
+- **In-repository symlinks are still read.** The refusal is about where a
+  path resolves, not about a path being a link; a repository that links
+  to its own files is ordinary and keeps working.
+
+### Consequences
+
+- `read_working_tree_file` now resolves the path before reading it, so a
+  missing file surfaces `NotFound` from `canonicalize` rather than from
+  `read_to_string`. Same `ErrorKind`, same reported failure.
+- A path that resolves out of the tree appears in `## Skipped files` as
+  `outside the repository`, alongside the lexical cases. No new
+  `SkipReason` variant, so no output-format change this time.
+- The check costs two `canonicalize` calls per changed file. The
+  resolver's repository-wide index (`build_resolver`) pays it per tracked
+  file, where the reads were already the dominant cost.

@@ -1,6 +1,6 @@
 //! [`collect_referenced_names`] helper: reference-name gathering,
-//! empty-input handling, deleted-file skip, and the malformed-diff error
-//! path.
+//! empty-input handling, deleted-file skip, the reader's own containment
+//! refusal, and the malformed-diff error path.
 
 use super::fake_reader;
 use crate::pipeline::{AnalyzeError, collect_referenced_names};
@@ -82,4 +82,45 @@ index e69de29..4b825dc 100644
     let actual = collect_referenced_names(diff, read_file);
 
     assert!(matches!(actual, Err(AnalyzeError::Diff(_))));
+}
+
+// ADR 0090's amendment: this walk reads head-side content through the
+// same untrusted diff paths `analyze_diff` does, so it meets the same
+// `InvalidInput` refusal when the reader resolves a path out of the tree.
+// It is skipped like every other unusable entry here — and, as in
+// `analyze_diff`, the rest of the diff must still be walked, which is
+// what the second file pins.
+#[test]
+fn should_skip_file_and_still_collect_the_rest_when_the_reader_refuses_it_as_uncontained() {
+    let diff = "\
+diff --git a/stolen.rs b/stolen.rs
+@@ -1,3 +1,3 @@
+ fn leaked() -> i32 {
+-    0
++    secret()
+ }
+diff --git a/src/lib.rs b/src/lib.rs
+@@ -1,3 +1,3 @@
+ fn foo(p: Point) -> i32 {
+-    0
++    helper(p)
+ }
+";
+    let read_file = |path: &str| -> std::io::Result<String> {
+        match path {
+            "stolen.rs" => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "refusing to read stolen.rs: it resolves outside the repository",
+            )),
+            _ => Ok("fn foo(p: Point) -> i32 {\n    helper(p)\n}\n".to_string()),
+        }
+    };
+
+    let expected: std::collections::HashSet<String> = ["Point".to_string(), "helper".to_string()]
+        .into_iter()
+        .collect();
+    let actual = collect_referenced_names(diff, read_file)
+        .expect("a contained-path refusal must not fail the walk");
+
+    assert_eq!(expected, actual);
 }

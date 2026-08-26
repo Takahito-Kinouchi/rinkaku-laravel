@@ -295,11 +295,31 @@ pub fn analyze_diff(
                 break 'file;
             }
 
-            let source =
-                read_file(&changed_file.path).map_err(|source| AnalyzeError::ReadFile {
-                    path: changed_file.path.clone(),
-                    source,
-                })?;
+            let source = match read_file(&changed_file.path) {
+                Ok(source) => source,
+                // ADR 0090's amendment: the `read_file` port makes the
+                // containment check the string predicate at the top of
+                // this loop cannot — an in-tree symlink pointing out of
+                // the repository — and reports a refusal as
+                // `InvalidInput`. That is this entry being outside the
+                // repository, so it is skipped and reported exactly like
+                // the lexical case, rather than failing the run: one
+                // refused entry must not throw away the rest of the
+                // review (ADR 0090's own "reported, not dropped").
+                Err(source) if source.kind() == std::io::ErrorKind::InvalidInput => {
+                    skipped.push(SkippedFile {
+                        path: changed_file.path,
+                        reason: SkipReason::OutsideRepository,
+                    });
+                    break 'file;
+                }
+                Err(source) => {
+                    return Err(AnalyzeError::ReadFile {
+                        path: changed_file.path.clone(),
+                        source,
+                    });
+                }
+            };
             // ADR 0011: content-marker detection, checked after the read but
             // before parsing — a file already excluded by an attribute
             // (generated_paths, above) never reaches here, so this only ever
@@ -860,10 +880,19 @@ pub fn collect_referenced_names(
             continue;
         }
 
-        let source = read_file(&changed_file.path).map_err(|source| AnalyzeError::ReadFile {
-            path: changed_file.path.clone(),
-            source,
-        })?;
+        let source = match read_file(&changed_file.path) {
+            Ok(source) => source,
+            // Same containment refusal `analyze_diff` handles above, and
+            // skipped here for the same reason this walk already skips
+            // every other unusable entry.
+            Err(source) if source.kind() == std::io::ErrorKind::InvalidInput => continue,
+            Err(source) => {
+                return Err(AnalyzeError::ReadFile {
+                    path: changed_file.path.clone(),
+                    source,
+                });
+            }
+        };
         for symbol in extract_changed_symbols(&source, lang, &changed_file.changed_ranges) {
             names.extend(symbol.referenced_names);
             names.extend(symbol.referenced_method_names);
