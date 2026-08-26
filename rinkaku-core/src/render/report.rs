@@ -161,10 +161,19 @@ pub enum SkipReason {
     /// file is never read, only reported, so a crafted diff cannot turn
     /// a report into a window onto the rest of the filesystem.
     OutsideRepository,
+    /// The `read_file` port could not produce the file's new-side content
+    /// (ADR 0094). Overwhelmingly this means the file is not in the
+    /// working tree — the ordinary case for `gh pr diff <n> | rinkaku`
+    /// run outside a checkout of the branch, where every file the PR adds
+    /// is absent — but a permission error or a non-UTF-8 file lands here
+    /// too. Reported rather than fatal: one unreadable entry must not
+    /// throw away the rest of the review.
+    Unreadable,
 }
 
 /// The short label shown for a [`SkipReason`] — `"unsupported language"`,
-/// `"binary"`, `"deleted"`, `"generated"`, `"outside the repository"`. `pub` (rather than private to
+/// `"binary"`, `"deleted"`, `"generated"`, `"outside the repository"`,
+/// `"could not be read"`. `pub` (rather than private to
 /// this module) so other renderers of the same [`Report`] data — currently
 /// `rinkaku-tui`'s entry-tree view — can show the identical wording instead
 /// of maintaining a second copy of this match that could drift from
@@ -176,6 +185,7 @@ pub fn skip_reason_label(reason: SkipReason) -> &'static str {
         SkipReason::Deleted => "deleted",
         SkipReason::Generated => "generated",
         SkipReason::OutsideRepository => "outside the repository",
+        SkipReason::Unreadable => "could not be read",
     }
 }
 
@@ -513,6 +523,17 @@ mod tests {
     // to steer the terminal a reviewer reads the report on — the path is
     // echoed into Markdown verbatim, and nothing about it is under the
     // reviewer's control. Rendered output must carry no raw ESC byte.
+    // ADR 0094: the label the reviewer actually reads for a file rinkaku
+    // could not open. Pinned here because Markdown and the TUI both route
+    // through `skip_reason_label`, so this one string is what keeps them
+    // describing it identically.
+    #[test]
+    fn should_label_an_unreadable_skip_as_could_not_be_read() {
+        let actual = skip_reason_label(SkipReason::Unreadable);
+
+        assert_eq!("could not be read", actual);
+    }
+
     #[test]
     fn should_escape_control_characters_in_a_path_when_rendering_markdown() {
         let hijacking_path = "src/\u{1b}[31mPWNED\u{1b}[0m\u{1b}]0;hijack\u{7}x.rs";

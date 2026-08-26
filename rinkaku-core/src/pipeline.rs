@@ -39,12 +39,6 @@ pub type ReadBaseFile<'a> = &'a dyn Fn(&str) -> std::io::Result<String>;
 pub enum AnalyzeError {
     #[error("failed to parse diff: {0}")]
     Diff(#[from] crate::diff::ParseError),
-    #[error("failed to read {path}: {source}")]
-    ReadFile {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
 }
 
 /// Parses `diff_text` and extracts changed symbols from every file it can,
@@ -313,11 +307,18 @@ pub fn analyze_diff(
                     });
                     break 'file;
                 }
-                Err(source) => {
-                    return Err(AnalyzeError::ReadFile {
-                        path: changed_file.path.clone(),
-                        source,
+                // ADR 0094: any other read failure is this entry's
+                // problem, not the run's. The file not being in the
+                // working tree is the ordinary case for a diff piped in
+                // from outside a checkout of the branch, and failing the
+                // whole review over it threw away every entry that *was*
+                // readable.
+                Err(_) => {
+                    skipped.push(SkippedFile {
+                        path: changed_file.path,
+                        reason: SkipReason::Unreadable,
                     });
+                    break 'file;
                 }
             };
             // ADR 0011: content-marker detection, checked after the read but
@@ -885,13 +886,12 @@ pub fn collect_referenced_names(
             // Same containment refusal `analyze_diff` handles above, and
             // skipped here for the same reason this walk already skips
             // every other unusable entry.
-            Err(source) if source.kind() == std::io::ErrorKind::InvalidInput => continue,
-            Err(source) => {
-                return Err(AnalyzeError::ReadFile {
-                    path: changed_file.path.clone(),
-                    source,
-                });
-            }
+            // ADR 0090's amendment and ADR 0094 respectively: a
+            // containment refusal and an ordinary read failure are both
+            // this entry's problem. This walk only gathers reference
+            // names to size the dependency index, so a name it misses
+            // costs a candidate, never correctness.
+            Err(_) => continue,
         };
         for symbol in extract_changed_symbols(&source, lang, &changed_file.changed_ranges) {
             names.extend(symbol.referenced_names);

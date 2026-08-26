@@ -69,6 +69,36 @@ pub(crate) fn garbage_input_note(
     Some("note: no file changes recognized in input; expected a unified diff")
 }
 
+/// Returns a note when the diff named files that could not be read off
+/// the working tree (ADR 0094's `SkipReason::Unreadable`).
+///
+/// Without it, `gh pr diff <n> | rinkaku` run outside a checkout of the
+/// branch produces a report with every added file listed as
+/// `could not be read` and no indication that checking the branch out is
+/// what fixes it — the reader is left to work out that rinkaku reads
+/// new-side content off disk rather than from the diff. That used to be a
+/// hard error, which at least said something; the skip must not be
+/// quieter than the failure it replaced.
+///
+/// `None` when nothing was skipped for that reason, so an ordinary run
+/// stays silent.
+pub(crate) fn unreadable_files_note(report: &rinkaku_core::render::Report) -> Option<String> {
+    let count = report
+        .skipped
+        .iter()
+        .filter(|skipped| matches!(skipped.reason, rinkaku_core::render::SkipReason::Unreadable))
+        .count();
+    if count == 0 {
+        return None;
+    }
+    let files = if count == 1 { "file" } else { "files" };
+    Some(format!(
+        "note: {count} {files} in the diff could not be read from the working tree; \
+         rinkaku reads new-side content off disk, so check the branch out \
+         (e.g. `gh pr checkout <number>`) for a complete report"
+    ))
+}
+
 /// Returns a note for ADR 0017's whole-repo outline when it found nothing
 /// to show — every tracked file was either unsupported, a whole test file,
 /// generated, or unreadable (`analyze_repo`'s own doc comment: all of these
@@ -93,6 +123,82 @@ pub(crate) fn repo_outline_empty_note(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod unreadable_files_note_tests {
+        use super::*;
+        use pretty_assertions::assert_eq;
+        use rinkaku_core::render::{Report, SkipReason, SkippedFile};
+
+        fn report_skipping(reasons: &[SkipReason]) -> Report {
+            Report {
+                origin: rinkaku_core::render::ReportOrigin::Diff,
+                files: vec![],
+                skipped: reasons
+                    .iter()
+                    .enumerate()
+                    .map(|(index, reason)| SkippedFile {
+                        path: format!("src/f{index}.rs"),
+                        reason: *reason,
+                    })
+                    .collect(),
+                graph: rinkaku_core::graph::SymbolGraph {
+                    nodes: vec![],
+                    edges: vec![],
+                    roots: vec![],
+                },
+                tests: vec![],
+                fan_ins: vec![],
+                test_coverage: vec![],
+                file_size_warnings: vec![],
+                file_size_bands: vec![],
+                removed: vec![],
+                non_symbol_changes: vec![],
+            }
+        }
+
+        #[test]
+        fn should_return_no_note_when_nothing_was_skipped_as_unreadable() {
+            let actual =
+                unreadable_files_note(&report_skipping(&[SkipReason::Binary, SkipReason::Deleted]));
+
+            assert_eq!(None, actual);
+        }
+
+        #[test]
+        fn should_use_the_singular_when_one_file_could_not_be_read() {
+            let actual = unreadable_files_note(&report_skipping(&[SkipReason::Unreadable]));
+
+            assert_eq!(
+                Some(
+                    "note: 1 file in the diff could not be read from the working tree; rinkaku \
+                     reads new-side content off disk, so check the branch out (e.g. `gh pr \
+                     checkout <number>`) for a complete report"
+                        .to_string()
+                ),
+                actual
+            );
+        }
+
+        #[test]
+        fn should_count_only_unreadable_entries_when_other_skips_are_present() {
+            let actual = unreadable_files_note(&report_skipping(&[
+                SkipReason::Unreadable,
+                SkipReason::Binary,
+                SkipReason::Unreadable,
+            ]));
+
+            assert_eq!(
+                Some(
+                    "note: 2 files in the diff could not be read from the working tree; rinkaku \
+                     reads new-side content off disk, so check the branch out (e.g. `gh pr \
+                     checkout <number>`) for a complete report"
+                        .to_string()
+                ),
+                actual
+            );
+        }
+    }
+
     mod garbage_input_note_tests {
         use super::*;
         use pretty_assertions::assert_eq;
