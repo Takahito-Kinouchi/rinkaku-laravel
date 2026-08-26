@@ -19,6 +19,7 @@ mod container_slice;
 mod definition_span;
 mod hcl;
 mod references;
+pub mod signature_bound;
 
 /// Threaded through `build_symbols`/`build_symbol`/`slice_signature` only
 /// by `extract_changed_symbols` (ADR 0071) — `extract_all_symbols` and HCL
@@ -1044,7 +1045,7 @@ fn tidy_signature_lines(text: &str, first_line_column: usize) -> String {
         collapsed.pop();
     }
 
-    collapsed.join("\n")
+    signature_bound::bound_signature(collapsed.join("\n"))
 }
 
 /// Walks up from `node` to find an enclosing container (Rust
