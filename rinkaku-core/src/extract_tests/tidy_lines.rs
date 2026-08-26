@@ -1,4 +1,4 @@
-//! Tests pinning [`super::tidy_signature_lines`]: the transform that turns
+//! Tests pinning [`super::signature_slice::tidy_signature_lines`]: the transform that turns
 //! a raw, range-stripped declaration slice into the multi-line text
 //! actually stored on [`super::ExtractedSymbol::signature`] (ADR 0060) —
 //! dedenting continuation lines relative to the node's real starting
@@ -6,7 +6,7 @@
 //! and collapsing the blank-line runs a removed comment/body leaves
 //! behind.
 
-use super::*;
+use super::signature_slice::tidy_signature_lines;
 use pretty_assertions::assert_eq;
 
 #[test]
