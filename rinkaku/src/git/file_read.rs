@@ -26,23 +26,67 @@ pub(crate) fn read_prefetched_or_fallback(
     }
 }
 
-/// Reads a changed file's new-side content off the working tree.
+/// Reads a changed file's new-side content off the working tree, rooted
+/// at the process's current directory — which is what a bare relative
+/// `std::fs` read resolves against anyway, so this reads exactly the file
+/// it always did.
 ///
-/// Refuses a path that does not stay inside the repository (ADR 0090).
-/// `rinkaku_core::pipeline::analyze_diff` already skips such an entry
-/// before it ever calls this port, so this is the second of the two
-/// checks rather than the only one: this function is the process's actual
-/// `std::fs` boundary for diff-supplied paths, and a boundary that only
-/// holds because of a check somewhere else is a boundary one refactor
-/// away from not holding at all.
+/// See [`read_contained_file`] for the containment the read is subject to.
 pub(crate) fn read_working_tree_file(path: &str) -> std::io::Result<String> {
+    read_contained_file(&std::env::current_dir()?, path)
+}
+
+/// Reads `path` (repository-root-relative) from under `root`, refusing
+/// any path that does not stay inside it (ADR 0090).
+///
+/// Two checks, because a path can leave the repository two ways:
+///
+/// 1. **Lexically** — `../…`, `/etc/…`, `C:\…`. `is_repo_relative`
+///    settles this without touching the filesystem.
+///    `rinkaku_core::pipeline::analyze_diff` already skips such an entry
+///    before it ever calls this port, so this is the second of the two
+///    checks rather than the only one: this function is the process's
+///    actual `std::fs` boundary for diff-supplied paths, and a boundary
+///    that only holds because of a check somewhere else is a boundary one
+///    refactor away from not holding at all.
+/// 2. **Through a symlink** — `stolen.py -> /home/victim/.ssh/id_rsa` is
+///    lexically spotless, and a diff naming it is enough to make an
+///    unguarded read follow it out of the tree (ADR 0090's amendment).
+///    Only a *resolved* path can rule this out, so the read target is
+///    canonicalized and compared against the canonicalized root.
+///
+/// Both refusals report `ErrorKind::InvalidInput`, which is what
+/// `analyze_diff` reads as "this entry is outside the repository" and
+/// turns into a skip rather than a failed run.
+///
+/// The root is canonicalized too, not assumed canonical: `git rev-parse
+/// --show-toplevel` and `std::env::current_dir` can both hand back a path
+/// that reaches the repository through a symlink (macOS's `/tmp` ->
+/// `/private/tmp` is the everyday case), and comparing a resolved path
+/// against an unresolved root would reject every legitimate read there.
+fn read_contained_file(root: &std::path::Path, path: &str) -> std::io::Result<String> {
     if !rinkaku_core::repo_path::is_repo_relative(path) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("refusing to read {path}: path is outside the repository"),
+        return Err(outside_repository(path, "path is outside the repository"));
+    }
+    // Canonicalizing the target before the root keeps a missing file
+    // reported as the filesystem's own `NotFound`, exactly as the plain
+    // read this replaced did, rather than as a containment refusal.
+    let resolved = root.join(path).canonicalize()?;
+    let root = root.canonicalize()?;
+    if !rinkaku_core::repo_path::is_inside_root(&root, &resolved) {
+        return Err(outside_repository(
+            path,
+            "it resolves outside the repository",
         ));
     }
-    std::fs::read_to_string(path)
+    std::fs::read_to_string(resolved)
+}
+
+fn outside_repository(path: &str, reason: &str) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        format!("refusing to read {path}: {reason}"),
+    )
 }
 
 /// [`rinkaku_tui::source::SourceReader`] backed by `git show <head>:<path>`
@@ -141,6 +185,73 @@ mod tests {
 
             let error = actual.expect_err("the file does not exist");
             assert_eq!(std::io::ErrorKind::NotFound, error.kind());
+        }
+    }
+
+    // ADR 0090's amendment: the lexical check above cannot see a symlink,
+    // so these exercise the resolved-path half against a real tree. They
+    // take the root as an argument rather than going through
+    // `read_working_tree_file`, whose root is the test process's own
+    // current directory — which no test may mutate.
+    mod read_contained_file_tests {
+        use super::*;
+        use pretty_assertions::assert_eq;
+        use rstest::rstest;
+
+        #[rstest]
+        #[case::absolute_target("/etc/passwd")]
+        #[case::relative_target("../outside/creds.py")]
+        #[cfg(unix)]
+        fn should_refuse_to_read_when_an_in_tree_symlink_points_out_of_the_repository(
+            #[case] link_target: &str,
+        ) {
+            let dir = tempfile::tempdir().expect("create temp dir");
+            let root = dir.path().join("repo");
+            std::fs::create_dir_all(&root).expect("create repo dir");
+            std::fs::create_dir_all(dir.path().join("outside")).expect("create outside dir");
+            std::fs::write(dir.path().join("outside/creds.py"), "SECRET = 1\n")
+                .expect("write the out-of-tree file");
+            std::os::unix::fs::symlink(link_target, root.join("stolen.py"))
+                .expect("create the escaping symlink");
+
+            let actual = read_contained_file(&root, "stolen.py");
+
+            let error = actual.expect_err("an escaping symlink must not be followed");
+            assert_eq!(std::io::ErrorKind::InvalidInput, error.kind());
+            assert_eq!(
+                "refusing to read stolen.py: it resolves outside the repository",
+                error.to_string()
+            );
+        }
+
+        // The complement: a symlink is not refused for being a symlink,
+        // only for leaving the repository. Repositories legitimately
+        // contain links to their own files.
+        #[test]
+        #[cfg(unix)]
+        fn should_read_through_a_symlink_when_it_stays_inside_the_repository() {
+            let dir = tempfile::tempdir().expect("create temp dir");
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("src")).expect("create src dir");
+            std::fs::write(root.join("src/lib.rs"), "fn foo() {}\n").expect("write file");
+            std::os::unix::fs::symlink("src/lib.rs", root.join("alias.rs"))
+                .expect("create the in-tree symlink");
+
+            let actual = read_contained_file(root, "alias.rs").expect("an in-tree link is read");
+
+            assert_eq!("fn foo() {}\n".to_string(), actual);
+        }
+
+        #[test]
+        fn should_read_a_plain_file_when_it_is_inside_the_repository() {
+            let dir = tempfile::tempdir().expect("create temp dir");
+            std::fs::create_dir_all(dir.path().join("src")).expect("create src dir");
+            std::fs::write(dir.path().join("src/lib.rs"), "fn foo() {}\n").expect("write file");
+
+            let actual =
+                read_contained_file(dir.path(), "src/lib.rs").expect("an in-tree file is read");
+
+            assert_eq!("fn foo() {}\n".to_string(), actual);
         }
     }
 

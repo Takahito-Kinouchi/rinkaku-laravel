@@ -9,6 +9,10 @@
 //! entry *and* that the reader was never called.
 
 use super::{empty_graph, fake_reader};
+use crate::diff::LineRange;
+use crate::extract::{ExtractedSymbol, SymbolKind};
+use crate::file_size::{FileSizeBand, FileSizeEntry};
+use crate::graph::{Node, SymbolGraph};
 use crate::pipeline::analyze_diff;
 use crate::render::{FileReport, Report, ReportOrigin, SkipReason, SkippedFile};
 use pretty_assertions::assert_eq;
@@ -162,6 +166,97 @@ fn should_skip_file_without_reading_it_when_diff_path_escapes_the_repository(
         None,
     )
     .expect("analyze should succeed");
+
+    assert_eq!(expected, actual);
+}
+
+// ADR 0090's amendment. A lexically-clean path can still be a symlink
+// pointing out of the tree, which only the `read_file` port — the side
+// that touches the filesystem — can detect. It reports that refusal as
+// `InvalidInput`, and this is what `analyze_diff` must do with it: report
+// the entry as outside the repository, exactly like the lexical cases
+// above, and carry on with the rest of the diff. The second file is in
+// the same diff to pin that "carry on" half: a refusal must not fail the
+// run.
+#[test]
+fn should_skip_file_and_still_analyze_the_rest_when_the_reader_refuses_it_as_uncontained() {
+    let diff = "\
+diff --git a/stolen.py b/stolen.py
+@@ -1,0 +1,1 @@
++def leaked(): pass
+diff --git a/src/app.py b/src/app.py
+@@ -1,1 +1,1 @@
+-def real_change(): pass
++def real_change(x): pass
+";
+    let read_file = |path: &str| -> std::io::Result<String> {
+        match path {
+            "stolen.py" => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "refusing to read stolen.py: it resolves outside the repository",
+            )),
+            _ => Ok("def real_change(x): pass\n".to_string()),
+        }
+    };
+
+    let expected = Report {
+        origin: ReportOrigin::Diff,
+        files: vec![FileReport {
+            path: "src/app.py".to_string(),
+            symbols: vec![ExtractedSymbol {
+                id: "src/app.py::real_change".to_string(),
+                name: "real_change".to_string(),
+                kind: SymbolKind::Function,
+                signature: "def real_change(x):".to_string(),
+                range: LineRange { start: 1, end: 1 },
+                container: None,
+                dependencies: vec![],
+                referenced_names: vec![],
+                referenced_method_names: vec![],
+                omitted_dependency_matches: 0,
+                classification: None,
+                is_test: false,
+                previous_signature: None,
+            }],
+        }],
+        skipped: vec![SkippedFile {
+            path: "stolen.py".to_string(),
+            reason: SkipReason::OutsideRepository,
+        }],
+        graph: SymbolGraph {
+            nodes: vec![Node {
+                id: "src/app.py::real_change".to_string(),
+                path: "src/app.py".to_string(),
+                name: "real_change".to_string(),
+                container: None,
+                is_test: false,
+            }],
+            edges: vec![],
+            roots: vec!["src/app.py::real_change".to_string()],
+        },
+        tests: vec![],
+        fan_ins: vec![],
+        test_coverage: vec![],
+        file_size_warnings: vec![],
+        file_size_bands: vec![FileSizeEntry {
+            path: "src/app.py".to_string(),
+            line_count: 1,
+            band: FileSizeBand::Normal,
+        }],
+        removed: vec![],
+        non_symbol_changes: vec![],
+    };
+    let actual = analyze_diff(
+        diff,
+        read_file,
+        None,
+        None,
+        true,
+        &HashSet::new(),
+        true,
+        None,
+    )
+    .expect("a contained-path refusal must not fail the run");
 
     assert_eq!(expected, actual);
 }

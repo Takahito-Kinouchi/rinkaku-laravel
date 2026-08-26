@@ -195,7 +195,27 @@ fn resolve_source_path(
             "refusing to read {relative_path}: path is outside the repository"
         ));
     }
-    Ok(repo_root.join(relative_path))
+    let joined = repo_root.join(relative_path);
+    // ADR 0090's amendment: the check above reads the path as a string,
+    // which cannot see a symlink in the tree pointing out of it. Both
+    // sides are canonicalized before comparing — `repo_root` included,
+    // since `git rev-parse --show-toplevel` can itself reach the
+    // repository through a symlink (macOS's `/tmp` -> `/private/tmp`).
+    //
+    // A canonicalization that fails leaves `joined` to the caller's read
+    // rather than becoming a refusal: the file not being in the working
+    // tree is this reader's ordinary case (a PR whose head is not checked
+    // out), and it deserves the caller's own explanatory message. Nothing
+    // escapes through that branch — a read can only succeed for a path
+    // that resolves, and a path that resolves canonicalizes.
+    match (repo_root.canonicalize(), joined.canonicalize()) {
+        (Ok(root), Ok(resolved)) if !rinkaku_core::repo_path::is_inside_root(&root, &resolved) => {
+            Err(format!(
+                "refusing to read {relative_path}: it resolves outside the repository"
+            ))
+        }
+        _ => Ok(joined),
+    }
 }
 
 /// Finds `id`'s file path and line range in `report.files`. `None` when no
@@ -455,6 +475,45 @@ mod tests {
             )),
             actual
         );
+    }
+
+    // ADR 0090's amendment: a lexically-clean path can still be a symlink
+    // out of the tree, and the string check above cannot see that. These
+    // need a real tree, so they build one rather than using the `/repo/root`
+    // literal the lexical cases above are happy with.
+    #[test]
+    #[cfg(unix)]
+    fn should_refuse_to_resolve_source_path_when_an_in_tree_symlink_escapes_the_repository() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let root = dir.path().join("repo");
+        std::fs::create_dir_all(&root).expect("create repo dir");
+        std::fs::create_dir_all(dir.path().join("outside")).expect("create outside dir");
+        std::fs::write(dir.path().join("outside/creds.py"), "SECRET = 1\n")
+            .expect("write the out-of-tree file");
+        std::os::unix::fs::symlink("../outside/creds.py", root.join("stolen.py"))
+            .expect("create the escaping symlink");
+
+        let actual = resolve_source_path(&root, "stolen.py");
+
+        assert_eq!(
+            Err("refusing to read stolen.py: it resolves outside the repository".to_string()),
+            actual
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn should_resolve_source_path_when_an_in_tree_symlink_stays_inside_the_repository() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).expect("create src dir");
+        std::fs::write(root.join("src/lib.rs"), "fn foo() {}\n").expect("write file");
+        std::os::unix::fs::symlink("src/lib.rs", root.join("alias.rs"))
+            .expect("create the in-tree symlink");
+
+        let actual = resolve_source_path(root, "alias.rs");
+
+        assert_eq!(Ok(root.join("alias.rs")), actual);
     }
 
     #[test]

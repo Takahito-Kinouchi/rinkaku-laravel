@@ -24,9 +24,13 @@ line matters.
 written by whoever opened that pull request. Every path, hunk header, and
 line of content in it is treated as hostile input:
 
-- Paths that leave the repository (`../…`, `/etc/…`, `C:\…`) are refused
-  and reported as `skipped (outside the repository)`; the file is never
-  read (ADR 0090).
+- Paths that leave the repository are refused and reported as
+  `skipped (outside the repository)`; the file is never read (ADR 0090).
+  This covers both ways a path can leave: spelled out (`../…`, `/etc/…`,
+  `C:\…`), and resolved — a symlink inside the tree pointing out of it,
+  caught by canonicalizing the read target and comparing it against the
+  repository root (ADR 0090's amendment). A symlink that stays inside the
+  repository is read normally.
 - Control characters in anything rendered to a terminal are escaped as
   `\u{..}`, so a filename cannot carry an escape sequence into the
   reviewer's terminal (ADR 0091). JSON output is left to `serde_json`'s
@@ -34,12 +38,18 @@ line of content in it is treated as hostile input:
 - Malformed input — impossible hunk counts, non-numeric headers, empty
   input — fails with an error rather than a panic.
 
-**Trusted — the repository you point it at.** rinkaku shells out to
-`git`, so the repository's own configuration applies: `diff.external`,
-textconv filters, and `core.fsmonitor` all run commands git decides to
-run. Analyzing a clone you do not trust means trusting that clone's
+**Trusted — the clone's configuration.** rinkaku shells out to `git`, so
+the repository's own configuration applies: `diff.external`, textconv
+filters, and `core.fsmonitor` all run commands git decides to run.
+Analyzing a clone you do not trust means trusting that clone's
 `.git/config`. This is inherent to invoking `git` at all; rinkaku does
 not sandbox it.
+
+Note the line this draws. The clone's *configuration* is trusted because
+the reviewer chose it. The working tree's *contents* are not: after
+`gh pr checkout 123`, every file on disk is the change under review, so
+paths are resolved before they are read rather than taken on trust (ADR
+0090's amendment).
 
 **Trusted — `gh`.** Authentication is delegated entirely to the GitHub
 CLI. rinkaku never reads, stores, or forwards a token.
