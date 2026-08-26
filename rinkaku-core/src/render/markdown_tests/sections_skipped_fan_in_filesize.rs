@@ -9,7 +9,7 @@ use super::*;
 use crate::extract::SymbolKind;
 use crate::graph::FanIn;
 use crate::render::report::{FileReport, ReportOrigin, SkipReason, SkippedFile};
-use crate::render::{OutputFormat, render};
+use crate::render::{OutputFormat, render, render_body};
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -53,7 +53,7 @@ fn should_render_skipped_files_section_when_report_has_skips() {
 - src/old.rs (deleted)
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -109,7 +109,7 @@ fn foo()
 - assets/logo.png (binary)
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -159,7 +159,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -275,7 +275,7 @@ func HandleBar(req UpsertItemsRequest) error
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -330,7 +330,7 @@ fn should_render_fan_in_line_for_symbol_with_no_matching_definition() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -408,7 +408,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -441,7 +441,7 @@ fn should_omit_file_sizes_section_when_report_has_no_bands() {
         non_symbol_changes: vec![],
     };
 
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert!(!actual.contains("## File sizes"));
 }
@@ -557,7 +557,7 @@ func HandleBar(req UpsertItemsRequest) error
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }

@@ -383,7 +383,7 @@ func (r *repoImpl) Save(id string) error {
         None,
     )
     .expect("analyze should succeed");
-    let markdown = crate::render::render(&report, crate::render::OutputFormat::Markdown)
+    let markdown = crate::render::render_body(&report, crate::render::OutputFormat::Markdown)
         .expect("markdown render should succeed");
 
     let expected = "\
@@ -478,7 +478,7 @@ def use_foo():
         None,
     )
     .expect("analyze should succeed");
-    let markdown = crate::render::render(&report, crate::render::OutputFormat::Markdown)
+    let markdown = crate::render::render_body(&report, crate::render::OutputFormat::Markdown)
         .expect("markdown render should succeed");
 
     // Two independent roots: `Baz.Foo` (a.py:5) and `use_foo`, which

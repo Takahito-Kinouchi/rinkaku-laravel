@@ -10,7 +10,7 @@ use super::*;
 use crate::extract::{Classification, RemovedSymbol, SymbolKind};
 use crate::graph::FanIn;
 use crate::render::report::{FileReport, ReportOrigin, TestFileSummary};
-use crate::render::{OutputFormat, render};
+use crate::render::{OutputFormat, render_body};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 
@@ -56,7 +56,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -110,7 +110,7 @@ fn should_render_diff_block_and_marker_when_symbol_is_signature_changed() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -173,7 +173,7 @@ fn should_render_line_based_diff_block_when_multiline_signature_changed() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -233,7 +233,7 @@ fn should_render_container_comment_above_diff_lines_when_signature_changed_symbo
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -285,7 +285,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -326,7 +326,7 @@ fn should_append_marker_to_fan_in_line_before_used_by() {
         non_symbol_changes: vec![],
     };
 
-    let markdown = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let markdown = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
     // NOTE: partial assert (searching for one line) rather than a
     // fully qualified comparison of the whole render — this test's
     // concern is solely the "High fan-in symbols" line's marker
@@ -405,7 +405,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -449,7 +449,7 @@ fn should_render_removed_symbols_section_alone_when_graph_is_empty() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -512,7 +512,7 @@ fn should_deduplicate_identical_removed_symbol_lines() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -545,7 +545,7 @@ fn should_omit_removed_symbols_section_when_removed_is_empty() {
         non_symbol_changes: vec![],
     };
 
-    let markdown = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let markdown = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert!(!markdown.contains("## Removed symbols"));
 }
@@ -607,7 +607,7 @@ fn should_widen_fence_when_previous_signature_contains_a_backtick_run() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }

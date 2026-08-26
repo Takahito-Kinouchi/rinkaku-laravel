@@ -8,7 +8,7 @@ use super::*;
 use crate::extract::SymbolKind;
 use crate::non_symbol_changes::NonSymbolChange;
 use crate::render::report::{FileReport, ReportOrigin, SkipReason, SkippedFile};
-use crate::render::{OutputFormat, render};
+use crate::render::{OutputFormat, render_body};
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -32,7 +32,7 @@ fn should_render_empty_markdown_when_report_has_no_files_and_no_skips() {
     };
 
     let expected = "".to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -76,7 +76,7 @@ fn should_list_file_with_no_symbols_under_other_changed_files_when_report_has_no
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -117,7 +117,7 @@ fn should_annotate_other_changed_file_with_non_symbol_changed_line_count() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -155,7 +155,7 @@ fn should_use_singular_line_wording_when_non_symbol_change_is_exactly_one_line()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -194,7 +194,7 @@ fn should_fall_back_to_bare_path_when_non_symbol_changes_has_no_matching_entry()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -258,7 +258,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -299,7 +299,7 @@ fn should_render_other_changed_files_before_skipped_files_when_report_has_both()
 - assets/logo.png (binary)
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -334,7 +334,7 @@ fn should_render_tests_section_with_singular_symbol_noun_when_count_is_one() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -369,7 +369,7 @@ fn should_render_tests_section_with_plural_symbols_noun_when_count_is_greater_th
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -427,7 +427,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -464,7 +464,7 @@ fn should_omit_generated_skip_entry_from_markdown_output() {
     };
 
     let expected = "".to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -507,7 +507,7 @@ fn should_omit_only_generated_entries_when_skipped_has_other_reasons_too() {
 - assets/logo.png (binary)
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }

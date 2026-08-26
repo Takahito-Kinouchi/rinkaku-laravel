@@ -7,7 +7,7 @@ use crate::diff::LineRange;
 use crate::extract::{ExtractedSymbol, SymbolKind};
 use crate::graph::Edge;
 use crate::render::report::{FileReport, ReportOrigin};
-use crate::render::{OutputFormat, render};
+use crate::render::{OutputFormat, render_body};
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -113,7 +113,7 @@ type UpsertItemsResponse struct { Count int }
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -213,7 +213,7 @@ struct Dup { b: i32 }
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -301,7 +301,7 @@ fn bar()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -396,7 +396,7 @@ resource \"aws_instance\" \"db\" { ... }
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -451,7 +451,7 @@ struct Config { path: String }
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -545,7 +545,7 @@ struct Inner { x: i32 }
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -625,7 +625,7 @@ struct Node { next: Option<Box<Node>> }
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
