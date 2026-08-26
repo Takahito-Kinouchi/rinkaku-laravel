@@ -12,7 +12,7 @@ use crate::git::commands::{list_git_files, run_git_diff};
 use crate::git::file_read::{
     read_git_show_file, read_prefetched_or_fallback, read_working_tree_file,
 };
-use crate::notes::garbage_input_note;
+use crate::notes::{garbage_input_note, unreadable_files_note};
 use crate::progress::{AnalysisProgress, SilentProgress};
 use crate::spinner::AnalysisPhase;
 use rayon::prelude::*;
@@ -278,6 +278,11 @@ pub(crate) fn run_base_pipeline(
     )?;
     if let Some(note) = garbage_input_note(&diff_text, &report) {
         progress.note(note.to_string());
+    }
+    // ADR 0094: an unreadable entry is a skip rather than a failed run, so
+    // this is what still tells the reader why the report is short.
+    if let Some(note) = unreadable_files_note(&report) {
+        progress.note(note);
     }
     Ok((report, diff_text, deferred))
 }

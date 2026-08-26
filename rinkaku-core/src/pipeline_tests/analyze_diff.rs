@@ -1,6 +1,6 @@
 //! Top-level [`analyze_diff`] behavior: empty input, per-file skip cases
-//! (deleted / binary / unsupported-language / pure rename), diff-parse
-//! and read-file error paths, multi-file mixed outcomes, Go
+//! (deleted / binary / unsupported-language / pure rename / unreadable),
+//! the diff-parse error path, multi-file mixed outcomes, Go
 //! interface/receiver nesting end-to-end (ADR 0012 decision 2),
 //! container-aware bare-reference edge matching end-to-end (ADR 0068),
 //! resolver invocation contract (`Some`/`None`), and fan-in wiring (ADR
@@ -144,8 +144,12 @@ index e69de29..4b825dc 100644
     assert!(matches!(actual, Err(AnalyzeError::Diff(_))));
 }
 
+// ADR 0094: a read failure used to abort the whole run. It is now this
+// entry's own skip — the file not being in the working tree is the
+// ordinary case for a diff piped in from outside a checkout of the
+// branch, and failing there threw away every entry that *was* readable.
 #[test]
-fn should_return_err_when_read_file_fails() {
+fn should_skip_the_entry_when_read_file_fails() {
     let diff = "\
 diff --git a/src/lib.rs b/src/lib.rs
 index e69de29..4b825dc 100644
@@ -158,6 +162,22 @@ index e69de29..4b825dc 100644
     // Map has no entry for src/lib.rs, so the fake reader returns Err.
     let read_file = fake_reader(HashMap::new());
 
+    let expected = Report {
+        origin: ReportOrigin::Diff,
+        files: vec![],
+        skipped: vec![SkippedFile {
+            path: "src/lib.rs".to_string(),
+            reason: SkipReason::Unreadable,
+        }],
+        graph: empty_graph(),
+        tests: vec![],
+        fan_ins: vec![],
+        test_coverage: vec![],
+        file_size_warnings: vec![],
+        file_size_bands: vec![],
+        removed: vec![],
+        non_symbol_changes: vec![],
+    };
     let actual = analyze_diff(
         diff,
         read_file,
@@ -167,12 +187,57 @@ index e69de29..4b825dc 100644
         &HashSet::new(),
         true,
         None,
-    );
+    )
+    .expect("a read failure must not fail the run");
 
-    assert!(matches!(
-        actual,
-        Err(AnalyzeError::ReadFile { path, .. }) if path == "src/lib.rs"
-    ));
+    assert_eq!(expected, actual);
+}
+
+// The half that matters most: one unreadable entry must not cost the
+// entries around it. This is the shape of `gh pr diff <n> | rinkaku` run
+// outside a checkout — the file the PR adds is absent, the file it
+// modifies is present — which used to produce nothing at all.
+#[test]
+fn should_still_analyze_readable_entries_when_another_entry_cannot_be_read() {
+    let diff = "\
+diff --git a/src/added.rs b/src/added.rs
+new file mode 100644
+--- /dev/null
++++ b/src/added.rs
+@@ -0,0 +1,1 @@
++fn added() {}
+diff --git a/src/lib.rs b/src/lib.rs
+index e69de29..4b825dc 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,1 +1,1 @@
+-fn a() {}
++fn a() -> i32 { 0 }
+";
+    let read_file = fake_reader(HashMap::from([("src/lib.rs", "fn a() -> i32 { 0 }\n")]));
+
+    let actual = analyze_diff(
+        diff,
+        read_file,
+        None,
+        None,
+        true,
+        &HashSet::new(),
+        true,
+        None,
+    )
+    .expect("a read failure must not fail the run");
+
+    assert_eq!(
+        vec![SkippedFile {
+            path: "src/added.rs".to_string(),
+            reason: SkipReason::Unreadable,
+        }],
+        actual.skipped
+    );
+    assert_eq!(1, actual.files.len());
+    assert_eq!("src/lib.rs", actual.files[0].path);
+    assert_eq!("fn a() -> i32", actual.files[0].symbols[0].signature);
 }
 
 #[test]

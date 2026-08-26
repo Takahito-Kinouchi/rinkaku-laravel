@@ -450,7 +450,10 @@ pub(crate) fn has_no_readable_content(reason: rinkaku_core::render::SkipReason) 
         | rinkaku_core::render::SkipReason::Generated
         // ADR 0090: the file was never read, and opening it is exactly
         // what the skip exists to prevent.
-        | rinkaku_core::render::SkipReason::OutsideRepository => true,
+        | rinkaku_core::render::SkipReason::OutsideRepository
+        // ADR 0094: the read was attempted and failed, so there is no
+        // content behind this row either.
+        | rinkaku_core::render::SkipReason::Unreadable => true,
     }
 }
 

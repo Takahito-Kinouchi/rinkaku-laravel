@@ -10,6 +10,7 @@ pub mod deps;
 pub mod diff;
 pub mod extract;
 pub mod file_size;
+pub mod git_quote;
 pub mod graph;
 pub mod language;
 pub mod non_symbol_changes;

@@ -76,6 +76,7 @@ use github::workdir::resolve_pr_workdir;
 use log_writer::DeferredLogSink;
 use notes::{
     apply_entry_pivot, entry_pivot_empty_note, garbage_input_note, repo_outline_empty_note,
+    unreadable_files_note,
 };
 use pipeline::{
     DeferredResolver, build_resolver, changed_paths, read_stdin_diff, resolve_generated_paths,
@@ -107,7 +108,37 @@ fn logger_builder() -> env_logger::Builder {
     builder
 }
 
-fn main() -> anyhow::Result<()> {
+/// ADR 0091, applied to the one channel its escaping never covered: an
+/// error message.
+///
+/// The renderers escape terminal control sequences out of everything they
+/// print, but a failure never reaches a renderer — it goes to stderr as
+/// an error chain, and those chains carry diff-supplied text verbatim
+/// (`ParseError::MalformedHunkHeader`'s raw header line, and any future
+/// variant carrying diff text). Escaping here rather than inside each error type
+/// keeps the types' own `Display` faithful for a programmatic consumer,
+/// and covers every variant at once instead of whichever ones were
+/// remembered.
+///
+/// This was unreachable through `gh pr diff`/`git diff` before the
+/// quoting fix that landed alongside it: git escapes control characters
+/// in paths itself, so raw ones only arrived in a hand-written diff.
+/// Decoding those escapes is exactly what puts real control bytes into a
+/// path, so the two changes belong together.
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!(
+                "Error: {}",
+                rinkaku_core::render::escape_control_chars(&format!("{error:?}"))
+            );
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // ADR 0033: the display mode is decided *before* analysis runs, not
@@ -625,6 +656,11 @@ fn run_analysis(
         )?;
         if let Some(note) = garbage_input_note(&diff_text, &report) {
             progress.note(note.to_string());
+        }
+        // ADR 0094: an unreadable entry is a skip rather than a failed run,
+        // so this is what still tells the reader why the report is short.
+        if let Some(note) = unreadable_files_note(&report) {
+            progress.note(note);
         }
         (report, diff_text, None, deferred)
     };
