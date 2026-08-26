@@ -171,3 +171,7 @@ pub(crate) fn render_body(report: &Report, format: OutputFormat) -> Result<Strin
         .map(str::to_string)
         .unwrap_or(rendered))
 }
+
+#[cfg(test)]
+#[path = "injection_surface_tests.rs"]
+mod injection_surface_tests;
