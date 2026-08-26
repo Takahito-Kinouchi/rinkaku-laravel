@@ -8,7 +8,7 @@ use super::*;
 use crate::extract::SymbolKind;
 use crate::graph::TestCoverage;
 use crate::render::report::{FileReport, ReportOrigin};
-use crate::render::{OutputFormat, render};
+use crate::render::{OutputFormat, render_body};
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -56,7 +56,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -114,7 +114,7 @@ Tests: 1 (`src/lib.rs::spec_foo`)
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -246,7 +246,7 @@ fn b()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -308,7 +308,7 @@ Tests: 0
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }

@@ -89,7 +89,7 @@ pub(super) fn build_hcl_locals_symbols(
                 id: String::new(),
                 name: format!("local.{name}"),
                 kind: super::SymbolKind::Block,
-                signature: super::slice_signature(definition, source, None),
+                signature: super::signature_slice::slice_signature(definition, source, None),
                 range: definition.line_range(),
                 container: None,
                 referenced_names: references.bare,

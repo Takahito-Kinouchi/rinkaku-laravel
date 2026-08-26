@@ -6,7 +6,7 @@ use super::*;
 use crate::extract::SymbolKind;
 use crate::graph::Edge;
 use crate::render::report::{FileReport, ReportOrigin};
-use crate::render::{OutputFormat, render};
+use crate::render::{OutputFormat, render_body};
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -80,7 +80,7 @@ fn resolve_pr_base_sha() -> Result<String>
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -181,7 +181,7 @@ fn c()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -268,7 +268,7 @@ fn bar()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -327,7 +327,7 @@ fn resolve_pr_base_sha()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -463,7 +463,7 @@ struct Config { path: String }
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }

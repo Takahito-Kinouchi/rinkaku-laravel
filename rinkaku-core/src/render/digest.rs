@@ -144,7 +144,7 @@ mod tests {
     use crate::extract::SymbolKind;
     use crate::graph::SymbolGraph;
     use crate::render::report::{FileReport, ReportOrigin};
-    use crate::render::{OutputFormat, render};
+    use crate::render::{OutputFormat, render_body};
     use pretty_assertions::assert_eq;
 
     fn symbol(
@@ -201,7 +201,7 @@ mod tests {
         );
 
         let expected = String::new();
-        let actual = render(&report, OutputFormat::Digest).expect("digest render succeeds");
+        let actual = render_body(&report, OutputFormat::Digest).expect("digest render succeeds");
 
         assert_eq!(expected, actual);
     }
@@ -236,7 +236,7 @@ mod tests {
   `fn new_helper()`
 "
         .to_string();
-        let actual = render(&report, OutputFormat::Digest).expect("digest render succeeds");
+        let actual = render_body(&report, OutputFormat::Digest).expect("digest render succeeds");
 
         assert_eq!(expected, actual);
     }
@@ -266,7 +266,7 @@ mod tests {
   ```
 "
         .to_string();
-        let actual = render(&report, OutputFormat::Digest).expect("digest render succeeds");
+        let actual = render_body(&report, OutputFormat::Digest).expect("digest render succeeds");
 
         assert_eq!(expected, actual);
     }
@@ -304,7 +304,7 @@ mod tests {
   ```
 "
         .to_string();
-        let actual = render(&report, OutputFormat::Digest).expect("digest render succeeds");
+        let actual = render_body(&report, OutputFormat::Digest).expect("digest render succeeds");
 
         assert_eq!(expected, actual);
     }
@@ -327,7 +327,7 @@ mod tests {
 - ~~old_helper (src/lib.rs)~~ — removed
 "
         .to_string();
-        let actual = render(&report, OutputFormat::Digest).expect("digest render succeeds");
+        let actual = render_body(&report, OutputFormat::Digest).expect("digest render succeeds");
 
         assert_eq!(expected, actual);
     }
@@ -377,7 +377,7 @@ mod tests {
 - ~~removed_from_a (src/a.rs)~~ — removed
 "
         .to_string();
-        let actual = render(&report, OutputFormat::Digest).expect("digest render succeeds");
+        let actual = render_body(&report, OutputFormat::Digest).expect("digest render succeeds");
 
         assert_eq!(expected, actual);
     }
@@ -417,7 +417,7 @@ mod tests {
   `fn new() -> B`
 "
         .to_string();
-        let actual = render(&report, OutputFormat::Digest).expect("digest render succeeds");
+        let actual = render_body(&report, OutputFormat::Digest).expect("digest render succeeds");
 
         assert_eq!(expected, actual);
     }
@@ -447,7 +447,7 @@ mod tests {
   ````
 "
         .to_string();
-        let actual = render(&report, OutputFormat::Digest).expect("digest render succeeds");
+        let actual = render_body(&report, OutputFormat::Digest).expect("digest render succeeds");
 
         assert_eq!(expected, actual);
     }

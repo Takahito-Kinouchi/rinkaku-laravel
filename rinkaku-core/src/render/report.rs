@@ -195,7 +195,7 @@ mod tests {
     use crate::diff::LineRange;
     use crate::extract::{Classification, RemovedSymbol, SymbolKind};
     use crate::graph::Node;
-    use crate::render::{OutputFormat, render};
+    use crate::render::{OutputFormat, render, render_body};
     use pretty_assertions::assert_eq;
 
     /// Builds an `ExtractedSymbol` for rendering tests, with `id` set (the
@@ -558,7 +558,8 @@ mod tests {
             non_symbol_changes: vec![],
         };
 
-        let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+        let actual =
+            render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
         assert_eq!(
             false,

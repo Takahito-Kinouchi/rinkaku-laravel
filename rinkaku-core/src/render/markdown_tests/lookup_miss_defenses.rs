@@ -11,7 +11,7 @@ use super::*;
 use crate::extract::SymbolKind;
 use crate::graph::Edge;
 use crate::render::report::{FileReport, ReportOrigin};
-use crate::render::{OutputFormat, render};
+use crate::render::{OutputFormat, render_body};
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -49,7 +49,7 @@ fn should_skip_definitions_entry_when_visit_order_id_has_no_matching_symbol() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
@@ -88,7 +88,7 @@ fn should_render_nothing_for_root_when_root_id_has_no_matching_symbol() {
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     // Both malformed-root branches (the "Change graph" line and the
     // "Definitions" entry) are exercised by the same minimal report;
@@ -152,7 +152,7 @@ fn foo()
 
 "
     .to_string();
-    let actual = render(&report, OutputFormat::Markdown).expect("markdown render succeeds");
+    let actual = render_body(&report, OutputFormat::Markdown).expect("markdown render succeeds");
 
     assert_eq!(expected, actual);
 }
