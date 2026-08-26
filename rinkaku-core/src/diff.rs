@@ -108,16 +108,16 @@ fn parse_file_entry(lines: &[&str], start: usize) -> Result<(ChangedFile, usize)
         if line.starts_with("diff --git ") {
             break;
         } else if let Some(rest) = line.strip_prefix("rename from ") {
-            old_path = Some(rest.to_string());
+            old_path = Some(decode_header_path(rest));
             kind = ChangeKind::Renamed;
         } else if let Some(rest) = line.strip_prefix("rename to ") {
-            path = rest.to_string();
+            path = decode_header_path(rest);
             kind = ChangeKind::Renamed;
         } else if let Some(rest) = line.strip_prefix("copy from ") {
-            old_path = Some(rest.to_string());
+            old_path = Some(decode_header_path(rest));
             kind = ChangeKind::Copied;
         } else if let Some(rest) = line.strip_prefix("copy to ") {
-            path = rest.to_string();
+            path = decode_header_path(rest);
             kind = ChangeKind::Copied;
         } else if line.starts_with("new file mode") {
             kind = ChangeKind::Added;
@@ -171,13 +171,57 @@ fn parse_file_entry(lines: &[&str], start: usize) -> Result<(ChangedFile, usize)
 /// consulted for path information.
 fn extract_git_header_paths(line: &str) -> (String, String) {
     let rest = line.trim_start_matches("diff --git ");
-    if let Some(b_idx) = rest.find(" b/") {
-        let a = rest[..b_idx].trim_start_matches("a/").to_string();
-        let b = rest[b_idx + 3..].to_string();
-        (a, b)
-    } else {
-        (String::new(), String::new())
+    match split_header_paths(rest) {
+        Some((a, b)) => (strip_side_prefix(&a, "a/"), strip_side_prefix(&b, "b/")),
+        None => (String::new(), String::new()),
     }
+}
+
+/// Splits a `diff --git` header's two path tokens, decoding git's C-style
+/// quoting when it is present.
+///
+/// git quotes both paths or neither (`quote_two` quotes the pair as soon
+/// as either side needs it), but each token is decoded independently here
+/// rather than relying on that — the cost is nothing and the assumption
+/// then does not have to hold.
+///
+/// The unquoted branch keeps the ` b/` split this function has always
+/// used. It cannot be made unambiguous: git does not quote a path merely
+/// for containing a space, so `a/x b/y.rs b/x b/y.rs` (one file named
+/// `x b/y.rs`) reads the same as two ordinary paths. Nothing is lost by
+/// leaving it — a diff on stdin is attacker-controlled either way, so a
+/// crafted header can name any path directly, and containment
+/// ([`crate::repo_path::is_repo_relative`], applied downstream to the
+/// decoded path) is what actually constrains it.
+fn split_header_paths(rest: &str) -> Option<(String, String)> {
+    if rest.starts_with('"') {
+        let (a_token, after) = crate::git_quote::split_quoted_token(rest)?;
+        let b_token = after.strip_prefix(' ')?;
+        let a = crate::git_quote::unquote_git_path(a_token)?;
+        let b = crate::git_quote::unquote_git_path(b_token)?;
+        return Some((a.into_owned(), b.into_owned()));
+    }
+    let b_idx = rest.find(" b/")?;
+    Some((rest[..b_idx].to_string(), rest[b_idx + 1..].to_string()))
+}
+
+/// Strips the `a/`/`b/` side prefix git puts in front of each header path.
+/// Once, not repeatedly: a file genuinely under a directory called `a`
+/// (`a/a/foo.rs`) must keep its own leading component.
+fn strip_side_prefix(path: &str, prefix: &str) -> String {
+    path.strip_prefix(prefix).unwrap_or(path).to_string()
+}
+
+/// Decodes a path taken from a `rename from`/`rename to`/`copy from`/
+/// `copy to` header line, which git quotes on the same rule as the
+/// `diff --git` header's own paths. An undecodable path becomes empty
+/// rather than being used raw — [`crate::repo_path::is_repo_relative`]
+/// refuses the empty path, so the entry is reported as uncontained rather
+/// than read under a name that is not the file's.
+fn decode_header_path(rest: &str) -> String {
+    crate::git_quote::unquote_git_path(rest)
+        .map(|path| path.into_owned())
+        .unwrap_or_default()
 }
 
 /// Parses one `@@ -a,b +c,d @@` hunk starting at `start`, returning the
@@ -769,5 +813,141 @@ index e69de29..4b825dc 100644
 ";
         let actual = parse_unified_diff(input);
         assert!(matches!(actual, Err(ParseError::MalformedHunkHeader(_))));
+    }
+
+    // git's path quoting (`core.quotePath`, on by default) is not an edge
+    // case: it fires for every non-ASCII filename. Reading the quoted form
+    // as a literal path yielded a path naming no file, so the entry
+    // dropped out of the analysis reported as
+    // `SkipReason::OutsideRepository` — a containment refusal, for a file
+    // sitting squarely inside the repository.
+    mod quoted_path_tests {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn should_decode_a_quoted_non_ascii_path_when_git_escaped_it() {
+            let diff = "\
+diff --git \"a/src/\\346\\227\\245\\346\\234\\254\\350\\252\\236.rs\" \"b/src/\\346\\227\\245\\346\\234\\254\\350\\252\\236.rs\"
+@@ -1,1 +1,1 @@
+-fn a() {}
++fn b() {}
+";
+
+            let actual = parse_unified_diff(diff).expect("a quoted path must parse");
+
+            assert_eq!(
+                vec![ChangedFile {
+                    path: "src/日本語.rs".to_string(),
+                    old_path: None,
+                    kind: ChangeKind::Modified,
+                    changed_ranges: vec![LineRange { start: 1, end: 1 }],
+                    old_changed_ranges: vec![LineRange { start: 1, end: 1 }],
+                    is_binary: false,
+                }],
+                actual
+            );
+        }
+
+        #[test]
+        fn should_decode_quoted_rename_paths_when_git_escaped_them() {
+            let diff = "\
+diff --git \"a/src/\\303\\251.rs\" \"b/src/\\303\\250.rs\"
+similarity index 90%
+rename from \"src/\\303\\251.rs\"
+rename to \"src/\\303\\250.rs\"
+@@ -1,1 +1,1 @@
+-fn a() {}
++fn b() {}
+";
+
+            let actual = parse_unified_diff(diff).expect("quoted rename paths must parse");
+
+            assert_eq!(
+                vec![ChangedFile {
+                    path: "src/è.rs".to_string(),
+                    old_path: Some("src/é.rs".to_string()),
+                    kind: ChangeKind::Renamed,
+                    changed_ranges: vec![LineRange { start: 1, end: 1 }],
+                    old_changed_ranges: vec![LineRange { start: 1, end: 1 }],
+                    is_binary: false,
+                }],
+                actual
+            );
+        }
+
+        // ADR 0090's containment runs on `ChangedFile::path`, so decoding
+        // has to happen here rather than downstream: the escape is spelled
+        // in octal and only becomes `..` once decoded. Asserted at the
+        // parser rather than end-to-end so the ordering is pinned where it
+        // is decided.
+        #[test]
+        fn should_decode_an_escaping_quoted_path_so_containment_can_refuse_it() {
+            let diff = "\
+diff --git \"a/\\056\\056/secret/creds.py\" \"b/\\056\\056/secret/creds.py\"
+@@ -1,1 +1,1 @@
+-a
++b
+";
+
+            let actual = parse_unified_diff(diff).expect("the entry still parses");
+
+            assert_eq!("../secret/creds.py", actual[0].path);
+            assert_eq!(
+                false,
+                crate::repo_path::is_repo_relative(&actual[0].path),
+                "the decoded path must be refused by containment"
+            );
+        }
+
+        // A path git had no reason to quote must still parse exactly as it
+        // did before quoting was understood at all.
+        #[test]
+        fn should_leave_an_unquoted_path_untouched() {
+            let diff = "\
+diff --git a/src/lib.rs b/src/lib.rs
+@@ -1,1 +1,1 @@
+-fn a() {}
++fn b() {}
+";
+
+            let actual = parse_unified_diff(diff).expect("an unquoted path must parse");
+
+            assert_eq!("src/lib.rs", actual[0].path);
+        }
+
+        // A directory literally called `a` must keep its own leading
+        // component: the side prefix is stripped once, not repeatedly.
+        #[test]
+        fn should_keep_a_leading_component_named_a_when_stripping_the_side_prefix() {
+            let diff = "\
+diff --git a/a/foo.rs b/a/foo.rs
+@@ -1,1 +1,1 @@
+-fn a() {}
++fn b() {}
+";
+
+            let actual = parse_unified_diff(diff).expect("the entry must parse");
+
+            assert_eq!("a/foo.rs", actual[0].path);
+        }
+
+        // An undecodable quoted path yields an empty path rather than the
+        // raw header text, which containment then refuses — the entry is
+        // reported, never read under a name that is not the file's.
+        #[test]
+        fn should_yield_an_empty_path_when_the_quoted_form_is_malformed() {
+            let diff = "\
+diff --git \"a/src/\\34.rs\" \"b/src/\\34.rs\"
+@@ -1,1 +1,1 @@
+-a
++b
+";
+
+            let actual = parse_unified_diff(diff).expect("the entry still parses");
+
+            assert_eq!("", actual[0].path);
+            assert_eq!(false, crate::repo_path::is_repo_relative(&actual[0].path));
+        }
     }
 }

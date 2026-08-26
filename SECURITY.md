@@ -35,6 +35,10 @@ line of content in it is treated as hostile input:
   `\u{..}`, so a filename cannot carry an escape sequence into the
   reviewer's terminal (ADR 0091). JSON output is left to `serde_json`'s
   own escaping, so a consumer still gets the real path back.
+- Paths are decoded out of git's C-style quoting before any of the above
+  is judged (ADR 0093). The escapes are octal byte values, so a path can
+  spell an escape that only appears once decoded; containment runs on the
+  decoded path, never on the raw header text.
 - Malformed input — impossible hunk counts, non-numeric headers, empty
   input — fails with an error rather than a panic.
 
