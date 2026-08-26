@@ -33,8 +33,10 @@ line of content in it is treated as hostile input:
   repository is read normally.
 - Control characters in anything rendered to a terminal are escaped as
   `\u{..}`, so a filename cannot carry an escape sequence into the
-  reviewer's terminal (ADR 0091). JSON output is left to `serde_json`'s
-  own escaping, so a consumer still gets the real path back.
+  reviewer's terminal (ADR 0091) — including error messages, which carry
+  diff-supplied text and do not pass through a renderer (ADR 0091's
+  amendment). JSON output is left to `serde_json`'s own escaping, so a
+  consumer still gets the real path back.
 - Paths are decoded out of git's C-style quoting before any of the above
   is judged (ADR 0093). The escapes are octal byte values, so a path can
   spell an escape that only appears once decoded; containment runs on the

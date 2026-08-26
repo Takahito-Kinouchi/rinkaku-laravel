@@ -99,3 +99,31 @@ longer name a file anything could open.
   `Span` construction sites for a display nicety. If the pinning test
   ever fails, that trade changes and those sites need the helper.
 - `escape_control_chars` is public API of `rinkaku-core`.
+
+## Amendment (2026-08-26): escape the error channel too
+
+The escaping above covers what the *renderers* print. A failure never
+reaches a renderer: it leaves `main` as an error chain on stderr, and
+those chains carry diff-supplied text verbatim —
+`AnalyzeError::ReadFile`'s path, `ParseError::MalformedHunkHeader`'s raw
+header line.
+
+This was not reachable through the documented workflows when ADR 0091 was
+written, and that is probably why it went unnoticed: git escapes control
+characters in paths itself, regardless of `core.quotePath`, so raw ones
+only arrived in a diff that git did not produce. Verified rather than
+assumed — `git diff` emits `"a/src/\033]0;PWNED\007x.rs"`, six printable
+characters where the ESC was.
+
+ADR 0093 removes that accident. Decoding git's quoting is what puts real
+control bytes into a path for the first time, so the two changes have to
+land together.
+
+**Decision:** `main` escapes the formatted error chain before printing
+it, rather than each error type escaping its own fields. Applying it at
+the boundary covers every variant at once instead of whichever ones were
+remembered, and leaves each type's `Display` faithful for a programmatic
+consumer. `main` returns `ExitCode` rather than `anyhow::Result` to get
+that hook; the printed shape (`Error: {:?}`, the `Caused by` chain, the
+backtrace when enabled, exit status 1) is what `Termination` produced
+before, unchanged.

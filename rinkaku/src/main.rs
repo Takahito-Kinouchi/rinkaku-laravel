@@ -107,7 +107,37 @@ fn logger_builder() -> env_logger::Builder {
     builder
 }
 
-fn main() -> anyhow::Result<()> {
+/// ADR 0091, applied to the one channel its escaping never covered: an
+/// error message.
+///
+/// The renderers escape terminal control sequences out of everything they
+/// print, but a failure never reaches a renderer — it goes to stderr as
+/// an error chain, and those chains carry diff-supplied text verbatim
+/// (`AnalyzeError::ReadFile`'s path, `ParseError::MalformedHunkHeader`'s
+/// raw header line). Escaping here rather than inside each error type
+/// keeps the types' own `Display` faithful for a programmatic consumer,
+/// and covers every variant at once instead of whichever ones were
+/// remembered.
+///
+/// This was unreachable through `gh pr diff`/`git diff` before the
+/// quoting fix that landed alongside it: git escapes control characters
+/// in paths itself, so raw ones only arrived in a hand-written diff.
+/// Decoding those escapes is exactly what puts real control bytes into a
+/// path, so the two changes belong together.
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!(
+                "Error: {}",
+                rinkaku_core::render::escape_control_chars(&format!("{error:?}"))
+            );
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // ADR 0033: the display mode is decided *before* analysis runs, not
