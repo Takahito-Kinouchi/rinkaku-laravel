@@ -205,10 +205,15 @@ static REGISTRY: &[RegistryEntry] = &[
         suffixes: &[".svelte"],
         support: || &svelte::SvelteSupport,
     },
+    RegistryEntry {
+        suffixes: &[".md", ".markdown"],
+        support: || &markdown::MarkdownSupport,
+    },
 ];
 
 pub mod go;
 pub mod hcl;
+pub mod markdown;
 pub mod php;
 pub mod python;
 pub mod rust;
@@ -309,6 +314,16 @@ mod tests {
 
         let support = actual.expect("expected Some(&dyn LanguageSupport) for .svelte path");
         assert_eq!("svelte", support.name());
+    }
+
+    #[rstest]
+    #[case::should_return_markdown_support_when_path_has_md_suffix("docs/adr/0096-markdown.md")]
+    #[case::should_return_markdown_support_when_path_has_markdown_suffix("README.markdown")]
+    fn markdown_paths_route_to_markdown_support(#[case] path: &str) {
+        let actual = language_for_path(path);
+
+        let support = actual.expect("expected Some(&dyn LanguageSupport) for a Markdown path");
+        assert_eq!("markdown", support.name());
     }
 
     #[rstest]

@@ -777,6 +777,7 @@ fn symbol_kind_prefix(kind: SymbolKind) -> &'static str {
         SymbolKind::Interface => "interface",
         SymbolKind::TypeAlias => "type",
         SymbolKind::Block => "block",
+        SymbolKind::Section => "section",
     }
 }
 
