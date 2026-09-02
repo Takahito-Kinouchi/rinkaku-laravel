@@ -75,6 +75,35 @@ Useful flags: `--deps 0` skips dependency resolution entirely (faster),
 the change graph at a path, and `--deps-scope repo` widens the scan back to
 every tracked file. `rinkaku-laravel --help` documents the rest.
 
+### Comparing local work against what you have already pushed
+
+"Already pushed" is the remote-tracking branch `origin/<your branch>`, so that
+is the ref to compare against. Fetch first — a tracking branch is a local
+cache, no fresher than your last fetch.
+
+```sh
+git fetch origin my-branch
+rinkaku-laravel --base origin/my-branch    # outline of the unpushed commits
+git log --oneline origin/my-branch..HEAD   # which commits are unpushed
+git diff origin/my-branch                  # unpushed commits + uncommitted edits
+```
+
+`--base` runs `git diff <base>...<head>` — three dots, comparing from the merge
+base of the two refs, the same view GitHub's compare page and a PR's "Files
+changed" tab show. Two dots (`git diff a..b`) compare the two refs directly
+instead. Both sides of `--base` are commits, so work you have not committed yet
+is outside the comparison: commit or stash it first, or read it with plain
+`git diff`.
+
+The same comparison in a GUI:
+
+| Tool | Where to find it |
+| --- | --- |
+| GitHub (web) | A PR's **Files changed → Changes from** menu shows only what arrived after a chosen commit. Unpushed work never appears here — it is not on the server yet |
+| VS Code | Source Control: **Changes** is uncommitted work, and the Sync / Incoming-Outgoing section lists unpushed commits. With GitLens: Search & Compare → **Compare References** → `origin/<branch>` against `HEAD` |
+| GitHub Desktop | **Current Branch → Choose a branch to compare with → `origin/<branch>`**. In History, unpushed commits carry an upload arrow |
+| JetBrains IDEs | Git tool window → Log → right-click the `origin/<branch>` label → **Compare with Local** |
+
 ## Versioning
 
 `<upstream version>+laravel.<n>` (ADR 0089). The part before `+` is the
@@ -330,6 +359,34 @@ rinkaku-laravel --base main --format mermaid  # PR コメント用のグラフ
 テストシンボルを集計欄へ移動、`--entry <path>` は変更グラフの起点を付け替え、
 `--deps-scope repo` はスキャン範囲を全追跡ファイルに戻します。残りは
 `rinkaku-laravel --help` を参照してください。
+
+### プッシュ済みの内容とローカルの作業を比べる
+
+「プッシュ済み」の実体はリモート追跡ブランチ `origin/<ブランチ名>` なので、これを
+比較の基準に指定します。追跡ブランチはローカルのキャッシュで、最後に fetch した
+時点までしか新しくないため、先に fetch してください。
+
+```sh
+git fetch origin my-branch
+rinkaku-laravel --base origin/my-branch    # 未プッシュのコミットの輪郭
+git log --oneline origin/my-branch..HEAD   # 未プッシュのコミット一覧
+git diff origin/my-branch                  # 未プッシュのコミット + 未コミットの編集
+```
+
+`--base` は `git diff <base>...<head>` を実行します。ドット 3 個なので 2 つの ref の
+マージベースからの差分、つまり GitHub の compare ページや PR の "Files changed" と
+同じ見え方になります。ドット 2 個（`git diff a..b`）は 2 つの ref を直接比較します。
+`--base` は両側ともコミットを指すため、まだコミットしていない変更は比較の対象外です。
+先にコミットまたは stash するか、素の `git diff` で確認してください。
+
+GUI で同じ比較をする場合:
+
+| ツール | 操作 |
+| --- | --- |
+| GitHub（Web） | PR の **Files changed → Changes from** メニューで、選んだコミット以降に届いた分だけを表示できます。未プッシュの作業はまだサーバー上に無いため、ここには現れません |
+| VS Code | Source Control の **Changes** が未コミットの変更、Sync（Incoming/Outgoing）セクションが未プッシュのコミットです。GitLens 併用時は Search & Compare → **Compare References** → `origin/<ブランチ名>` と `HEAD` を比較 |
+| GitHub Desktop | **Current Branch → Choose a branch to compare with → `origin/<ブランチ名>`**。History では未プッシュのコミットにアップロード矢印が付きます |
+| JetBrains 系 IDE | Git ツールウィンドウ → Log → `origin/<ブランチ名>` のラベルを右クリック → **Compare with Local** |
 
 ## バージョン
 
