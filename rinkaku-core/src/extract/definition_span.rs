@@ -61,8 +61,25 @@ impl<'a> DefinitionNode<'a> {
     pub(super) fn line_range(&self) -> LineRange {
         LineRange {
             start: self.span_start_row + 1,
-            end: self.node.end_position().row + 1,
+            end: last_occupied_row(self.node) + 1,
         }
+    }
+}
+
+/// The last row `node` actually occupies. A tree-sitter end position is
+/// exclusive, so a node whose text runs to a line terminator reports
+/// column 0 of the *following* row — for most grammars a definition ends
+/// on a brace or an expression and this never arises, but a Markdown
+/// block's terminator belongs to the block, so every `section` and
+/// heading reports one row too many. Counting that row would stretch a
+/// section's range over the next section's heading line, and every
+/// touched-range consumer ([`super::overlaps_any`],
+/// `ExtractedSymbol::range`) would inherit the error.
+fn last_occupied_row(node: tree_sitter::Node) -> usize {
+    let end = node.end_position();
+    match end.column {
+        0 => end.row.max(node.start_position().row + 1) - 1,
+        _ => end.row,
     }
 }
 
@@ -148,6 +165,26 @@ mod tests {
         let actual = DefinitionNode::new(struct_node, &lang);
 
         assert_eq!(LineRange { start: 2, end: 5 }, actual.line_range());
+    }
+
+    /// The Markdown grammar ends a `section` at the line terminator of its
+    /// last block, which tree-sitter reports as column 0 of the following
+    /// line — the next section's heading. The range must stop on the last
+    /// line the section actually occupies, not reach into that heading.
+    #[test]
+    fn should_end_span_on_the_last_occupied_line_when_node_ends_at_column_zero() {
+        let source = "# First\n\nprose\n\n# Second\n";
+        let mut parser = tree_sitter::Parser::new();
+        let lang = crate::language::markdown::MarkdownSupport;
+        let tree = parse(&mut parser, lang.grammar(), source);
+        let first_section = tree.root_node().named_child(0).unwrap();
+        assert_eq!("section", first_section.kind());
+        assert_eq!(4, first_section.end_position().row);
+        assert_eq!(0, first_section.end_position().column);
+
+        let actual = DefinitionNode::new(first_section, &lang);
+
+        assert_eq!(LineRange { start: 1, end: 4 }, actual.line_range());
     }
 
     #[test]

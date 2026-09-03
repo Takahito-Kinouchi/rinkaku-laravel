@@ -35,6 +35,8 @@ use super::signature_bound;
 ///   (TS), `abstract_method_signature` (TS): no separate "body" in the
 ///   implementation sense — their fields/variants/method signatures *are*
 ///   the API surface — so the whole node text is kept.
+/// - `section` (Markdown, ADR 0096): the heading is the declaration and
+///   the prose under it is the body, so only the heading line survives.
 /// - `class_definition` (Python), `class_declaration` /
 ///   `abstract_class_declaration` (TS): the class header plus member
 ///   signatures are kept (field/method signatures are the API surface,
@@ -112,6 +114,8 @@ pub(super) fn slice_signature(
             | "method_definition"
     ) {
         node.child_by_field_name("body")
+    } else if node.kind() == "section" {
+        super::markdown::section_body_start(node)
     } else if node.kind() == "block" {
         match hcl_block_type(node, source).as_deref() {
             // variable/output bodies (type, default, value, ...) are

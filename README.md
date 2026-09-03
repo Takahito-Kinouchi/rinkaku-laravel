@@ -21,6 +21,10 @@ upstream's [README](https://github.com/hiro-o918/rinkaku#readme) and
   spaces and the rest is parsed as TypeScript, preserving every line and byte
   offset, so an Inertia (Vue) or Svelte frontend is covered by the same
   machinery (ADR 0075).
+- **Markdown support** — a document's headings become its outline: each
+  section is a symbol whose signature is its heading and whose container is
+  the heading above it, so a docs change shows *which sections* moved rather
+  than a line count (ADR 0096).
 - **Parallel dependency index** — the startup scan runs across all CPU cores
   (ADR 0076).
 - **Scoped dependency scan** — in a monorepo, only the project(s) actually
@@ -134,7 +138,7 @@ to what is actually pressable on the current screen.
 | Marker | Color | Meaning |
 | --- | --- | --- |
 | `v` / `>` | — | Expanded / collapsed; blank means a leaf with nothing to expand |
-| `fn` `struct` `enum` `trait` `class` `iface` `type` `block` | — | Symbol kind prefix, abbreviating each language's keyword |
+| `fn` `struct` `enum` `trait` `class` `iface` `type` `block` `section` | — | Symbol kind prefix, abbreviating each language's keyword |
 | `+` | green | Added symbol |
 | `~` | yellow | Symbol whose signature changed |
 | `x` | red | Removed symbol |
@@ -307,6 +311,10 @@ rinkaku は PR の diff を **変更されたシンボルのシグネチャと�
 - **Vue SFC / Svelte 対応** — `<script>` ブロック以外を空白でマスクし、残りを
   TypeScript 文法で解析します。行番号とバイトオフセットが保存されるため、Inertia
   (Vue) や Svelte のフロントエンドも同じ機構でカバーできます（ADR 0075）。
+- **Markdown 対応** — 見出しをドキュメントの輪郭として扱います。各セクションが
+  シンボルになり、シグネチャはその見出し、コンテナは 1 つ上の見出しです。
+  ドキュメントの変更が行数ではなく「どのセクションが変わったか」で見えます
+  （ADR 0096）。
 - **依存関係インデックスの並列化** — 起動時のスキャンを全 CPU コアで実行します
   （ADR 0076）。
 - **依存関係スキャンの範囲限定** — モノレポでは、diff が実際に触れたプロジェクト

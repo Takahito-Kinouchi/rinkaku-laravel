@@ -17,6 +17,9 @@
 //! - [`hcl`] — HCL / Terraform `LanguageSupport`: top-level block naming,
 //!   header- vs. whole-block signatures, `locals` expansion, and HCL
 //!   end-to-end.
+//! - [`markdown`] — Markdown `LanguageSupport`: sections as definitions
+//!   with their heading as the signature, parent-heading containers, the
+//!   heading-less leading section, and setext headings (ADR 0096).
 //! - [`python`] — Python `LanguageSupport`: class signature slicing with
 //!   method bodies stripped, decorator/nested-function edge cases, and
 //!   Python end-to-end.
@@ -55,6 +58,7 @@ pub(crate) use super::*;
 mod classification;
 mod go;
 mod hcl;
+mod markdown;
 mod normalize_for_comparison;
 mod php;
 mod python;

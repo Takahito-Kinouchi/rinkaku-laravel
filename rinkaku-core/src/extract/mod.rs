@@ -9,6 +9,7 @@ use crate::diff::LineRange;
 use crate::language::LanguageSupport;
 use definition_span::DefinitionNode;
 use hcl::{build_hcl_locals_symbols, hcl_block_name, hcl_block_type};
+use markdown::heading_name;
 use references::collect_referenced_names;
 use serde::Serialize;
 use signature_slice::{normalize_for_comparison, slice_signature};
@@ -18,6 +19,7 @@ use tree_sitter::StreamingIterator;
 mod container_slice;
 mod definition_span;
 mod hcl;
+mod markdown;
 mod references;
 pub mod signature_bound;
 mod signature_slice;
@@ -67,6 +69,11 @@ pub enum SymbolKind {
     /// carries the Terraform-specific role (`aws_instance.web`,
     /// `var.region`), so one language-neutral kind suffices.
     Block,
+    /// A Markdown section — a heading and the prose beneath it (ADR
+    /// 0096). Heading level is not part of the kind: it is already
+    /// visible in the signature (`## Test strategy`) and in `container`,
+    /// and a `Section` is the same sort of thing at every depth.
+    Section,
 }
 
 /// A changed symbol's contract impact (ADR 0014), classified by comparing
@@ -633,6 +640,13 @@ fn symbol_kind(node: tree_sitter::Node, source: &[u8]) -> Option<SymbolKind> {
             }
             _ => None,
         },
+        // Markdown (ADR 0096): only the Markdown definition query
+        // captures `section`/`setext_heading`, same per-captured-node
+        // reasoning as HCL's `block` above. A heading-less leading
+        // section is filtered out by `definition_name` returning `None`,
+        // not here — the kind is knowable, the name is what a nameless
+        // section lacks.
+        "section" | "setext_heading" => Some(SymbolKind::Section),
         _ => None,
     }
 }
@@ -649,6 +663,9 @@ fn definition_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
     if node.kind() == "block" {
         return hcl_block_name(node, source);
     }
+    if matches!(node.kind(), "section" | "setext_heading") {
+        return heading_name(node, source);
+    }
 
     node.child_by_field_name("name")
         .and_then(|n| n.utf8_text(source).ok())
@@ -657,9 +674,10 @@ fn definition_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
 
 /// Walks up from `node` to find an enclosing container (Rust
 /// `impl_item`/`trait_item`, Go method receiver type, Python/TypeScript
-/// `class_definition`/`class_declaration`), returning a descriptive
-/// container name (e.g. `"impl Foo"`, `"trait Bar"`, `"Repo"`, `"class
-/// Point"`). Returns `None` for top-level definitions.
+/// `class_definition`/`class_declaration`, Markdown's enclosing
+/// `section`), returning a descriptive container name (e.g. `"impl Foo"`,
+/// `"trait Bar"`, `"Repo"`, `"class Point"`, `"section Conventions"`).
+/// Returns `None` for top-level definitions.
 ///
 /// Go is handled differently from the rest: a `method_declaration` is never
 /// nested inside its receiver type's node (see `is_container_only_node`),
@@ -709,6 +727,21 @@ fn find_container(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
                 let name = definition_name(candidate, source)?;
                 return Some(format!("enum {name}"));
             }
+            // Markdown (ADR 0096): a subsection's container is the
+            // section it is nested in. The `section ` prefix follows the
+            // `impl X`/`class X` labelling convention, and deliberately
+            // is not one of `graph::container_type_name`'s recognized
+            // keywords: a heading is prose, not a type, so no reference
+            // to a bare identifier should ever link to the members of a
+            // document section that happens to share its wording.
+            "section" => match heading_name(candidate, source) {
+                Some(name) => return Some(format!("section {name}")),
+                // A heading-less section (a document's leading content)
+                // never encloses another section, so this is unreachable
+                // in practice; walking on rather than claiming an
+                // unnamed container keeps it harmless if it ever is.
+                None => current = candidate.parent(),
+            },
             _ => current = candidate.parent(),
         }
     }
