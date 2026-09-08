@@ -336,8 +336,12 @@ pub fn analyze_diff(
             // every skip check above. `str::lines()` returns a sensible count
             // whether or not the final line ends in a newline.
             sized_files.push((changed_file.path.clone(), source.lines().count()));
-            let mut symbols =
-                extract_changed_symbols(&changed_file.path, &source, lang, &changed_file.changed_ranges);
+            let mut symbols = extract_changed_symbols(
+                &changed_file.path,
+                &source,
+                lang,
+                &changed_file.changed_ranges,
+            );
 
             // ADR 0014: classify each symbol's contract impact against the
             // base side. `ChangeKind::Added` classifies every symbol `Added`

@@ -188,7 +188,8 @@ fn should_extract_options_api_props_and_emits_options_as_component_api_symbols()
 
     let symbols = extract_all_symbols(source, &lang);
 
-    let shapes: Vec<(String, SymbolKind)> = symbols.iter().map(|s| (s.name.clone(), s.kind)).collect();
+    let shapes: Vec<(String, SymbolKind)> =
+        symbols.iter().map(|s| (s.name.clone(), s.kind)).collect();
     let expected = vec![
         ("Counter".to_string(), SymbolKind::Component),
         ("props".to_string(), SymbolKind::ComponentApi),

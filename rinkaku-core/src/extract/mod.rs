@@ -651,9 +651,16 @@ fn build_symbols(
         return build_hcl_locals_symbols(node, source, reference_query, lang);
     }
 
-    build_symbol(definition, source, reference_query, lang, component, touched)
-        .into_iter()
-        .collect()
+    build_symbol(
+        definition,
+        source,
+        reference_query,
+        lang,
+        component,
+        touched,
+    )
+    .into_iter()
+    .collect()
 }
 
 /// Builds an [`ExtractedSymbol`] from a captured definition node, or
