@@ -68,7 +68,7 @@ help:
     lines_count: "This file's own line count, colored by file-size band (normal/watch/warn/split)"
     warn_count: "Directory rows: count of Warn-band files in this subtree"
     split_count: "Directory rows: count of Split-band files in this subtree"
-    off_screen_rows: "Diff pane title: rows of the selected symbol's change still above / below the viewport (ctrl-f / ctrl-b reads through them)"
+    off_screen_rows: "Diff pane title: rows of the selected symbol's change still above / below the viewport (ctrl-f / ctrl-b, or ↓ / ↑ with tree focus, reads through them)"
     tests_count: "Symbol row: zero test symbols reference this symbol"
   glossary:
     topological_order: "Directories ordered least-depended-on first, foundations last"

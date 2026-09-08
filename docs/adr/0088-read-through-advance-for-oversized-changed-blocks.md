@@ -158,6 +158,58 @@ meaning by matching a range bar that a symbol-less selection does not
 paint; a second pair of numbers beside the first would add noise, not
 information.
 
+## Amendment (2026-09-08): the arrow keys read through on the tree
+
+Decision 3 put read-through on `ctrl-f`/`ctrl-b` only, and the
+Alternatives above explain why `j` could not have it: one row per press
+is the tree's own contract, relied on by search jumps, `Ctrl-d` sizing,
+and muscle memory.
+
+That reasoning is about `j`, not about *every* key that moves the tree
+cursor. `↓`/`↑` are bound to the same cursor move purely because
+`translate_key` folds them into `j`/`k`, and nothing else in this crate
+depends on that folding — the tree's own callers (`nav::Action::CursorUp`/
+`CursorDown`, the search jumps, `Ctrl-d`'s sizing) go through `InputKey`,
+never through a `KeyCode`. So the arrow keys are free where `j`/`k` are
+not.
+
+The cost of leaving them folded is the gap this ADR exists to close,
+one step further out: a reviewer who has not learned `ctrl-f` walks the
+tree with `↓` and reads only the first screenful of every oversized
+change. "Learn the shortcut" is the same expectation the Context above
+already rejected as the thing that never actually happens.
+
+**On `Screen::Entry` + `Focus::Tree`, `↓`/`↑` translate to
+`ReadThroughDown`/`ReadThroughUp`; `j`/`k` keep `Down`/`Up`.** Nothing
+downstream changes — the same `handle_read_through_key` runs, with the
+same one-screen step and the same spill-over into a cursor move.
+
+This only ever adds motion. Read-through is a superset of the cursor
+move: it scrolls only while the selection still has rows off-screen in
+that direction, and moves the cursor by one row otherwise, so an arrow
+key on a change that fits on screen does exactly what it did before.
+
+Scoped to that one screen/focus pair:
+
+- `Focus::Right` keeps `↓`/`↑` on its one-line scroll (ADR 0020). That
+  *is* fine-grained reading of the same pane; replacing it with a
+  one-screen step would take away the finer motion rather than add a
+  coarser one.
+- `Screen::Source` keeps its own one-line scroll, for the same reason.
+- Every overlay and popup that binds Up/Down (help, jump, the review
+  list) short-circuits ahead of this arm in `translate_key` and is
+  untouched.
+- The mouse wheel still maps to plain `Up`/`Down`
+  (`translate_mouse_event`). A wheel notch is a pointing gesture at the
+  pane under the pointer, not a request to advance a reading position in
+  the pane next to it.
+
+The help overlay's tree-focus group splits its `j / k / ↓ / ↑` row
+accordingly: `j / k` moves the cursor, and the arrows join the
+`ctrl-f / ctrl-b` row. It is the one group in the keymap where those two
+halves mean different things, which is exactly why the row had to split
+rather than gain a footnote.
+
 ## Consequences
 
 - `render_scrollable_pane` keeps its current signature and return type

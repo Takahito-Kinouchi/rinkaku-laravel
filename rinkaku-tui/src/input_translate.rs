@@ -50,6 +50,12 @@ use ratatui::crossterm::event::{self, KeyCode, KeyModifiers};
 /// defensive "no future arm can accidentally bypass it" reason every
 /// popup above it already is.
 ///
+/// `app.focus()` is consulted a second time, for the arrow keys: on the
+/// entry view's tree, Up/Down are ADR 0088's read-through gesture
+/// (`ReadThroughUp`/`ReadThroughDown`) rather than the plain `Up`/`Down`
+/// that `k`/`j` keep — see that arm's own comment. Everywhere else the
+/// arrow keys and their letter counterparts still translate identically.
+///
 /// `app.pending_prefix()` (ADR 0022) is consulted only for `d`/`r`: when a
 /// `g` press is still pending, `d` resolves to `GotoDefinition` and `r` to
 /// `GotoReferences` instead of their own ordinary meanings (`ToggleDiff`/
@@ -205,6 +211,19 @@ pub(crate) fn translate_key(code: KeyCode, modifiers: KeyModifiers, app: &App) -
     }
 
     match code {
+        // ADR 0088 amendment: on the entry view's tree, the arrow keys are
+        // the read-through gesture `ctrl-f`/`ctrl-b` already are, while
+        // `j`/`k` below stay the tree's one-row cursor move. Read-through
+        // is a superset of that move — it only scrolls the Diff pane while
+        // the selection still has rows off-screen in that direction, and
+        // moves the cursor by one row otherwise — so an arrow key does
+        // strictly more than it did, never less. Placed before the shared
+        // `Up`/`Down` arm just below so the plain-letter keys keep their
+        // meaning; every other screen/focus (and the mouse wheel, which
+        // `translate_mouse_event` still maps onto `Up`/`Down`) falls
+        // through to it unchanged.
+        KeyCode::Up if tree_focused_entry => Some(InputKey::ReadThroughUp),
+        KeyCode::Down if tree_focused_entry => Some(InputKey::ReadThroughDown),
         KeyCode::Up | KeyCode::Char('k') => Some(InputKey::Up),
         KeyCode::Down | KeyCode::Char('j') => Some(InputKey::Down),
         // Space always means "expand/collapse", never "drill in" — kept
@@ -379,7 +398,12 @@ fn normalize_fullwidth_key(code: KeyCode) -> KeyCode {
 ///
 /// Only `ScrollUp`/`ScrollDown` (wheel/trackpad) are mapped, and they are
 /// mapped onto the *existing* [`InputKey::Up`]/[`InputKey::Down`] variants
-/// rather than a dedicated pair of scroll variants: `App::handle_key`
+/// rather than a dedicated pair of scroll variants — which is also what
+/// keeps a wheel scroll over the tree a plain one-row cursor move now that
+/// [`translate_key`]'s arrow keys read through there instead (ADR 0088's
+/// amendment): a wheel notch is a pointing gesture aimed at the pane under
+/// the cursor, not a request to advance the reading position in another
+/// pane. `App::handle_key`
 /// already gives `Up`/`Down` the right contextual meaning everywhere a
 /// wheel scroll should act — the tree cursor while [`app::Focus::Tree`],
 /// [`app::App::right_pane_scroll`] by one line while [`app::Focus::Right`]

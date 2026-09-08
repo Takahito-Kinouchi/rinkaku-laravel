@@ -6,10 +6,13 @@
 //! - `translate_key` — keyboard -> `InputKey` translation, covering the
 //!   plain keymap and the help-overlay / jump-popup "swallow" contracts
 //!   (ADR 0020, ADR 0022, ADR 0026)
+//! - `arrow_keys` — the one place Up/Down and `k`/`j` diverge: ADR 0088's
+//!   amendment, which reads through the change on the entry view's tree
 //! - `translate_mouse` — mouse-wheel/click translation
 //! - `search` — Source-view search bindings (ADR 0057): `/`, `n`/`N`
 //!   scoping, and the composing-mode early return
 
+mod arrow_keys;
 mod search;
 mod translate_key;
 mod translate_mouse;
