@@ -15,6 +15,10 @@ fn should_translate_scroll_up_to_input_key_up() {
 
 #[test]
 fn should_translate_scroll_down_to_input_key_down() {
+    // Unchanged by ADR 0088's amendment: the keyboard's Down reads through
+    // the change while the entry view's tree has focus, a wheel notch there
+    // still moves the tree cursor by one row (this function's own doc
+    // comment on why a pointing gesture keeps the plain meaning).
     let actual = translate_mouse_event(event::MouseEventKind::ScrollDown);
 
     assert_eq!(Some(InputKey::Down), actual);

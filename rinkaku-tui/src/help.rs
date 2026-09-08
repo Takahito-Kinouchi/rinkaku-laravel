@@ -90,8 +90,12 @@ pub struct HelpContent {
 fn tree_focus_bindings(locale: Locale) -> Vec<KeyBinding> {
     let tag = locale.tag();
     vec![
+        // ADR 0088 amendment: the arrow keys read through here, so they are
+        // listed with `ctrl-f`/`ctrl-b` below rather than beside `j`/`k` —
+        // the tree focus group is the one place in this keymap where the
+        // two halves of the usual `j / k / ↓ / ↑` row mean different things.
         KeyBinding {
-            keys: "j / k / ↓ / ↑",
+            keys: "j / k",
             description: rust_i18n::t!("help.binding.move_cursor", locale = tag).into_owned(),
         },
         // ADR 0026 amendment: `Ctrl-d`/`Ctrl-u`/`gg`/`G` move the tree
@@ -110,11 +114,13 @@ fn tree_focus_bindings(locale: Locale) -> Vec<KeyBinding> {
                 .into_owned(),
         },
         // ADR 0088: listed in both focus groups (`right_focus_bindings`
-        // below carries the identical entry) because the gesture is the
-        // same in either one — it reads on through the change wherever the
-        // reviewer happens to be standing.
+        // below carries the near-identical entry) because the gesture is
+        // the same in either one — it reads on through the change wherever
+        // the reviewer happens to be standing. Only this group's row also
+        // carries `↓`/`↑`: on the right pane those keys keep their own
+        // one-line scroll (this group has no such meaning to displace).
         KeyBinding {
-            keys: "ctrl-f / ctrl-b",
+            keys: "ctrl-f / ctrl-b / ↓ / ↑",
             description: rust_i18n::t!("help.binding.read_through", locale = tag).into_owned(),
         },
         // ADR 0057 amendment: tree search reuses Source view's own `/`/

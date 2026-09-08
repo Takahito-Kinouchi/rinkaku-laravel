@@ -297,7 +297,7 @@ fn should_translate_move_cursor_description_to_japanese_when_locale_is_japanese(
     let binding = tree_focus
         .bindings
         .iter()
-        .find(|binding| binding.keys == "j / k / ↓ / ↑")
+        .find(|binding| binding.keys == "j / k")
         .expect("move-cursor binding present");
 
     assert_eq!("カーソルを移動", binding.description);

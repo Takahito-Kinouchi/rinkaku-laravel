@@ -173,7 +173,7 @@ to what is actually pressable on the current screen.
 | `+` / `-` | green / red | Added / removed line (also in the Detail pane's signature diff) |
 | `@@ ...` | grey | Hunk header |
 | `*` at line start | cyan | This line carries a review annotation (new side only, in both unified and split views) |
-| `▲N` / `▼N` in the title | yellow, bold | Lines of the selected symbol's change still above / below the viewport; `ctrl-f` / `ctrl-b` reads through them. The title's `(12-41/210)` is file-scoped, this is symbol-scoped |
+| `▲N` / `▼N` in the title | yellow, bold | Lines of the selected symbol's change still above / below the viewport; `ctrl-f` / `ctrl-b` (or `↓` / `↑` with tree focus) reads through them. The title's `(12-41/210)` is file-scoped, this is symbol-scoped |
 
 ### Blast radius pane
 
@@ -190,10 +190,10 @@ to what is actually pressable on the current screen.
 
 | Key | Action |
 | --- | --- |
-| `j` / `k` / `↓` / `↑` | Move the cursor |
+| `j` / `k` | Move the cursor |
 | `ctrl-d` / `ctrl-u` | Move the cursor half a page |
 | `gg` / `G` | Jump to the top / bottom of the tree |
-| `ctrl-f` / `ctrl-b` | Read through the change one screen at a time (a symbol row reads that symbol's change, a file row the file's whole diff); once nothing is left off-screen, the cursor moves to the next / previous row |
+| `ctrl-f` / `ctrl-b` / `↓` / `↑` | Read through the change one screen at a time (a symbol row reads that symbol's change, a file row the file's whole diff); once nothing is left off-screen, the cursor moves to the next / previous row |
 | `/` | Start a search |
 | `n` / `N` | Jump to the next / previous match |
 | `enter` | Toggle a directory row, or open a file / symbol row (focus moves right) |
@@ -461,7 +461,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | `+` / `-` | 緑 / 赤 | 追加行 / 削除行（Detail ペインのシグネチャ差分も同じ） |
 | `@@ ...` | 灰 | hunk ヘッダ |
 | 行頭の `*` | シアン | その行にレビューアノテーションが付いている（unified / split とも新側のみ） |
-| タイトルの `▲N` / `▼N` | 黄（太字） | 選択シンボルの変更のうち画面の上 / 下に残っている行数。`ctrl-f` / `ctrl-b` で読み進められる（タイトルの `(12-41/210)` はファイル全体、こちらはシンボル単位） |
+| タイトルの `▲N` / `▼N` | 黄（太字） | 選択シンボルの変更のうち画面の上 / 下に残っている行数。`ctrl-f` / `ctrl-b`（ツリーフォーカス時は `↓` / `↑` でも）で読み進められる（タイトルの `(12-41/210)` はファイル全体、こちらはシンボル単位） |
 
 ### Blast radius ペイン
 
@@ -478,10 +478,10 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 
 | キー | 動作 |
 | --- | --- |
-| `j` / `k` / `↓` / `↑` | カーソルを移動 |
+| `j` / `k` | カーソルを移動 |
 | `ctrl-d` / `ctrl-u` | カーソルを半ページ分移動 |
 | `gg` / `G` | ツリーの先頭 / 末尾へジャンプ |
-| `ctrl-f` / `ctrl-b` | 変更を 1 画面ずつ読み進める（シンボル行ではそのシンボルの変更、ファイル行ではファイルの diff 全体）。画面外に残りが無くなると次 / 前の行へ進む |
+| `ctrl-f` / `ctrl-b` / `↓` / `↑` | 変更を 1 画面ずつ読み進める（シンボル行ではそのシンボルの変更、ファイル行ではファイルの diff 全体）。画面外に残りが無くなると次 / 前の行へ進む |
 | `/` | 検索を開始 |
 | `n` / `N` | 次 / 前の検索結果へジャンプ |
 | `enter` | ディレクトリ行を開閉、またはファイル / シンボル行を開く（フォーカスが右へ移動） |
