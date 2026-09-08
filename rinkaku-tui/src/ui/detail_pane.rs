@@ -275,6 +275,8 @@ pub(crate) fn kind_abbrev(kind: rinkaku_core::extract::SymbolKind) -> &'static s
         SymbolKind::TypeAlias => "type",
         SymbolKind::Block => "block",
         SymbolKind::Section => "section",
+        SymbolKind::ComponentApi => "api",
+        SymbolKind::Component => "component",
     }
 }
 

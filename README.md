@@ -20,7 +20,15 @@ upstream's [README](https://github.com/hiro-o918/rinkaku#readme) and
 - **Vue SFC and Svelte support** — everything outside `<script>` is masked to
   spaces and the rest is parsed as TypeScript, preserving every line and byte
   offset, so an Inertia (Vue) or Svelte frontend is covered by the same
-  machinery (ADR 0075).
+  machinery (ADR 0075). A component's declared interface is part of that
+  surface: `defineProps` / `defineEmits` / `defineModel` / `defineSlots` /
+  `defineExpose`, the Options API's `props:` / `emits:`, Svelte's `export let`
+  and `$props()` all extract as symbols, so adding a required prop reads as
+  `api props — signature changed` rather than as a line count (ADR 0097).
+  The component itself is a symbol too, named after its file, whose
+  dependencies are the children its markup renders — read by scanning the
+  markup, so a Nuxt auto-imported `<BaseButton>` that never appears in the
+  script still resolves (ADR 0098).
 - **Markdown support** — a document's headings become its outline: each
   section is a symbol whose signature is its heading and whose container is
   the heading above it, so a docs change shows *which sections* moved rather
@@ -311,6 +319,15 @@ rinkaku は PR の diff を **変更されたシンボルのシグネチャと�
 - **Vue SFC / Svelte 対応** — `<script>` ブロック以外を空白でマスクし、残りを
   TypeScript 文法で解析します。行番号とバイトオフセットが保存されるため、Inertia
   (Vue) や Svelte のフロントエンドも同じ機構でカバーできます（ADR 0075）。
+  コンポーネントが宣言するインターフェースも surface の一部として扱います。
+  `defineProps` / `defineEmits` / `defineModel` / `defineSlots` /
+  `defineExpose`、Options API の `props:` / `emits:`、Svelte の `export let` と
+  `$props()` がシンボルとして抽出されるので、必須 prop の追加が行数ではなく
+  `api props — signature changed` として読めます（ADR 0097）。
+  コンポーネント自身もファイル名を名前に持つシンボルになり、マークアップが
+  描画する子コンポーネントがその依存になります。マークアップを走査して読むので、
+  script に一切現れない Nuxt の auto-import された `<BaseButton>` も解決できます
+  （ADR 0098）。
 - **Markdown 対応** — 見出しをドキュメントの輪郭として扱います。各セクションが
   シンボルになり、シグネチャはその見出し、コンテナは 1 つ上の見出しです。
   ドキュメントの変更が行数ではなく「どのセクションが変わったか」で見えます

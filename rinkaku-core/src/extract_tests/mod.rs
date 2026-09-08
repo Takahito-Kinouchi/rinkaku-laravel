@@ -55,6 +55,30 @@
 #[allow(unused_imports)]
 pub(crate) use super::*;
 
+/// The path the shims below pass through. Only a component-shaped
+/// language reads it (ADR 0098: the component symbol is named after the
+/// file), and no test using these shims is one — [`vue`] and [`svelte`]
+/// call the real functions with a real component path instead.
+const NON_COMPONENT_PATH: &str = "src/lib.rs";
+
+/// Test shim for [`super::extract_changed_symbols`], shadowing the
+/// glob-imported original: the path is irrelevant to every language but
+/// Vue and Svelte, so the ~150 tests that predate it should not have to
+/// name one.
+fn extract_changed_symbols(
+    source: &str,
+    lang: &dyn LanguageSupport,
+    changed_ranges: &[LineRange],
+) -> Vec<ExtractedSymbol> {
+    super::extract_changed_symbols(NON_COMPONENT_PATH, source, lang, changed_ranges)
+}
+
+/// Test shim for [`super::extract_all_symbols`] — see
+/// [`extract_changed_symbols`] above.
+fn extract_all_symbols(source: &str, lang: &dyn LanguageSupport) -> Vec<ExtractedSymbol> {
+    super::extract_all_symbols(NON_COMPONENT_PATH, source, lang)
+}
+
 mod classification;
 mod go;
 mod hcl;
