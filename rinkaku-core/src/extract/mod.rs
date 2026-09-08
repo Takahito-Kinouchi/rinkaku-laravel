@@ -74,6 +74,16 @@ pub enum SymbolKind {
     /// visible in the signature (`## Test strategy`) and in `container`,
     /// and a `Section` is the same sort of thing at every depth.
     Section,
+    /// A component's declared inputs/outputs — a Vue `defineProps`/
+    /// `defineEmits`/`defineModel`/`defineSlots`/`defineExpose` macro
+    /// call, a Vue Options-API `props:`/`emits:` option, or a Svelte
+    /// `export let` prop / `$props()` destructuring (ADR 0097).
+    ///
+    /// One kind covers inputs and outputs alike: which one a given
+    /// declaration is, is already spelled out by its name (`props` vs
+    /// `emits`) and by its signature, exactly the way [`Self::Block`]
+    /// leaves the Terraform-specific role to the name.
+    ComponentApi,
 }
 
 /// A changed symbol's contract impact (ADR 0014), classified by comparing
@@ -619,10 +629,22 @@ fn symbol_kind(node: tree_sitter::Node, source: &[u8]) -> Option<SymbolKind> {
         "class_declaration" | "abstract_class_declaration" => Some(SymbolKind::Class),
         "method_definition" | "abstract_method_signature" => Some(SymbolKind::Function),
         "enum_declaration" => Some(SymbolKind::Enum),
-        // `variable_declarator` is captured only for `const f = () => {}`
-        // style arrow-function bindings (see the TypeScript definition
-        // query); other declarators are never captured.
-        "variable_declarator" => Some(SymbolKind::Function),
+        // `variable_declarator` is captured for `const f = () => {}` style
+        // arrow-function bindings (see the TypeScript definition query)
+        // and, by Svelte's query only, for a `let { a, b } = $props()`
+        // destructuring — the latter is a component's prop surface, not a
+        // function, so the value decides (ADR 0097). No other declarator
+        // is ever captured.
+        "variable_declarator" => match component_api_rune(node, source) {
+            Some(_) => Some(SymbolKind::ComponentApi),
+            None => Some(SymbolKind::Function),
+        },
+        // Vue/Svelte component API (ADR 0097). `call_expression` is
+        // captured only by Vue's query (a `define*` macro), `pair` only
+        // by Vue's (a `props:`/`emits:` option), `export_statement` only
+        // by Svelte's (an `export let` prop) — the same per-captured-node
+        // reasoning HCL's `block` documents above.
+        "call_expression" | "pair" | "export_statement" => Some(SymbolKind::ComponentApi),
         // PHP. Its other captured kinds reuse strings already mapped
         // above: `function_definition` (Python), `method_declaration`
         // (Go), `class_declaration`/`interface_declaration`/
@@ -666,10 +688,88 @@ fn definition_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
     if matches!(node.kind(), "section" | "setext_heading") {
         return heading_name(node, source);
     }
+    if let Some(name) = component_api_name(node, source) {
+        return Some(name);
+    }
 
     node.child_by_field_name("name")
         .and_then(|n| n.utf8_text(source).ok())
         .map(|s| s.to_string())
+}
+
+/// The `$props` callee of a `let { ... } = $props()` declarator (Svelte 5,
+/// ADR 0097), or `None` for every other `variable_declarator` — including
+/// the arrow-function bindings the TypeScript query captures.
+///
+/// Sibling runes (`$state`, `$derived`) deliberately do not match: they
+/// are a component's internal state, not surface a parent binds to, and
+/// Svelte's definition query does not capture them either. This function
+/// is what keeps `symbol_kind` from having to trust that.
+fn component_api_rune<'a>(node: tree_sitter::Node<'a>, source: &[u8]) -> Option<&'a str> {
+    let value = node.child_by_field_name("value")?;
+    if value.kind() != "call_expression" {
+        return None;
+    }
+    let callee = value.child_by_field_name("function")?;
+    if callee.kind() != "identifier" {
+        return None;
+    }
+    match callee.utf8_text(source).ok()? {
+        "$props" => Some("$props"),
+        _ => None,
+    }
+}
+
+/// The display name for a Vue/Svelte component-API declaration (ADR
+/// 0097), or `None` for every other node kind — which is what lets
+/// [`definition_name`] fall through to the generic `name` field.
+///
+/// Each shape names itself differently, and none of them through a `name`
+/// field:
+///
+/// - A Vue macro call (`defineProps<{...}>()`) is named after the macro
+///   with its `define` prefix dropped and the first letter lowered:
+///   `props`, `emits`, `model`, `slots`, `expose`. The macro name itself
+///   would read as a call rather than as a surface, and — unlike these —
+///   is a name the reference query *does* capture from every component
+///   that calls it, which would make every component's macro symbol a
+///   spurious edge target for every other's.
+/// - A Vue Options-API option is named by its own key (`props`/`emits`),
+///   which already lands on the same names.
+/// - A Svelte `export let items` is named after the declarator it
+///   exports, so a component's props read as the individual names a
+///   parent actually binds (`items`, `label`), not as one lump.
+fn component_api_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    match node.kind() {
+        "call_expression" => {
+            let callee = node.child_by_field_name("function")?;
+            let macro_name = callee.utf8_text(source).ok()?;
+            let bare = macro_name.strip_prefix("define")?;
+            let mut chars = bare.chars();
+            let first = chars.next()?;
+            Some(first.to_lowercase().chain(chars).collect())
+        }
+        "pair" => node
+            .child_by_field_name("key")
+            .and_then(|key| key.utf8_text(source).ok())
+            .map(|text| text.to_string()),
+        "export_statement" => {
+            let declaration = node.child_by_field_name("declaration")?;
+            let mut cursor = declaration.walk();
+            let declarator = declaration
+                .children(&mut cursor)
+                .find(|child| child.kind() == "variable_declarator")?;
+            declarator
+                .child_by_field_name("name")
+                .and_then(|name| name.utf8_text(source).ok())
+                .map(|text| text.to_string())
+        }
+        "variable_declarator" => {
+            component_api_rune(node, source)?;
+            Some("props".to_string())
+        }
+        _ => None,
+    }
 }
 
 /// Walks up from `node` to find an enclosing container (Rust

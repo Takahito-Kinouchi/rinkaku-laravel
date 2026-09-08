@@ -86,3 +86,88 @@ fn should_extract_symbols_from_both_script_blocks_when_sfc_has_two() {
     let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(vec!["setup", "handler"], names);
 }
+
+// ADR 0097: a component's declared inputs and outputs are surface a
+// parent binds to, so they extract as named symbols rather than reducing
+// to a changed-line count. Both authoring styles are covered — `<script
+// setup>`'s `define*` macros here, the Options API's `props:`/`emits:`
+// options below.
+
+fn script_setup_source() -> &'static str {
+    "<template>\n  <button @click=\"go\">{{ label }}</button>\n</template>\n\n<script setup lang=\"ts\">\nconst props = defineProps<{ start: number }>();\nconst emit = defineEmits<{ (e: 'changed', value: number): void }>();\n\nfunction go(): void {\n  emit('changed', props.start);\n}\n</script>\n"
+}
+
+#[test]
+fn should_extract_define_props_and_define_emits_as_component_api_symbols() {
+    let lang = VueSupport;
+
+    let symbols = extract_all_symbols(script_setup_source(), &lang);
+
+    let shapes: Vec<(String, SymbolKind, String)> = symbols
+        .iter()
+        .map(|s| (s.name.clone(), s.kind, s.signature.clone()))
+        .collect();
+    let expected = vec![
+        (
+            "props".to_string(),
+            SymbolKind::ComponentApi,
+            "defineProps<{ start: number }>()".to_string(),
+        ),
+        (
+            "emits".to_string(),
+            SymbolKind::ComponentApi,
+            "defineEmits<{ (e: 'changed', value: number): void }>()".to_string(),
+        ),
+        (
+            "go".to_string(),
+            SymbolKind::Function,
+            "function go(): void".to_string(),
+        ),
+    ];
+    assert_eq!(expected, shapes);
+}
+
+#[test]
+fn should_report_the_props_symbol_when_only_the_props_declaration_changed() {
+    // The regression ADR 0097 exists for: before it, this edit reported
+    // nothing but "1 changed line outside any definition", even though a
+    // props change is the most contract-breaking edit an SFC can carry.
+    let lang = VueSupport;
+    // Line 6 is the `defineProps<...>()` line.
+    let changed_ranges = vec![LineRange { start: 6, end: 6 }];
+
+    let actual = extract_changed_symbols(script_setup_source(), &lang, &changed_ranges);
+
+    assert_eq!(1, actual.len());
+    assert_eq!("props", actual[0].name);
+    assert_eq!(SymbolKind::ComponentApi, actual[0].kind);
+    assert_eq!("defineProps<{ start: number }>()", actual[0].signature);
+}
+
+#[test]
+fn should_extract_options_api_props_and_emits_options_as_component_api_symbols() {
+    let source = "<template><div /></template>\n\n<script lang=\"ts\">\nexport default {\n  props: { title: { type: String, required: true } },\n  emits: ['close'],\n};\n</script>\n";
+    let lang = VueSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let shapes: Vec<(String, SymbolKind)> = symbols.iter().map(|s| (s.name.clone(), s.kind)).collect();
+    let expected = vec![
+        ("props".to_string(), SymbolKind::ComponentApi),
+        ("emits".to_string(), SymbolKind::ComponentApi),
+    ];
+    assert_eq!(expected, shapes);
+}
+
+#[test]
+fn should_extract_define_model_and_define_expose_as_component_api_symbols() {
+    // The macro name's `define` prefix is dropped and its first letter
+    // lowered, so every macro lands on the noun it declares.
+    let source = "<script setup lang=\"ts\">\nconst value = defineModel<string>();\ndefineExpose({ focus });\n</script>\n";
+    let lang = VueSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(vec!["model", "expose"], names);
+}

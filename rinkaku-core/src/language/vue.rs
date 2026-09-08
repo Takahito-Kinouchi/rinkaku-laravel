@@ -15,6 +15,45 @@
 use super::LanguageSupport;
 use super::typescript;
 
+/// TypeScript's definition query plus the SFC's own component-API
+/// declarations (ADR 0097). A `.vue` file's public surface is not only its
+/// functions: `defineProps`/`defineEmits` — and, in the Options API, the
+/// `props:`/`emits:` options — are what a *parent* component is coupled
+/// to, so a change to them is a contract change in exactly the sense ADR
+/// 0014 classifies, and it has to reach the report as a named symbol
+/// rather than as a bare changed-line count.
+///
+/// The five `define*` macros are matched by name because they are macros,
+/// not imports: `<script setup>` makes them available without a binding,
+/// so there is no declaration node to anchor on and the callee identifier
+/// is the only thing that identifies them.
+///
+/// The Options-API pattern matches a `props:`/`emits:` pair anywhere in
+/// the script rather than only inside the default export. Narrowing it
+/// would need two patterns (`export default {...}` and `export default
+/// defineComponent({...})` nest the object differently) and would still
+/// miss an options object assigned to a local first; a same-named key in
+/// an unrelated object literal inside a `.vue` script is rare enough, and
+/// wrong in a benign way — it reports one extra named symbol, never a
+/// missing one.
+const DEFINITION_QUERY: &str = "\
+[
+  (function_declaration) @definition.function
+  (method_definition) @definition.function
+  (abstract_method_signature) @definition.function
+  (variable_declarator value: (arrow_function)) @definition.function
+  (class_declaration) @definition.class
+  (abstract_class_declaration) @definition.class
+  (interface_declaration) @definition.interface
+  (type_alias_declaration) @definition.type_alias
+  (enum_declaration) @definition.enum
+  (call_expression
+    function: (identifier) @_macro
+    (#match? @_macro \"^(defineProps|defineEmits|defineModel|defineSlots|defineExpose)$\")) @definition.component_api
+  (pair key: (property_identifier) @_option
+    (#match? @_option \"^(props|emits)$\")) @definition.component_api
+] @definition";
+
 pub struct VueSupport;
 
 impl LanguageSupport for VueSupport {
@@ -27,18 +66,20 @@ impl LanguageSupport for VueSupport {
     }
 
     fn definition_query(&self) -> &str {
-        typescript::DEFINITION_QUERY
+        DEFINITION_QUERY
     }
 
     fn reference_query(&self) -> &str {
         typescript::REFERENCE_QUERY
     }
 
-    // `index_prefilter_patterns` (ADR 0080) is not overridden: it shares
-    // `DEFINITION_QUERY` with `TypeScriptSupport`, whose doc comment on
-    // this same method explains why the bare-name default is kept
-    // (arrow-function `variable_declarator`s and `method_definition`s
-    // have no single fixed keyword to anchor a pattern to).
+    // `index_prefilter_patterns` (ADR 0080) is not overridden: this
+    // query is `TypeScriptSupport`'s plus the component-API patterns
+    // above, and that impl's doc comment on this same method explains why
+    // the bare-name default is kept (arrow-function `variable_declarator`s
+    // and `method_definition`s have no single fixed keyword to anchor a
+    // pattern to). The added patterns do not change that answer: one
+    // node lacking a provable pattern already forces the default.
 
     /// Vitest/Jest's conventions, mirroring the TypeScript impl's:
     /// `.test.vue`/`.spec.vue` suffixes or a `__tests__/` directory

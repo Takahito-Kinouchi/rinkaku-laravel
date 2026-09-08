@@ -14,6 +14,48 @@ use super::LanguageSupport;
 use super::typescript;
 use super::vue;
 
+/// TypeScript's definition query plus Svelte's own prop declarations
+/// (ADR 0097), the counterpart to `vue::DEFINITION_QUERY`'s `define*`
+/// macros: a component's props are what a parent is coupled to, so a
+/// change to them has to reach the report as a named symbol rather than
+/// as a bare changed-line count.
+///
+/// Svelte declares them two ways, and both are captured:
+///
+/// - Svelte 4's `export let items: string[] = []`. The captured node is
+///   the whole `export_statement`, not the declarator inside it, so that
+///   an `export let f = () => {}` — a prop whose value happens to be a
+///   function — still reports as the function it is: the declarator is a
+///   descendant of the export statement, and `extract`'s narrowest-
+///   enclosing-definition rule therefore prefers it. That is also why no
+///   negation is needed to keep the two patterns from double-reporting
+///   one declaration.
+/// - Svelte 5's `let { start, max } = $props()`. Matched on the `$props`
+///   callee for the same reason Vue matches `defineProps`: it is a
+///   compiler rune with no declaration to anchor on. `$state`/`$derived`
+///   are deliberately not captured — they are internal component state,
+///   not surface a parent can bind to.
+///
+/// `export const`/`export function` are left to the shared TypeScript
+/// patterns: those are a component's module exports, already reported as
+/// the functions and values they are.
+const DEFINITION_QUERY: &str = "\
+[
+  (function_declaration) @definition.function
+  (method_definition) @definition.function
+  (abstract_method_signature) @definition.function
+  (variable_declarator value: (arrow_function)) @definition.function
+  (class_declaration) @definition.class
+  (abstract_class_declaration) @definition.class
+  (interface_declaration) @definition.interface
+  (type_alias_declaration) @definition.type_alias
+  (enum_declaration) @definition.enum
+  (export_statement declaration: (lexical_declaration)) @definition.component_api
+  (variable_declarator
+    value: (call_expression function: (identifier) @_rune
+      (#eq? @_rune \"$props\"))) @definition.component_api
+] @definition";
+
 pub struct SvelteSupport;
 
 impl LanguageSupport for SvelteSupport {
@@ -26,7 +68,7 @@ impl LanguageSupport for SvelteSupport {
     }
 
     fn definition_query(&self) -> &str {
-        typescript::DEFINITION_QUERY
+        DEFINITION_QUERY
     }
 
     fn reference_query(&self) -> &str {
@@ -34,9 +76,9 @@ impl LanguageSupport for SvelteSupport {
     }
 
     // `index_prefilter_patterns` (ADR 0080) is not overridden, for the
-    // same reason as `VueSupport`: it shares `DEFINITION_QUERY` with
-    // `TypeScriptSupport`, whose doc comment on this method explains why
-    // the bare-name default is kept.
+    // same reason as `VueSupport`: this query is `TypeScriptSupport`'s
+    // plus the prop patterns above, and that impl's doc comment on this
+    // method explains why the bare-name default is kept.
 
     /// Vitest's conventions, mirroring the Vue impl's: `.test.svelte`/
     /// `.spec.svelte` suffixes or a `__tests__/` directory anywhere in
