@@ -25,6 +25,10 @@ upstream's [README](https://github.com/hiro-o918/rinkaku#readme) and
   `defineExpose`, the Options API's `props:` / `emits:`, Svelte's `export let`
   and `$props()` all extract as symbols, so adding a required prop reads as
   `api props — signature changed` rather than as a line count (ADR 0097).
+  The component itself is a symbol too, named after its file, whose
+  dependencies are the children its markup renders — read by scanning the
+  markup, so a Nuxt auto-imported `<BaseButton>` that never appears in the
+  script still resolves (ADR 0098).
 - **Markdown support** — a document's headings become its outline: each
   section is a symbol whose signature is its heading and whose container is
   the heading above it, so a docs change shows *which sections* moved rather
@@ -320,6 +324,10 @@ rinkaku は PR の diff を **変更されたシンボルのシグネチャと�
   `defineExpose`、Options API の `props:` / `emits:`、Svelte の `export let` と
   `$props()` がシンボルとして抽出されるので、必須 prop の追加が行数ではなく
   `api props — signature changed` として読めます（ADR 0097）。
+  コンポーネント自身もファイル名を名前に持つシンボルになり、マークアップが
+  描画する子コンポーネントがその依存になります。マークアップを走査して読むので、
+  script に一切現れない Nuxt の auto-import された `<BaseButton>` も解決できます
+  （ADR 0098）。
 - **Markdown 対応** — 見出しをドキュメントの輪郭として扱います。各セクションが
   シンボルになり、シグネチャはその見出し、コンテナは 1 つ上の見出しです。
   ドキュメントの変更が行数ではなく「どのセクションが変わったか」で見えます

@@ -329,7 +329,7 @@ fn extract_entries(
     let Some(lang) = language_for_path(path) else {
         return Vec::new();
     };
-    rinkaku_core::extract::extract_all_symbols(content, lang)
+    rinkaku_core::extract::extract_all_symbols(path, content, lang)
         .into_iter()
         .map(|symbol| IndexEntry {
             name: symbol.name,

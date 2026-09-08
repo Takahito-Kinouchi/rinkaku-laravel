@@ -9,6 +9,24 @@ use super::*;
 use crate::language::svelte::SvelteSupport;
 use pretty_assertions::assert_eq;
 
+/// Vue and Svelte read the path: the component symbol (ADR 0098) is
+/// named after the file. These shims name a real component file, in
+/// place of the parent module's own path-less ones, so every test below
+/// reads the same as it did before the path existed.
+const COMPONENT_PATH: &str = "src/lib/Todo.svelte";
+
+fn extract_all_symbols(source: &str, lang: &dyn LanguageSupport) -> Vec<ExtractedSymbol> {
+    crate::extract::extract_all_symbols(COMPONENT_PATH, source, lang)
+}
+
+fn extract_changed_symbols(
+    source: &str,
+    lang: &dyn LanguageSupport,
+    changed_ranges: &[LineRange],
+) -> Vec<ExtractedSymbol> {
+    crate::extract::extract_changed_symbols(COMPONENT_PATH, source, lang, changed_ranges)
+}
+
 fn component_source() -> &'static str {
     "<script context=\"module\">\nexport function preload(id: number): Promise<Data> {\n  return fetchData(id);\n}\n</script>\n\n<script lang=\"ts\">\nexport let count = 0;\n\nfunction bump(): void {\n  count += 1;\n}\n</script>\n\n<button on:click={bump}>{count}</button>\n"
 }
@@ -24,6 +42,12 @@ fn should_extract_symbols_from_both_script_blocks_at_original_lines() {
         .map(|s| (s.name.clone(), s.signature.clone(), s.range))
         .collect();
     let expected = vec![
+        // ADR 0098: the component itself, named after the file.
+        (
+            "Todo".to_string(),
+            "<Todo />".to_string(),
+            LineRange { start: 1, end: 15 },
+        ),
         (
             "preload".to_string(),
             "function preload(id: number): Promise<Data>".to_string(),
@@ -60,15 +84,19 @@ fn should_extract_changed_symbol_when_script_body_line_changed() {
 }
 
 #[test]
-fn should_extract_no_symbols_when_only_markup_lines_changed() {
+fn should_report_only_the_component_when_markup_lines_changed() {
+    // ADR 0098, the Svelte half of Vue's own template case: the markup is
+    // still not parsed, but the component it belongs to is a symbol
+    // spanning the file, so the edit names the component.
     let lang = SvelteSupport;
-    // Line 15 is the `<button ...>` markup line — masked away, so no
-    // definition can contain it.
+    // Line 15 is the `<button ...>` markup line.
     let changed_ranges = vec![LineRange { start: 15, end: 15 }];
 
     let actual = extract_changed_symbols(component_source(), &lang, &changed_ranges);
 
-    assert_eq!(Vec::<ExtractedSymbol>::new(), actual);
+    assert_eq!(1, actual.len());
+    assert_eq!("Todo", actual[0].name);
+    assert_eq!(SymbolKind::Component, actual[0].kind);
 }
 
 #[test]
@@ -106,6 +134,7 @@ fn should_extract_props_rune_destructuring_as_a_component_api_symbol() {
     let shapes: Vec<(String, SymbolKind)> =
         symbols.iter().map(|s| (s.name.clone(), s.kind)).collect();
     let expected = vec![
+        ("Todo".to_string(), SymbolKind::Component),
         ("props".to_string(), SymbolKind::ComponentApi),
         ("bump".to_string(), SymbolKind::Function),
     ];

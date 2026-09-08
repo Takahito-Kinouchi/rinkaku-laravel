@@ -54,6 +54,7 @@ const DEFINITION_QUERY: &str = "\
   (variable_declarator
     value: (call_expression function: (identifier) @_rune
       (#eq? @_rune \"$props\"))) @definition.component_api
+  (program) @definition.component
 ] @definition";
 
 pub struct SvelteSupport;
@@ -89,6 +90,10 @@ impl LanguageSupport for SvelteSupport {
             .iter()
             .any(|suffix| file_name.ends_with(suffix))
             || path.split('/').any(|segment| segment == "__tests__")
+    }
+
+    fn component_markup_references(&self, source: &str) -> Option<Vec<String>> {
+        Some(vue::component_tags(source))
     }
 
     fn source_for_parse<'a>(&self, source: &'a str) -> std::borrow::Cow<'a, str> {

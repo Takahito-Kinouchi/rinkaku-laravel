@@ -84,6 +84,11 @@ pub enum SymbolKind {
     /// `emits`) and by its signature, exactly the way [`Self::Block`]
     /// leaves the Terraform-specific role to the name.
     ComponentApi,
+    /// A Vue SFC or Svelte component, as a thing a parent can render
+    /// (ADR 0098). Its name is the file's own stem, because that is what
+    /// a parent writes in its markup — the component's identity lives in
+    /// the filename, not in any declaration inside the file.
+    Component,
 }
 
 /// A changed symbol's contract impact (ADR 0014), classified by comparing
@@ -236,6 +241,7 @@ pub struct ExtractedSymbol {
 /// top-level statement) is not surfaced — v1 only reports symbol-level
 /// changes.
 pub fn extract_changed_symbols(
+    path: &str,
     source: &str,
     lang: &dyn LanguageSupport,
     changed_ranges: &[LineRange],
@@ -244,11 +250,23 @@ pub fn extract_changed_symbols(
         return Vec::new();
     }
 
+    let component = component_context(path, source, lang);
+    let component = component.as_ref();
     with_definition_nodes(source, lang, |all_nodes, source_bytes, reference_query| {
         let touched_nodes: Vec<DefinitionNode> = all_nodes
             .iter()
             .copied()
-            .filter(|node| overlaps_any(node.line_range(), changed_ranges))
+            // A component's captured `program` node (ADR 0098) is touched
+            // by any change to its file, not only by one inside its own
+            // span: that span starts at the first token the masked source
+            // leaves standing, so a Vue `<template>` written above the
+            // script sits outside it — and a template edit is exactly
+            // what the component symbol exists to name. The
+            // narrowest-enclosing rule just below still suppresses it
+            // whenever a definition inside the file was touched too.
+            .filter(|node| {
+                node.node.kind() == "program" || overlaps_any(node.line_range(), changed_ranges)
+            })
             .collect();
         let touched_context = TouchedContext {
             all_definition_nodes: all_nodes,
@@ -278,6 +296,7 @@ pub fn extract_changed_symbols(
                     source_bytes,
                     reference_query,
                     lang,
+                    component,
                     Some(touched_context),
                 )
             })
@@ -298,11 +317,19 @@ pub fn extract_changed_symbols(
 /// every definition, and a nested definition's own `container` (set by
 /// `build_symbol`/`find_container`) already records its relationship to
 /// its enclosing block, so there is nothing to suppress.
-pub fn extract_all_symbols(source: &str, lang: &dyn LanguageSupport) -> Vec<ExtractedSymbol> {
+pub fn extract_all_symbols(
+    path: &str,
+    source: &str,
+    lang: &dyn LanguageSupport,
+) -> Vec<ExtractedSymbol> {
+    let component = component_context(path, source, lang);
+    let component = component.as_ref();
     with_definition_nodes(source, lang, |all_nodes, source_bytes, reference_query| {
         all_nodes
             .iter()
-            .flat_map(|node| build_symbols(*node, source_bytes, reference_query, lang, None))
+            .flat_map(|node| {
+                build_symbols(*node, source_bytes, reference_query, lang, component, None)
+            })
             .collect()
     })
 }
@@ -524,6 +551,85 @@ pub(super) fn overlaps_any(range: LineRange, others: &[LineRange]) -> bool {
         .any(|other| range.start <= other.end && other.start <= range.end)
 }
 
+/// What a component-shaped file (a Vue SFC, a Svelte component) needs to
+/// report itself as one symbol (ADR 0098). Built once per file, from the
+/// path and from
+/// [`LanguageSupport::component_markup_references`] — which also decides
+/// whether a file is a component at all, by answering `Some` or `None`.
+struct ComponentContext {
+    /// The file's stem, which is what a parent writes in its markup.
+    name: String,
+    /// The child components this file's markup renders.
+    markup_references: Vec<String>,
+    /// The file's line count, which is the component's own extent.
+    line_count: usize,
+}
+
+impl ComponentContext {
+    /// The component's own symbol, spanning the whole file — an SFC *is*
+    /// the component, so there is no narrower node to anchor it to.
+    ///
+    /// The range is the file rather than the captured `program` node's
+    /// own: that node starts at the first token the masked source leaves
+    /// standing, so it would begin below a Vue `<template>` written above
+    /// the script and a template-only edit would fall outside the very
+    /// symbol that exists to describe it.
+    ///
+    /// Its references are the markup's child components and nothing else,
+    /// rather than what the reference query finds under the captured
+    /// `program` node. That node is the whole file, so the query would
+    /// return every call and type in it and make the component a hub
+    /// wired to everything it happens to contain — the component's *own*
+    /// couplings are the components it renders.
+    ///
+    /// The signature is the tag a parent writes. A file-spanning node has
+    /// no declaration to slice, and repeating the props here would
+    /// duplicate the `ComponentApi` symbols (ADR 0097) that already carry
+    /// them.
+    fn build_symbol(&self) -> ExtractedSymbol {
+        ExtractedSymbol {
+            id: String::new(),
+            name: self.name.clone(),
+            kind: SymbolKind::Component,
+            signature: format!("<{} />", self.name),
+            range: LineRange {
+                start: 1,
+                end: self.line_count.max(1),
+            },
+            container: None,
+            referenced_names: self.markup_references.clone(),
+            referenced_method_names: Vec::new(),
+            dependencies: Vec::new(),
+            omitted_dependency_matches: 0,
+            is_test: false,
+            classification: None,
+            previous_signature: None,
+        }
+    }
+}
+
+/// A [`ComponentContext`] for a component-shaped file, or `None` for
+/// every other language — see
+/// [`LanguageSupport::component_markup_references`], which is what
+/// distinguishes the two.
+fn component_context(
+    path: &str,
+    source: &str,
+    lang: &dyn LanguageSupport,
+) -> Option<ComponentContext> {
+    let markup_references = lang.component_markup_references(source)?;
+    let file_name = path.rsplit('/').next().unwrap_or(path);
+    let name = file_name
+        .rsplit_once('.')
+        .map(|(stem, _extension)| stem)
+        .unwrap_or(file_name);
+    Some(ComponentContext {
+        name: name.to_string(),
+        markup_references,
+        line_count: source.lines().count(),
+    })
+}
+
 /// Builds every symbol a captured definition node yields. One node is
 /// one symbol for every current kind; kinds that expand a single
 /// captured node into several symbols (HCL `locals` blocks, one symbol
@@ -537,6 +643,7 @@ fn build_symbols(
     source: &[u8],
     reference_query: &tree_sitter::Query,
     lang: &dyn LanguageSupport,
+    component: Option<&ComponentContext>,
     touched: Option<TouchedContext>,
 ) -> Vec<ExtractedSymbol> {
     let node = definition.node;
@@ -544,7 +651,7 @@ fn build_symbols(
         return build_hcl_locals_symbols(node, source, reference_query, lang);
     }
 
-    build_symbol(definition, source, reference_query, lang, touched)
+    build_symbol(definition, source, reference_query, lang, component, touched)
         .into_iter()
         .collect()
 }
@@ -558,9 +665,13 @@ fn build_symbol(
     source: &[u8],
     reference_query: &tree_sitter::Query,
     lang: &dyn LanguageSupport,
+    component: Option<&ComponentContext>,
     touched: Option<TouchedContext>,
 ) -> Option<ExtractedSymbol> {
     let node = definition.node;
+    if node.kind() == "program" {
+        return component.map(ComponentContext::build_symbol);
+    }
     let kind = symbol_kind(node, source)?;
     let name = definition_name(node, source)?;
     let signature = slice_signature(definition, source, touched);
@@ -639,6 +750,11 @@ fn symbol_kind(node: tree_sitter::Node, source: &[u8]) -> Option<SymbolKind> {
             Some(_) => Some(SymbolKind::ComponentApi),
             None => Some(SymbolKind::Function),
         },
+        // Vue/Svelte component identity (ADR 0098): the whole file, since
+        // an SFC *is* the component. Only Vue's and Svelte's queries
+        // capture `program`, the same per-captured-node reasoning HCL's
+        // `block` documents below.
+        "program" => Some(SymbolKind::Component),
         // Vue/Svelte component API (ADR 0097). `call_expression` is
         // captured only by Vue's query (a `define*` macro), `pair` only
         // by Vue's (a `props:`/`emits:` option), `export_statement` only

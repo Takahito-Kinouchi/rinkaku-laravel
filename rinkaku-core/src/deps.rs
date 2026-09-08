@@ -321,7 +321,7 @@ impl TagsResolver {
                     if !should_parse_file(matcher, &normalize_whitespace(&content)) {
                         return None;
                     }
-                    Some(extract_all_symbols(&content, lang))
+                    Some(extract_all_symbols(&path, &content, lang))
                 })();
 
                 if let Some(on_progress) = on_progress {

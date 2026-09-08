@@ -336,7 +336,8 @@ pub fn analyze_diff(
             // every skip check above. `str::lines()` returns a sensible count
             // whether or not the final line ends in a newline.
             sized_files.push((changed_file.path.clone(), source.lines().count()));
-            let mut symbols = extract_changed_symbols(&source, lang, &changed_file.changed_ranges);
+            let mut symbols =
+                extract_changed_symbols(&changed_file.path, &source, lang, &changed_file.changed_ranges);
 
             // ADR 0014: classify each symbol's contract impact against the
             // base side. `ChangeKind::Added` classifies every symbol `Added`
@@ -573,7 +574,7 @@ pub fn analyze_repo(
                 }
                 let sized = (path.clone(), content.lines().count());
 
-                let symbols: Vec<ExtractedSymbol> = extract_all_symbols(&content, lang)
+                let symbols: Vec<ExtractedSymbol> = extract_all_symbols(path, &content, lang)
                     .into_iter()
                     .filter(|symbol| include_tests || !symbol.is_test)
                     .collect();
@@ -716,7 +717,7 @@ fn classify_against_base(
     let Ok(base_source) = read_base_file(read_path) else {
         return Vec::new();
     };
-    let base_symbols = extract_all_symbols(&base_source, lang);
+    let base_symbols = extract_all_symbols(read_path, &base_source, lang);
 
     let owned_head_source;
     let head_source = match head_source {
@@ -731,7 +732,7 @@ fn classify_against_base(
         None => None,
     };
     let all_head_symbols = head_source
-        .map(|source| extract_all_symbols(source, lang))
+        .map(|source| extract_all_symbols(report_path, source, lang))
         .unwrap_or_default();
 
     classify_symbols(
@@ -773,7 +774,7 @@ fn removed_symbols_from_deleted_file(
     if !include_generated && is_generated_content(&base_source) {
         return Vec::new();
     }
-    extract_all_symbols(&base_source, lang)
+    extract_all_symbols(&changed_file.path, &base_source, lang)
         .into_iter()
         .map(|base_symbol| RemovedSymbol {
             name: base_symbol.name,
@@ -893,7 +894,12 @@ pub fn collect_referenced_names(
             // costs a candidate, never correctness.
             Err(_) => continue,
         };
-        for symbol in extract_changed_symbols(&source, lang, &changed_file.changed_ranges) {
+        for symbol in extract_changed_symbols(
+            &changed_file.path,
+            &source,
+            lang,
+            &changed_file.changed_ranges,
+        ) {
             names.extend(symbol.referenced_names);
             names.extend(symbol.referenced_method_names);
         }

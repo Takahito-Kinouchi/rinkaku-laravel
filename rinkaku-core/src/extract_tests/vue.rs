@@ -9,6 +9,24 @@ use super::*;
 use crate::language::vue::VueSupport;
 use pretty_assertions::assert_eq;
 
+/// Vue and Svelte read the path: the component symbol (ADR 0098) is
+/// named after the file. These shims name a real component file, in
+/// place of the parent module's own path-less ones, so every test below
+/// reads the same as it did before the path existed.
+const COMPONENT_PATH: &str = "src/components/Counter.vue";
+
+fn extract_all_symbols(source: &str, lang: &dyn LanguageSupport) -> Vec<ExtractedSymbol> {
+    crate::extract::extract_all_symbols(COMPONENT_PATH, source, lang)
+}
+
+fn extract_changed_symbols(
+    source: &str,
+    lang: &dyn LanguageSupport,
+    changed_ranges: &[LineRange],
+) -> Vec<ExtractedSymbol> {
+    crate::extract::extract_changed_symbols(COMPONENT_PATH, source, lang, changed_ranges)
+}
+
 fn sfc_source() -> &'static str {
     "<template>\n  <button @click=\"increment\">{{ count }}</button>\n</template>\n\n<script setup lang=\"ts\">\nimport { ref } from 'vue';\n\nconst count = ref(0);\n\nfunction increment(): void {\n  count.value += 1;\n}\n\nfunction useCounter(start: number): Counter {\n  return new Counter(start);\n}\n</script>\n\n<style scoped>\nbutton { color: red; }\n</style>\n"
 }
@@ -24,6 +42,14 @@ fn should_extract_script_symbols_at_their_original_file_lines() {
         .map(|s| (s.name.clone(), s.signature.clone(), s.range))
         .collect();
     let expected = vec![
+        // ADR 0098: the SFC itself is a symbol, named after the file and
+        // spanning it, so a parent that renders `<Counter />` has
+        // something to point at.
+        (
+            "Counter".to_string(),
+            "<Counter />".to_string(),
+            LineRange { start: 1, end: 21 },
+        ),
         (
             "increment".to_string(),
             "function increment(): void".to_string(),
@@ -52,15 +78,21 @@ fn should_extract_changed_symbol_when_script_body_line_changed() {
 }
 
 #[test]
-fn should_extract_no_symbols_when_only_template_lines_changed() {
+fn should_report_only_the_component_when_template_lines_changed() {
+    // ADR 0098 narrowed ADR 0075's "template edits surface nothing": the
+    // template is still not parsed, but the component it belongs to is
+    // now a symbol spanning the file, so a template edit names the
+    // component instead of reporting a bare line count.
     let lang = VueSupport;
-    // Line 2 is the `<button ...>` template line — masked away, so no
-    // definition can contain it.
+    // Line 2 is the `<button ...>` template line.
     let changed_ranges = vec![LineRange { start: 2, end: 2 }];
 
     let actual = extract_changed_symbols(sfc_source(), &lang, &changed_ranges);
 
-    assert_eq!(Vec::<ExtractedSymbol>::new(), actual);
+    assert_eq!(1, actual.len());
+    assert_eq!("Counter", actual[0].name);
+    assert_eq!(SymbolKind::Component, actual[0].kind);
+    assert_eq!(LineRange { start: 1, end: 21 }, actual[0].range);
 }
 
 #[test]
@@ -84,7 +116,7 @@ fn should_extract_symbols_from_both_script_blocks_when_sfc_has_two() {
     let symbols = extract_all_symbols(source, &lang);
 
     let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(vec!["setup", "handler"], names);
+    assert_eq!(vec!["Counter", "setup", "handler"], names);
 }
 
 // ADR 0097: a component's declared inputs and outputs are surface a
@@ -108,6 +140,11 @@ fn should_extract_define_props_and_define_emits_as_component_api_symbols() {
         .map(|s| (s.name.clone(), s.kind, s.signature.clone()))
         .collect();
     let expected = vec![
+        (
+            "Counter".to_string(),
+            SymbolKind::Component,
+            "<Counter />".to_string(),
+        ),
         (
             "props".to_string(),
             SymbolKind::ComponentApi,
@@ -153,6 +190,7 @@ fn should_extract_options_api_props_and_emits_options_as_component_api_symbols()
 
     let shapes: Vec<(String, SymbolKind)> = symbols.iter().map(|s| (s.name.clone(), s.kind)).collect();
     let expected = vec![
+        ("Counter".to_string(), SymbolKind::Component),
         ("props".to_string(), SymbolKind::ComponentApi),
         ("emits".to_string(), SymbolKind::ComponentApi),
     ];
@@ -169,5 +207,62 @@ fn should_extract_define_model_and_define_expose_as_component_api_symbols() {
     let symbols = extract_all_symbols(source, &lang);
 
     let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(vec!["model", "expose"], names);
+    assert_eq!(vec!["Counter", "model", "expose"], names);
+}
+
+// ADR 0098: the component is a symbol of its own, named after the file
+// and carrying the children its markup renders — the only place those
+// couplings can come from, since the markup is masked before any query
+// runs and a Nuxt auto-imported child is never named in the script.
+
+#[test]
+fn should_carry_markup_children_as_the_components_own_references() {
+    let source = "<template>\n  <BaseButton @click=\"go\" />\n  <div />\n</template>\n\n<script setup lang=\"ts\">\nfunction go(): void {}\n</script>\n";
+    let lang = VueSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let component = symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Component)
+        .expect("component symbol extracted");
+    assert_eq!("Counter", component.name);
+    assert_eq!(
+        vec!["BaseButton".to_string(), "base-button".to_string()],
+        component.referenced_names
+    );
+}
+
+#[test]
+fn should_not_carry_the_scripts_own_references_on_the_component() {
+    // The captured node is the whole file, so the reference query would
+    // return every call and type in it — which would wire the component
+    // to everything it happens to contain instead of to what it renders.
+    let source = "<script setup lang=\"ts\">\nimport { helper } from './helper';\nfunction go(): Widget {\n  return helper();\n}\n</script>\n";
+    let lang = VueSupport;
+
+    let symbols = extract_all_symbols(source, &lang);
+
+    let component = symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Component)
+        .expect("component symbol extracted");
+    assert_eq!(Vec::<String>::new(), component.referenced_names);
+}
+
+#[test]
+fn should_suppress_the_component_when_a_definition_inside_it_changed() {
+    // The component spans the file, so it encloses every definition in
+    // it; the narrowest-enclosing rule is what keeps a report from
+    // carrying both the function that changed and the component around
+    // it. It surfaces only when nothing narrower did (the template-only
+    // case above).
+    let lang = VueSupport;
+    // Line 11 is `count.value += 1;`, inside `increment`'s body.
+    let changed_ranges = vec![LineRange { start: 11, end: 11 }];
+
+    let actual = extract_changed_symbols(sfc_source(), &lang, &changed_ranges);
+
+    assert_eq!(1, actual.len());
+    assert_eq!("increment", actual[0].name);
 }

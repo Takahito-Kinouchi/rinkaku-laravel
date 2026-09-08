@@ -99,6 +99,25 @@ pub trait LanguageSupport {
         true
     }
 
+    /// The child components this file's markup renders, for a language
+    /// whose files *are* components (ADR 0098), or `None` for every
+    /// language whose files are not — the default.
+    ///
+    /// This is how a Vue/Svelte component's couplings reach the graph at
+    /// all. The child is named in the markup
+    /// ([`Self::source_for_parse`] masks that away before any query runs)
+    /// and, under Nuxt's auto-import or a global registration, is never
+    /// named in the script — so no tree-sitter query over the parsed
+    /// source could find it, however the definition query were written.
+    ///
+    /// Returning `Some` is also what marks a file as a component: the
+    /// extractor reports a component symbol for exactly the languages
+    /// that answer here, so an SFC with an empty markup section still
+    /// gets its identity (`Some(vec![])`), while a `.ts` file never does.
+    fn component_markup_references(&self, _source: &str) -> Option<Vec<String>> {
+        None
+    }
+
     /// Rewrites raw file content into what this language's grammar should
     /// actually parse, or borrows it unchanged (the default, and every
     /// language except Vue). The only current override is Vue's SFC
