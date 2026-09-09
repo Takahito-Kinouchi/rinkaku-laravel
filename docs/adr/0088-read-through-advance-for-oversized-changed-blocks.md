@@ -265,6 +265,52 @@ Alternatives:
   row would then read through nothing while nothing else showed its
   diff — precisely the hole the 2026-08-24 amendment closed.
 
+## Amendment (2026-09-09, second): read-through from the tree is a symbol-row motion
+
+The amendment above stopped an *expanded* file row from paging its whole
+diff, and the next session with it found the rest of the same problem. A
+file row folded shut with `space` still paged 41 lines of unheadered diff
+before the cursor moved anywhere, and so did the row of a file rinkaku
+extracts no symbols from. With the arrows as the tree's walking motion,
+`↓` on a file name meant "page this file" on some rows and "step onto the
+symbols" on others, and which one it meant depended on state the reviewer
+had not looked at yet (fold state, or whether this file yielded symbols at
+all).
+
+**With the tree focused, only a selection that carries a `DiffFocus`
+offers anything to read through.** A file or directory row is a row to
+walk past: `↓`/`↑` and `ctrl-f`/`ctrl-b` move the cursor on to the symbol
+rows, which read the same diff a symbol at a time with a range bar and a
+header naming what is on screen.
+
+So `ui::scroll::ReadThroughRows::CoveredByChildRows` becomes
+`DeferredToRowWalk`, and its condition is the focus alone —
+`ui::diff_pane::read_through_rows` takes `Focus` and the range bar's
+marked rows, and needs no `nav` lookup at all. `Focus::Right` is still
+where a whole file diff is a reading unit, and now the *only* place:
+`ctrl-f` with the Diff pane focused remains the deliberate way to skim a
+file top to bottom, which is also how a symbol-less file's diff is read
+through now.
+
+That last point is this amendment's cost: a changed file with no symbols
+(a Blade template, a config file, a migration) can no longer be paged from
+the tree, only from the pane one `l`/`enter` away. Accepted — the first
+amendment's case is worth a key, but not at the price of the primary
+walking motion behaving differently on every second row.
+
+Alternatives:
+
+- **Keeping the whole-body case for symbol-less files only** (test tree
+  shape instead of fold state). This is what the first amendment already
+  did, and it is the behavior this amendment was asked to remove: a rule
+  the reviewer can predict from the row under the cursor beats one that is
+  right slightly more often per row but cannot be predicted without
+  knowing whether the file yielded symbols.
+- **Scoping this to `↓`/`↑` and letting `ctrl-f` still page a whole file
+  from the tree.** The measurement is made at draw time, one frame before
+  any key is known (decision 4), so the pressed key cannot reach it — the
+  same reason the first 2026-09-09 amendment gave.
+
 ## Consequences
 
 - `render_scrollable_pane` keeps its current signature and return type
@@ -281,8 +327,10 @@ Alternatives:
 - `ctrl-f`/`ctrl-b` are not vim's exact page-forward/back semantics: they
   spill over into a cursor move at a symbol boundary. This is documented
   in the help overlay and README as "read through", not as paging.
-- What a row offers to read through now depends on fold state, so the
-  same cursor position can measure differently before and after a
-  `space` — deliberate (a collapsed row is the only thing left showing
-  its file's diff), and the reason the condition is read from
-  `nav::Row::expanded` per frame rather than cached anywhere.
+- What a row offers to read through depends only on the row kind (does
+  the selection carry a `DiffFocus`) and which pane holds the keys — not
+  on fold state or tree shape, so the same cursor position measures the
+  same before and after a `space`.
+- A changed file rinkaku extracts no symbols from is read through with
+  the Diff pane focused, not from the tree. The tree's read-through keys
+  walk its row like any other row with nothing to read.

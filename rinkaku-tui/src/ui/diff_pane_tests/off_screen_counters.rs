@@ -61,8 +61,8 @@ index e69de29..4b825dc 100644
 /// The same diff as [`report_and_diff_for_a_tall_symbol`] against a file
 /// rinkaku extracted no symbols from at all (a Blade template, a config
 /// file, a migration) — the selection ADR 0088's first amendment widened
-/// the measurement for, and the one its 2026-09-09 amendment leaves alone:
-/// the file row is the only row this diff will ever be shown on.
+/// the measurement for, and the one its second 2026-09-09 amendment hands
+/// back to the Diff pane's own focus.
 fn report_and_diff_for_a_symbol_less_file(lines: usize) -> (Report, String) {
     let (mut report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
     report.files[0].symbols.clear();
@@ -71,16 +71,16 @@ fn report_and_diff_for_a_symbol_less_file(lines: usize) -> (Report, String) {
 
 /// [`draw_tall_symbol_frame`] with the cursor left on the *file* row (row
 /// 0, `App::new`'s own default position) instead of stepping down onto the
-/// symbol — a selection that carries no `DiffFocus` but whose symbol rows
-/// are listed right below it, expanded (ADR 0088's 2026-09-09 amendment).
+/// symbol — a selection that carries no `DiffFocus`, which the tree walk
+/// steps past rather than pages (ADR 0088's 2026-09-09 amendments).
 fn draw_tall_file_row_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
     let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
     draw_frame(&report, &diff_text, scroll, Selection::File)
 }
 
 /// [`draw_tall_file_row_frame`]'s file row with its symbol row folded away
-/// (`InputKey::Select` on the row itself), so nothing below the cursor
-/// reads this diff any more.
+/// (`InputKey::Select` on the row itself) — still a file row under the
+/// tree's keys, so still nothing to page.
 fn draw_collapsed_file_row_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
     let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
     draw_frame(&report, &diff_text, scroll, Selection::CollapsedFile)
@@ -97,10 +97,20 @@ fn draw_right_focused_file_row_frame(
     draw_frame(&report, &diff_text, scroll, Selection::RightFocusedFile)
 }
 
-/// A file row on a file with no symbol rows to delegate to at all.
+/// A file row on a file with no symbol rows to walk on to at all.
 fn draw_symbol_less_file_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
     let (report, diff_text) = report_and_diff_for_a_symbol_less_file(lines);
     draw_frame(&report, &diff_text, scroll, Selection::File)
+}
+
+/// The same symbol-less file with the *right pane* focused — the one focus
+/// a whole file diff is still read through in.
+fn draw_right_focused_symbol_less_file_frame(
+    scroll: usize,
+    lines: usize,
+) -> (crate::ui::DrawOutcome, String) {
+    let (report, diff_text) = report_and_diff_for_a_symbol_less_file(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::RightFocusedFile)
 }
 
 /// Draws one frame of the entry screen at 80x20 with the cursor on the
@@ -232,31 +242,11 @@ fn should_report_no_counters_and_show_no_marker_when_the_whole_symbol_fits() {
 }
 
 #[test]
-fn should_offer_the_whole_file_to_read_through_when_the_file_has_no_symbol_rows() {
-    // Dogfooding finding, the reason for ADR 0088's first amendment: a file
-    // row carries no `DiffFocus`, so the original symbol-scoped measurement
-    // reported nothing to read and `ctrl-f` moved the cursor straight past
-    // a diff the pane was only showing a screenful of. The whole body is
-    // 41 rows (a `@@` header plus 40 changed lines). A symbol-less file's
-    // pinned header is one line shorter (no per-symbol stats line), so 15
-    // of those rows fit and 26 are still below.
-    let (outcome, _) = draw_symbol_less_file_frame(0, 40);
-
-    assert_eq!(
-        Some(ReadThrough {
-            rows_above: 0,
-            rows_below: 26,
-            step: 14,
-        }),
-        outcome.diff_read_through
-    );
-}
-
-#[test]
-fn should_offer_nothing_to_read_through_when_the_file_rows_symbols_are_listed_below_it() {
-    // ADR 0088's 2026-09-09 amendment: the same 41-row body as the test
-    // above, but the reviewer is one `↓` away from reading it symbol by
-    // symbol — paging the whole file here would show it all twice.
+fn should_offer_nothing_to_read_through_on_a_file_row_with_symbol_rows_below_it() {
+    // ADR 0088's 2026-09-09 amendments: the body is 41 rows (a `@@` header
+    // plus 40 changed lines), and the reviewer is one `↓` away from reading
+    // it symbol by symbol — paging the whole file here would show it all
+    // twice.
     let (outcome, _) = draw_tall_file_row_frame(0, 40);
 
     assert_eq!(
@@ -270,14 +260,32 @@ fn should_offer_nothing_to_read_through_when_the_file_rows_symbols_are_listed_be
 }
 
 #[test]
-fn should_offer_the_whole_file_again_once_its_symbol_rows_are_collapsed() {
+fn should_offer_nothing_to_read_through_on_a_file_row_with_its_symbol_rows_collapsed() {
     let (outcome, _) = draw_collapsed_file_row_frame(0, 40);
 
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 27,
+            rows_below: 0,
             step: 13,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_offer_nothing_to_read_through_on_a_file_row_without_any_symbol_rows() {
+    // The second 2026-09-09 amendment: read-through from the tree is a
+    // symbol-row motion, so even the file rinkaku extracted no symbols from
+    // pages nothing here — `↓` walks on, and the pane's own `ctrl-f`
+    // (below) stays the way to read this diff.
+    let (outcome, _) = draw_symbol_less_file_frame(0, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 0,
+            step: 14,
         }),
         outcome.diff_read_through
     );
@@ -292,6 +300,22 @@ fn should_offer_the_whole_file_on_a_file_row_while_the_right_pane_is_focused() {
             rows_above: 0,
             rows_below: 27,
             step: 13,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_offer_the_whole_symbol_less_file_while_the_right_pane_is_focused() {
+    // A symbol-less file's pinned header is one line shorter (no per-symbol
+    // stats line), so 15 of the 41 rows fit and 26 are still below.
+    let (outcome, _) = draw_right_focused_symbol_less_file_frame(0, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 26,
+            step: 14,
         }),
         outcome.diff_read_through
     );
@@ -317,8 +341,8 @@ fn should_leave_the_title_counters_to_symbol_selections() {
 }
 
 #[test]
-fn should_report_the_rows_left_above_a_scrolled_symbol_less_file_selection() {
-    let (outcome, _) = draw_symbol_less_file_frame(20, 40);
+fn should_report_the_rows_left_above_a_scrolled_right_focused_file_selection() {
+    let (outcome, _) = draw_right_focused_symbol_less_file_frame(20, 40);
 
     assert_eq!(
         Some(ReadThrough {

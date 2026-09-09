@@ -14,7 +14,7 @@ help:
     move_cursor: "Move the cursor"
     scroll_tree_half_page: "Move the cursor by half a page"
     jump_tree_top_bottom: "Jump to the top / bottom of the tree"
-    read_through: "Read one screen on through the change (the selected symbol's, or the whole diff of a file with no symbol rows under it), then move to the next / previous row"
+    read_through: "Read one screen on through the selected symbol's change, then move to the next / previous row (a file row has nothing to read here, so the cursor just moves)"
     read_through_right_pane: "Read one screen on through the change (on a file row always its whole diff), then move the tree cursor to the next / previous row"
     expand_collapse_open: "Expand/collapse a directory row, or open a file/symbol row (moves focus right)"
     expand_collapse_row: "Expand/collapse a directory/file row (never moves focus)"
