@@ -273,7 +273,7 @@ fn symbol_scoped_counters(
     match rows {
         ReadThroughRows::Symbol(_) => outside,
         ReadThroughRows::WholeBody
-        | ReadThroughRows::CoveredByChildRows
+        | ReadThroughRows::DeferredToRowWalk
         | ReadThroughRows::Unmeasured => MarkedRowsOutsideViewport::default(),
     }
 }
@@ -345,17 +345,16 @@ pub(crate) struct MarkedRowsOutsideViewport {
     pub(crate) below: usize,
 }
 
-/// What a pane offers to read through (ADR 0088, scope widened by its own
-/// amendment) — the input [`marked_rows_outside_viewport`] counts against.
+/// What a pane offers to read through (ADR 0088, scope widened by its
+/// first amendment and narrowed back to the Diff pane's own focus by the
+/// second 2026-09-09 one) — the input [`marked_rows_outside_viewport`]
+/// counts against.
 ///
-/// The [`Self::Symbol`]/[`Self::WholeBody`] pair exists because a
-/// reviewer's reading unit is not always a symbol. A file row (and any
-/// changed file rinkaku extracts no symbols from at all — a Blade
-/// template, a config file, a migration) carries no
-/// [`crate::app::DiffFocus`], so scoping the measurement to the selected
-/// symbol left those rows with nothing to read through and degraded
-/// `ctrl-f` to a plain cursor move over exactly the diffs that most need
-/// paging.
+/// The [`Self::Symbol`]/[`Self::WholeBody`] pair exists because a file's
+/// whole diff is still a reading unit somewhere: with the Diff pane
+/// focused, `ctrl-f` pages it top to bottom. From the tree it is not —
+/// there read-through is scoped to the selected symbol's own rows, and a
+/// selection that has none is [`Self::DeferredToRowWalk`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReadThroughRows<'a> {
     /// The selected symbol's own rows — the same slice the Diff pane's
@@ -363,13 +362,13 @@ pub(crate) enum ReadThroughRows<'a> {
     Symbol(&'a [usize]),
     /// No symbol is selected, so the whole pane body is the thing to read.
     WholeBody,
-    /// No symbol is selected, but the rows shown beneath the selected one
-    /// read through this same body a symbol at a time, so the selection
-    /// itself offers nothing to page (ADR 0088's 2026-09-09 amendment).
-    /// Measured as zero, exactly like [`Self::Unmeasured`] — the two are
-    /// distinct because they are zero for opposite reasons, and only this
-    /// one is a claim about the *selection* rather than about the pane.
-    CoveredByChildRows,
+    /// No symbol is selected and the tree has the keys, so this frame
+    /// offers nothing to page: read-through there is the row walk itself
+    /// (ADR 0088's 2026-09-09 amendments). Measured as zero, exactly like
+    /// [`Self::Unmeasured`] — the two are distinct because they are zero
+    /// for opposite reasons, and only this one is a claim about the
+    /// *selection* rather than about the pane.
+    DeferredToRowWalk,
     /// This pane does not participate in read-through at all (every pane
     /// except the Diff pane).
     Unmeasured,
@@ -404,7 +403,7 @@ pub(crate) fn marked_rows_outside_viewport(
     };
 
     match rows {
-        ReadThroughRows::Unmeasured | ReadThroughRows::CoveredByChildRows => {
+        ReadThroughRows::Unmeasured | ReadThroughRows::DeferredToRowWalk => {
             MarkedRowsOutsideViewport::default()
         }
         ReadThroughRows::Symbol(marked_rows) => MarkedRowsOutsideViewport {

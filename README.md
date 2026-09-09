@@ -201,7 +201,7 @@ to what is actually pressable on the current screen.
 | `j` / `k` | Move the cursor |
 | `ctrl-d` / `ctrl-u` | Move the cursor half a page |
 | `gg` / `G` | Jump to the top / bottom of the tree |
-| `ctrl-f` / `ctrl-b` / `↓` / `↑` | Read through the change one screen at a time (a symbol row reads that symbol's change; a file row reads its whole diff only when no symbol row of its own is listed below it); once nothing is left off-screen, the cursor moves to the next / previous row |
+| `ctrl-f` / `ctrl-b` / `↓` / `↑` | Read through the selected symbol's change one screen at a time; once nothing is left off-screen, the cursor moves to the next / previous row. A file row has nothing to read through here — the cursor just moves (its whole diff is paged with the Diff pane focused) |
 | `/` | Start a search |
 | `n` / `N` | Jump to the next / previous match |
 | `enter` | Toggle a directory row, or open a file / symbol row (focus moves right) |
@@ -215,7 +215,7 @@ to what is actually pressable on the current screen.
 | `j` / `k` / `↓` / `↑` | Scroll one line |
 | `ctrl-d` / `ctrl-u` | Scroll half a page |
 | `gg` / `G` | Jump to the top / bottom of the pane |
-| `ctrl-f` / `ctrl-b` | Read through the change one screen at a time; on a file row this always reads the file's whole diff, since there is no tree walk here to leave it to |
+| `ctrl-f` / `ctrl-b` | Read through the change one screen at a time; on a file row this reads the file's whole diff — the only place that happens, and the deliberate way to skim a file top to bottom |
 | `h` / `esc` | Return focus to the tree |
 | `]` / `[` | Jump to the next / previous hunk (Diff pane only) |
 
@@ -498,7 +498,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | `j` / `k` | カーソルを移動 |
 | `ctrl-d` / `ctrl-u` | カーソルを半ページ分移動 |
 | `gg` / `G` | ツリーの先頭 / 末尾へジャンプ |
-| `ctrl-f` / `ctrl-b` / `↓` / `↑` | 変更を 1 画面ずつ読み進める（シンボル行ではそのシンボルの変更、ファイル行では下にシンボル行が並んでいないときだけ diff 全体）。画面外に残りが無くなると次 / 前の行へ進む |
+| `ctrl-f` / `ctrl-b` / `↓` / `↑` | 選択中シンボルの変更を 1 画面ずつ読み進める。画面外に残りが無くなると次 / 前の行へ進む。ファイル行には読み進める対象が無いのでカーソル移動のみ（diff 全体は Diff ペインにフォーカスして読み進める） |
 | `/` | 検索を開始 |
 | `n` / `N` | 次 / 前の検索結果へジャンプ |
 | `enter` | ディレクトリ行を開閉、またはファイル / シンボル行を開く（フォーカスが右へ移動） |
@@ -512,7 +512,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | `j` / `k` / `↓` / `↑` | 1 行スクロール |
 | `ctrl-d` / `ctrl-u` | 半ページ分スクロール |
 | `gg` / `G` | 右ペインの先頭 / 末尾へジャンプ |
-| `ctrl-f` / `ctrl-b` | 変更を 1 画面ずつ読み進める（ファイル行では常に diff 全体。ここにはツリーの読み進めが無いため） |
+| `ctrl-f` / `ctrl-b` | 変更を 1 画面ずつ読み進める。ファイル行では diff 全体が対象になる唯一の場所で、ファイルを頭から読み流すための操作 |
 | `h` / `esc` | フォーカスをツリーに戻す |
 | `]` / `[` | 次 / 前の hunk へジャンプ（Diff ペインのみ） |
 

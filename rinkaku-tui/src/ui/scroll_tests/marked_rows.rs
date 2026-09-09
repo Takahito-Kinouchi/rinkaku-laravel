@@ -95,7 +95,7 @@ fn should_clamp_the_bottom_edge_to_the_content_when_the_viewport_outgrows_it() {
 }
 
 // --- marked_rows_outside_viewport: ReadThroughRows::WholeBody /
-//     CoveredByChildRows / Unmeasured ---
+//     DeferredToRowWalk / Unmeasured ---
 
 #[test]
 fn should_count_the_whole_body_against_its_own_ends_when_no_symbol_is_selected() {
@@ -127,13 +127,13 @@ fn should_count_nothing_outside_the_whole_body_when_it_all_fits() {
 }
 
 #[test]
-fn should_count_nothing_when_the_rows_below_the_selection_read_the_body_instead() {
+fn should_count_nothing_when_read_through_is_left_to_the_tree_row_walk() {
     // The same body and viewport as
     // `should_count_the_whole_body_against_its_own_ends_when_no_symbol_is_selected`,
-    // measured for a selection whose own symbol rows are listed beneath it.
+    // measured for a file-row selection under the tree's own keys.
     let origins = vec![0, 1, 2, 3, 4, 5, 6];
 
-    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::CoveredByChildRows, 3, 2);
+    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::DeferredToRowWalk, 3, 2);
 
     assert_eq!(MarkedRowsOutsideViewport::default(), actual);
 }
