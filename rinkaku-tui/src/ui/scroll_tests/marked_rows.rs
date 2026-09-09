@@ -94,7 +94,8 @@ fn should_clamp_the_bottom_edge_to_the_content_when_the_viewport_outgrows_it() {
     assert_eq!(MarkedRowsOutsideViewport::default(), actual);
 }
 
-// --- marked_rows_outside_viewport: ReadThroughRows::WholeBody / Unmeasured ---
+// --- marked_rows_outside_viewport: ReadThroughRows::WholeBody /
+//     CoveredByChildRows / Unmeasured ---
 
 #[test]
 fn should_count_the_whole_body_against_its_own_ends_when_no_symbol_is_selected() {
@@ -121,6 +122,18 @@ fn should_count_nothing_outside_the_whole_body_when_it_all_fits() {
     let origins = vec![0, 1, 2];
 
     let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::WholeBody, 0, 3);
+
+    assert_eq!(MarkedRowsOutsideViewport::default(), actual);
+}
+
+#[test]
+fn should_count_nothing_when_the_rows_below_the_selection_read_the_body_instead() {
+    // The same body and viewport as
+    // `should_count_the_whole_body_against_its_own_ends_when_no_symbol_is_selected`,
+    // measured for a selection whose own symbol rows are listed beneath it.
+    let origins = vec![0, 1, 2, 3, 4, 5, 6];
+
+    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::CoveredByChildRows, 3, 2);
 
     assert_eq!(MarkedRowsOutsideViewport::default(), actual);
 }

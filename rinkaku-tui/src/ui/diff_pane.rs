@@ -273,7 +273,7 @@ pub(crate) fn draw_diff_pane(
         app.right_pane_scroll(),
         area,
         focused,
-        read_through_rows(&marked_rows),
+        read_through_rows(&marked_rows, selection_is_covered_by_child_rows(app)),
     );
     RightPaneRender {
         clamped_scroll: Some(render.clamped_scroll),
@@ -327,23 +327,45 @@ fn range_bar_lines(
     diff_shape::marked_body_rows(diff_content, range, view_mode)
 }
 
-/// What this frame offers to read through (ADR 0088 amendment), given the
-/// range bar's own marked rows: the selected symbol when there is one, and
-/// otherwise the whole pane body.
+/// What this frame offers to read through (ADR 0088 and both its
+/// amendments), given the range bar's own marked rows and whether the
+/// selection's own content is already covered by the rows beneath it
+/// ([`selection_is_covered_by_child_rows`]).
 ///
 /// `marked_rows` is empty exactly when the cursor sits on a row with no
 /// [`crate::app::DiffFocus`] — a file row, or a changed file rinkaku
 /// extracted no symbols from at all (a Blade template, a config file, a
-/// migration). Those are the diffs a reviewer can least afford `ctrl-f` to
-/// skip: the pane is showing the file's whole diff and nothing else in the
-/// tree will ever show it again. Scoping the measurement to a symbol left
-/// them measuring zero, so `ctrl-f` moved the cursor straight past them.
-fn read_through_rows(marked_rows: &[usize]) -> ReadThroughRows<'_> {
-    if marked_rows.is_empty() {
-        ReadThroughRows::WholeBody
-    } else {
+/// migration). Only the second of those is the whole body's to read: the
+/// pane is showing the file's whole diff and nothing else in the tree will
+/// ever show it again. A file row whose symbols are listed right below it
+/// is the opposite case — paging its whole diff here makes the reviewer
+/// read every line twice, once as the file and once symbol by symbol.
+fn read_through_rows(marked_rows: &[usize], covered_by_child_rows: bool) -> ReadThroughRows<'_> {
+    if !marked_rows.is_empty() {
         ReadThroughRows::Symbol(marked_rows)
+    } else if covered_by_child_rows {
+        ReadThroughRows::CoveredByChildRows
+    } else {
+        ReadThroughRows::WholeBody
     }
+}
+
+/// Whether the selected row's own diff is already covered by the tree rows
+/// shown beneath it, so read-through has somewhere better to send the
+/// reviewer than one screen of the same content (ADR 0088's 2026-09-09
+/// amendment): the cursor is on an expanded row, and the tree is the
+/// surface being walked.
+///
+/// [`Focus::Right`] answers `false` unconditionally — there is no tree
+/// walk to delegate to while the pane itself has the keys, which is what
+/// keeps `ctrl-f` on the right pane as the deliberate way to page a whole
+/// file's diff.
+fn selection_is_covered_by_child_rows(app: &App) -> bool {
+    if app.focus() == Focus::Right {
+        return false;
+    }
+    let rows = app.nav().rows(app.tree());
+    rows.get(app.nav().cursor()).is_some_and(|row| row.expanded)
 }
 
 /// Whether the row currently under the cursor is a present (non-removed)

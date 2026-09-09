@@ -175,9 +175,15 @@ fn right_focus_bindings(locale: Locale) -> Vec<KeyBinding> {
             description: rust_i18n::t!("help.binding.jump_right_pane_top_bottom", locale = tag)
                 .into_owned(),
         },
+        // ADR 0088's 2026-09-09 amendment: this focus is the one place a
+        // file row still reads through its whole diff even when its symbol
+        // rows are listed right below it — with the pane focused there is
+        // no tree walk to hand the reading to — so the two groups no longer
+        // share one description.
         KeyBinding {
             keys: "ctrl-f / ctrl-b",
-            description: rust_i18n::t!("help.binding.read_through", locale = tag).into_owned(),
+            description: rust_i18n::t!("help.binding.read_through_right_pane", locale = tag)
+                .into_owned(),
         },
         KeyBinding {
             keys: "h / esc",
