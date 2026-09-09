@@ -210,6 +210,61 @@ accordingly: `j / k` moves the cursor, and the arrows join the
 halves mean different things, which is exactly why the row had to split
 rather than gain a footnote.
 
+## Amendment (2026-09-09): an expanded file row leaves the reading to its symbol rows
+
+The 2026-09-08 amendment put read-through on `↓`/`↑`, which moved the
+first amendment's `WholeBody` case onto the tree's primary walking
+motion — and the first session with it found what that costs on a file
+row whose symbols are listed right below it. Pressing `↓` there pages
+the file's entire diff, one screen at a time, before the cursor ever
+reaches the first symbol; the walk then reads the same diff again,
+symbol by symbol. Every changed line is read twice, and the first pass
+is the one with no map attached to it: no range bar, no header naming
+what is on screen.
+
+The first amendment's case was never that one. It was written for a
+file rinkaku extracts **no** symbols from — a Blade template, a config
+file, a migration — where the file row is the only row that diff will
+ever be shown on. That property, not "the selection carries no
+`DiffFocus`", is what makes the whole body the thing to read.
+
+**A selection whose own rows are shown beneath it offers nothing to read
+through; read-through moves the cursor onto them instead.**
+`ui::scroll::ReadThroughRows` grows a fourth case,
+`CoveredByChildRows`, measured as zero like `Unmeasured` but for the
+opposite reason — not "this pane does not participate" but "this content
+is already covered, one row down".
+
+The condition is the row's own `nav::Row::expanded`, so it follows fold
+state rather than tree shape: collapse a file with `space` and its row
+reads through the whole diff again, because nothing below it does any
+more. A symbol-less file's row is never expanded to begin with, so that
+case is untouched.
+
+`Focus::Right` is excluded: with the pane focused there is no tree walk
+to hand the reading to, so `ctrl-f` there still pages the whole file
+diff and remains the deliberate way to skim a file top to bottom. It is
+the one point where the two focuses' read-through now differ, and the
+help overlay's two `ctrl-f / ctrl-b` rows carry separate descriptions
+accordingly — the same split the 2026-09-08 amendment already made for
+the arrow keys, one row further down.
+
+The `▲N`/`▼N` counters are unaffected: they were already symbol-scoped,
+and a file row never painted them.
+
+Alternatives:
+
+- **Scoping this to `↓`/`↑` and letting `ctrl-f` still page the whole
+  file from the tree.** The measurement is made at draw time, one frame
+  before any key is known (decision 4), so the pressed key cannot reach
+  it. And a `ctrl-f` that reads exactly what the next `↓` would re-read
+  is the same double reading, merely opted into — the right pane already
+  offers that on purpose.
+- **Deciding on tree shape (does this file have symbol children) instead
+  of fold state.** One less state to think about, but a collapsed file
+  row would then read through nothing while nothing else showed its
+  diff — precisely the hole the 2026-08-24 amendment closed.
+
 ## Consequences
 
 - `render_scrollable_pane` keeps its current signature and return type
@@ -226,3 +281,8 @@ rather than gain a footnote.
 - `ctrl-f`/`ctrl-b` are not vim's exact page-forward/back semantics: they
   spill over into a cursor move at a symbol boundary. This is documented
   in the help overlay and README as "read through", not as paging.
+- What a row offers to read through now depends on fold state, so the
+  same cursor position can measure differently before and after a
+  `space` — deliberate (a collapsed row is the only thing left showing
+  its file's diff), and the reason the condition is read from
+  `nav::Row::expanded` per frame rather than cached anywhere.

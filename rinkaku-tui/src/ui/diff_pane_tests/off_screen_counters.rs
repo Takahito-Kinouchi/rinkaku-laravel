@@ -58,12 +58,49 @@ index e69de29..4b825dc 100644
     (report, diff_text)
 }
 
+/// The same diff as [`report_and_diff_for_a_tall_symbol`] against a file
+/// rinkaku extracted no symbols from at all (a Blade template, a config
+/// file, a migration) — the selection ADR 0088's first amendment widened
+/// the measurement for, and the one its 2026-09-09 amendment leaves alone:
+/// the file row is the only row this diff will ever be shown on.
+fn report_and_diff_for_a_symbol_less_file(lines: usize) -> (Report, String) {
+    let (mut report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
+    report.files[0].symbols.clear();
+    (report, diff_text)
+}
+
 /// [`draw_tall_symbol_frame`] with the cursor left on the *file* row (row
 /// 0, `App::new`'s own default position) instead of stepping down onto the
-/// symbol — the selection that carries no `DiffFocus`, and so the one ADR
-/// 0088's amendment widened the measurement for.
+/// symbol — a selection that carries no `DiffFocus` but whose symbol rows
+/// are listed right below it, expanded (ADR 0088's 2026-09-09 amendment).
 fn draw_tall_file_row_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
-    draw_frame(scroll, lines, false)
+    let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::File)
+}
+
+/// [`draw_tall_file_row_frame`]'s file row with its symbol row folded away
+/// (`InputKey::Select` on the row itself), so nothing below the cursor
+/// reads this diff any more.
+fn draw_collapsed_file_row_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
+    let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::CollapsedFile)
+}
+
+/// [`draw_tall_file_row_frame`]'s file row with the *right pane* focused
+/// (`InputKey::Open`), where there is no tree walk to delegate the reading
+/// to.
+fn draw_right_focused_file_row_frame(
+    scroll: usize,
+    lines: usize,
+) -> (crate::ui::DrawOutcome, String) {
+    let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::RightFocusedFile)
+}
+
+/// A file row on a file with no symbol rows to delegate to at all.
+fn draw_symbol_less_file_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
+    let (report, diff_text) = report_and_diff_for_a_symbol_less_file(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::File)
 }
 
 /// Draws one frame of the entry screen at 80x20 with the cursor on the
@@ -71,27 +108,38 @@ fn draw_tall_file_row_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutc
 /// amendment; unified keeps this module's row arithmetic to one column),
 /// returning the frame's [`crate::ui::DrawOutcome`] and its rendered text.
 fn draw_tall_symbol_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
-    draw_frame(scroll, lines, true)
+    let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::Symbol)
+}
+
+/// Which row [`draw_frame`] leaves the cursor on, and in which focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Selection {
+    File,
+    CollapsedFile,
+    RightFocusedFile,
+    Symbol,
 }
 
 fn draw_frame(
+    report: &Report,
+    diff_text: &str,
     scroll: usize,
-    lines: usize,
-    on_symbol_row: bool,
+    selection: Selection,
 ) -> (crate::ui::DrawOutcome, String) {
-    let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
-    let app = App::new(&report);
-    let app = if on_symbol_row {
-        app.handle_key(InputKey::Down)
-    } else {
-        app
+    let app = App::new(report);
+    let app = match selection {
+        Selection::File => app,
+        Selection::CollapsedFile => app.handle_key(InputKey::Select),
+        Selection::RightFocusedFile => app.handle_key(InputKey::Open),
+        Selection::Symbol => app.handle_key(InputKey::Down),
     };
     let app = app
         .handle_key(InputKey::ToggleSplitView)
         .with_right_pane_scroll(scroll);
-    let diff_files = crate::diff_view::parse_diff_hunks(&diff_text);
+    let diff_files = crate::diff_view::parse_diff_hunks(diff_text);
     let diff_highlights = crate::highlight::highlight_diff_files(&diff_files);
-    let diff_content = diff_content_for(&report, &diff_files, &app);
+    let diff_content = diff_content_for(report, &diff_files, &app);
     let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("terminal");
 
     let mut outcome = crate::ui::DrawOutcome::default();
@@ -100,7 +148,7 @@ fn draw_frame(
             outcome = draw(
                 frame,
                 &app,
-                &report,
+                report,
                 &diff_content,
                 &diff_highlights,
                 &BlastRadiusSelection::NotApplicable,
@@ -184,14 +232,60 @@ fn should_report_no_counters_and_show_no_marker_when_the_whole_symbol_fits() {
 }
 
 #[test]
-fn should_offer_the_whole_file_to_read_through_when_the_cursor_is_on_a_file_row() {
-    // Dogfooding finding, the reason for ADR 0088's amendment: a file row
-    // carries no `DiffFocus`, so the original symbol-scoped measurement
+fn should_offer_the_whole_file_to_read_through_when_the_file_has_no_symbol_rows() {
+    // Dogfooding finding, the reason for ADR 0088's first amendment: a file
+    // row carries no `DiffFocus`, so the original symbol-scoped measurement
     // reported nothing to read and `ctrl-f` moved the cursor straight past
     // a diff the pane was only showing a screenful of. The whole body is
-    // 41 rows (a `@@` header plus 40 changed lines) and 14 fit, so 27 are
-    // still below.
+    // 41 rows (a `@@` header plus 40 changed lines). A symbol-less file's
+    // pinned header is one line shorter (no per-symbol stats line), so 15
+    // of those rows fit and 26 are still below.
+    let (outcome, _) = draw_symbol_less_file_frame(0, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 26,
+            step: 14,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_offer_nothing_to_read_through_when_the_file_rows_symbols_are_listed_below_it() {
+    // ADR 0088's 2026-09-09 amendment: the same 41-row body as the test
+    // above, but the reviewer is one `↓` away from reading it symbol by
+    // symbol — paging the whole file here would show it all twice.
     let (outcome, _) = draw_tall_file_row_frame(0, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 0,
+            step: 13,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_offer_the_whole_file_again_once_its_symbol_rows_are_collapsed() {
+    let (outcome, _) = draw_collapsed_file_row_frame(0, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 27,
+            step: 13,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_offer_the_whole_file_on_a_file_row_while_the_right_pane_is_focused() {
+    let (outcome, _) = draw_right_focused_file_row_frame(0, 40);
 
     assert_eq!(
         Some(ReadThrough {
@@ -205,17 +299,17 @@ fn should_offer_the_whole_file_to_read_through_when_the_cursor_is_on_a_file_row(
 
 #[test]
 fn should_leave_the_title_counters_to_symbol_selections() {
-    // The file-scoped `(1-14/41)` indicator already answers "is there more"
+    // The file-scoped `(1-15/41)` indicator already answers "is there more"
     // for this same content, and the counters' bold yellow means "this is
     // the range bar's symbol" — a file row paints no bar.
-    let (_, text) = draw_tall_file_row_frame(0, 40);
+    let (_, text) = draw_symbol_less_file_frame(0, 40);
 
     let title_row = text
         .lines()
         .find(|line| line.contains("Diff"))
         .unwrap_or_else(|| panic!("expected a Diff pane title, got:\n{text}"));
     assert!(
-        title_row.contains("(1-14/41)"),
+        title_row.contains("(1-15/41)"),
         "title row was: {title_row}"
     );
     assert!(!title_row.contains('▼'), "title row was: {title_row}");
@@ -223,14 +317,14 @@ fn should_leave_the_title_counters_to_symbol_selections() {
 }
 
 #[test]
-fn should_report_the_rows_left_above_a_scrolled_file_row_selection() {
-    let (outcome, _) = draw_tall_file_row_frame(20, 40);
+fn should_report_the_rows_left_above_a_scrolled_symbol_less_file_selection() {
+    let (outcome, _) = draw_symbol_less_file_frame(20, 40);
 
     assert_eq!(
         Some(ReadThrough {
             rows_above: 20,
-            rows_below: 7,
-            step: 13,
+            rows_below: 6,
+            step: 14,
         }),
         outcome.diff_read_through
     );
