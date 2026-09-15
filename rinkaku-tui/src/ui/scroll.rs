@@ -361,13 +361,15 @@ pub(crate) enum ReadThroughRows<'a> {
     /// the slice the Diff pane's range bar paints, which stays scoped to
     /// the selected symbol's own extent.
     Claim(&'a [usize]),
-    /// The whole pane body is the thing to read.
+    /// The whole pane body is the thing to read, in one motion rather than
+    /// one claim at a time — `ctrl-f` on a file row with the Diff pane
+    /// focused.
     WholeBody,
     /// This selection's claim is empty, so this frame offers nothing to
     /// page: read-through is the row walk itself (ADR 0088's 2026-09-09
     /// amendments). Measured as zero, exactly like [`Self::Unmeasured`] —
     /// the two are distinct because they are zero for opposite reasons,
-    /// and only this one is a claim about the *selection* rather than
+    /// and only this one says something about the *selection* rather than
     /// about the pane.
     DeferredToRowWalk,
     /// This pane does not participate in read-through at all (every pane
