@@ -134,17 +134,17 @@ pub fn run(
 /// many times as the pipeline has phase transitions/progress updates to
 /// report, all from the same thread that called `init` (ADR 0033 decision
 /// 2: no cross-thread terminal access). [`TuiSession::run`] consumes `self`
-/// and performs exactly the postamble `run` used to
-/// (`DisableMouseCapture` + [`ratatui::restore`]) on both its `Ok` and
-/// `Err` paths.
+/// and drops it before returning, so the terminal is restored on both its
+/// `Ok` and `Err` paths.
 ///
-/// A [`Drop`] impl calls [`ratatui::restore`] as a safety net for a path
-/// that drops a `TuiSession` without ever calling `run` at all (e.g.
-/// `main.rs` returning early with a `?` from inside its own analysis
-/// branch, after `init` but before a `Report` exists to hand to `run`) —
-/// `ratatui::restore` is documented idempotent, so this is safe to run
-/// again even after `run`'s own explicit postamble already restored the
-/// terminal on the ordinary path.
+/// Teardown (`DisableMouseCapture` + [`ratatui::restore`]) lives in the
+/// [`Drop`] impl and nowhere else, so it also covers a path that drops a
+/// `TuiSession` without ever calling `run` at all (e.g. `main.rs`
+/// returning early with a `?` from inside its own analysis branch, after
+/// `init` but before a `Report` exists to hand to `run`). Keeping it to
+/// one site is deliberate: when `run` carried its own copy of the
+/// sequence, the two drifted, and the early-return path shipped without
+/// the `DisableMouseCapture` half.
 pub struct TuiSession {
     terminal: ratatui::DefaultTerminal,
 }
@@ -194,7 +194,8 @@ impl TuiSession {
     /// Runs the interactive TUI's main event loop over `report` until the
     /// user quits, consuming `self` and restoring the terminal
     /// unconditionally before returning — on both the `Ok` and `Err` path,
-    /// matching the postamble the pre-ADR-0033 [`run`] function always ran.
+    /// by dropping `self` (see [`Drop`], which owns the whole teardown
+    /// sequence).
     /// See [`run`]'s own doc comment (preserved there) for what `report`,
     /// `diff_text`, `entry_path`, and `repo_root` mean.
     ///
@@ -250,20 +251,63 @@ impl TuiSession {
             dependency_update,
             locale,
         );
-        let _ = execute!(std::io::stdout(), event::DisableMouseCapture);
-        ratatui::restore();
+        // Teardown is `Drop`'s alone (see its own comment): dropping here
+        // rather than repeating the sequence keeps this method's ordering
+        // guarantee — terminal restored *before* the caller sees `result`
+        // — explicit, without a second copy that can drift out of step
+        // with the one the early-return paths rely on.
+        drop(self);
         result
     }
 }
 
+/// Undoes [`TuiSession::init`]'s `EnableMouseCapture`.
+///
+/// Writer-generic purely so the teardown sequence is unit-testable
+/// without a live terminal — every production caller passes
+/// `std::io::stdout()`, the same handle `init` enabled capture on.
+fn disable_mouse_capture(out: &mut impl std::io::Write) {
+    let _ = execute!(out, event::DisableMouseCapture);
+}
+
 impl Drop for TuiSession {
     fn drop(&mut self) {
-        // Idempotent per `ratatui::restore`'s own contract: a no-op if
-        // `TuiSession::run` already restored the terminal on the ordinary
-        // path, a real safety net if `self` is dropped without `run` ever
-        // being called (e.g. `main.rs` returning early with `?` from the
-        // analysis phase, after `init` succeeded but before a `Report`
-        // exists).
+        // The crate's single teardown path — `run` reaches it by dropping
+        // `self` rather than repeating the sequence. Mouse capture must be
+        // disabled here and not only on `run`'s path: `ratatui::restore`
+        // covers raw mode and the alternate screen but deliberately leaves
+        // mouse capture alone (`init`'s own comment on why this crate
+        // enables it itself), so a session dropped without `run` ever being
+        // called — `main.rs` returning early with `?` when the analysis
+        // phase fails, e.g. `--base` naming a branch that does not exist —
+        // would otherwise hand the terminal back with mouse tracking still
+        // on, spraying `ESC[<...M` reports into the user's shell on every
+        // mouse movement long after the process exited.
+        disable_mouse_capture(&mut std::io::stdout());
+        // Idempotent per `ratatui::restore`'s own contract.
         ratatui::restore();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn should_disable_every_mouse_tracking_mode_when_tearing_down() {
+        let mut written = Vec::new();
+
+        disable_mouse_capture(&mut written);
+
+        // Spelled out rather than derived from `EnableMouseCapture` so a
+        // crossterm change to either command has to be looked at, not
+        // silently mirrored: these are the exact five modes `init` turns
+        // on, and leaving any one of them set is what strands a terminal
+        // emitting mouse reports after rinkaku exits.
+        assert_eq!(
+            String::from_utf8(written).expect("crossterm emits UTF-8 escape sequences"),
+            "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l"
+        );
     }
 }
