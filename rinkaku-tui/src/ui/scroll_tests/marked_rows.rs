@@ -7,7 +7,7 @@ use pretty_assertions::assert_eq;
 fn should_count_nothing_outside_when_every_marked_row_is_on_screen() {
     let origins = vec![0, 1, 2, 3];
 
-    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Symbol(&[1, 2]), 0, 4);
+    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Claim(&[1, 2]), 0, 4);
 
     assert_eq!(MarkedRowsOutsideViewport { above: 0, below: 0 }, actual);
 }
@@ -17,7 +17,7 @@ fn should_count_the_marked_rows_past_the_bottom_edge_when_the_symbol_outgrows_th
     let origins = vec![0, 1, 2, 3, 4, 5];
 
     let actual =
-        marked_rows_outside_viewport(&origins, ReadThroughRows::Symbol(&[0, 1, 2, 3, 4, 5]), 0, 2);
+        marked_rows_outside_viewport(&origins, ReadThroughRows::Claim(&[0, 1, 2, 3, 4, 5]), 0, 2);
 
     assert_eq!(MarkedRowsOutsideViewport { above: 0, below: 4 }, actual);
 }
@@ -28,7 +28,7 @@ fn should_count_both_edges_when_the_viewport_sits_inside_the_marked_range() {
 
     let actual = marked_rows_outside_viewport(
         &origins,
-        ReadThroughRows::Symbol(&[0, 1, 2, 3, 4, 5, 6]),
+        ReadThroughRows::Claim(&[0, 1, 2, 3, 4, 5, 6]),
         3,
         2,
     );
@@ -43,7 +43,7 @@ fn should_count_in_logical_rows_not_display_rows_when_the_body_wraps() {
     // even though only two display rows separate them from the edge.
     let origins = vec![0, 0, 0, 1, 2];
 
-    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Symbol(&[0, 1, 2]), 0, 3);
+    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Claim(&[0, 1, 2]), 0, 3);
 
     assert_eq!(MarkedRowsOutsideViewport { above: 0, below: 2 }, actual);
 }
@@ -55,7 +55,7 @@ fn should_treat_a_partly_visible_wrapped_row_as_visible() {
     // is not something they have not seen at all.
     let origins = vec![0, 1, 1, 1];
 
-    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Symbol(&[0, 1]), 0, 2);
+    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Claim(&[0, 1]), 0, 2);
 
     assert_eq!(MarkedRowsOutsideViewport { above: 0, below: 0 }, actual);
 }
@@ -64,7 +64,7 @@ fn should_treat_a_partly_visible_wrapped_row_as_visible() {
 fn should_count_nothing_when_there_are_no_marked_rows() {
     let origins = vec![0, 1, 2, 3];
 
-    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Symbol(&[]), 0, 1);
+    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Claim(&[]), 0, 1);
 
     assert_eq!(MarkedRowsOutsideViewport::default(), actual);
 }
@@ -73,14 +73,14 @@ fn should_count_nothing_when_there_are_no_marked_rows() {
 fn should_count_nothing_when_the_pane_has_no_height_to_show_anything_in() {
     let origins = vec![0, 1, 2, 3];
 
-    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Symbol(&[0, 3]), 0, 0);
+    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Claim(&[0, 3]), 0, 0);
 
     assert_eq!(MarkedRowsOutsideViewport::default(), actual);
 }
 
 #[test]
 fn should_count_nothing_when_there_is_no_content_at_all() {
-    let actual = marked_rows_outside_viewport(&[], ReadThroughRows::Symbol(&[0, 1]), 0, 10);
+    let actual = marked_rows_outside_viewport(&[], ReadThroughRows::Claim(&[0, 1]), 0, 10);
 
     assert_eq!(MarkedRowsOutsideViewport::default(), actual);
 }
@@ -89,7 +89,7 @@ fn should_count_nothing_when_there_is_no_content_at_all() {
 fn should_clamp_the_bottom_edge_to_the_content_when_the_viewport_outgrows_it() {
     let origins = vec![0, 1];
 
-    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Symbol(&[0, 1]), 0, 50);
+    let actual = marked_rows_outside_viewport(&origins, ReadThroughRows::Claim(&[0, 1]), 0, 50);
 
     assert_eq!(MarkedRowsOutsideViewport::default(), actual);
 }

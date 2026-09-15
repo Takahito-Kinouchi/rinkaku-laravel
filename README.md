@@ -181,7 +181,7 @@ to what is actually pressable on the current screen.
 | `+` / `-` | green / red | Added / removed line (also in the Detail pane's signature diff) |
 | `@@ ...` | grey | Hunk header |
 | `*` at line start | cyan | This line carries a review annotation (new side only, in both unified and split views) |
-| `▲N` / `▼N` in the title | yellow, bold | Lines of the selected symbol's change still above / below the viewport; `ctrl-f` / `ctrl-b` (or `↓` / `↑` with tree focus) reads through them. The title's `(12-41/210)` is file-scoped, this is symbol-scoped |
+| `▲N` / `▼N` in the title | yellow, bold | Rows the selected tree row still owes you, above / below the viewport; `ctrl-f` / `ctrl-b` (or `↓` / `↑` with tree focus) reads through them. The title's `(12-41/210)` is file-scoped, this is row-scoped |
 
 ### Blast radius pane
 
@@ -201,7 +201,7 @@ to what is actually pressable on the current screen.
 | `j` / `k` | Move the cursor |
 | `ctrl-d` / `ctrl-u` | Move the cursor half a page |
 | `gg` / `G` | Jump to the top / bottom of the tree |
-| `ctrl-f` / `ctrl-b` / `↓` / `↑` | Read through the selected symbol's change one screen at a time; once nothing is left off-screen, the cursor moves to the next / previous row. A file row has nothing to read through here — the cursor just moves (its whole diff is paged with the Diff pane focused) |
+| `ctrl-f` / `ctrl-b` / `↓` / `↑` | Read through the selected row's share of the diff one screen at a time; once nothing is left off-screen, the cursor moves to the next / previous row. A symbol row reads its own change and whatever follows it up to the next symbol; a file row reads what comes before its first symbol (its whole diff when rinkaku found no symbols in it), so walking the tree top to bottom shows every changed line of every row you pass. A row you fold away takes its share with it — including a mixed file's `N tests` group, which starts folded |
 | `/` | Start a search |
 | `n` / `N` | Jump to the next / previous match |
 | `enter` | Toggle a directory row, or open a file / symbol row (focus moves right) |
@@ -215,7 +215,7 @@ to what is actually pressable on the current screen.
 | `j` / `k` / `↓` / `↑` | Scroll one line |
 | `ctrl-d` / `ctrl-u` | Scroll half a page |
 | `gg` / `G` | Jump to the top / bottom of the pane |
-| `ctrl-f` / `ctrl-b` | Read through the change one screen at a time; on a file row this reads the file's whole diff — the only place that happens, and the deliberate way to skim a file top to bottom |
+| `ctrl-f` / `ctrl-b` | Read through the change one screen at a time; on a file row this reads the file's whole diff in one motion rather than stopping at its first symbol — the deliberate way to skim a file top to bottom |
 | `h` / `esc` | Return focus to the tree |
 | `]` / `[` | Jump to the next / previous hunk (Diff pane only) |
 
@@ -478,7 +478,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | `+` / `-` | 緑 / 赤 | 追加行 / 削除行（Detail ペインのシグネチャ差分も同じ） |
 | `@@ ...` | 灰 | hunk ヘッダ |
 | 行頭の `*` | シアン | その行にレビューアノテーションが付いている（unified / split とも新側のみ） |
-| タイトルの `▲N` / `▼N` | 黄（太字） | 選択シンボルの変更のうち画面の上 / 下に残っている行数。`ctrl-f` / `ctrl-b`（ツリーフォーカス時は `↓` / `↑` でも）で読み進められる（タイトルの `(12-41/210)` はファイル全体、こちらはシンボル単位） |
+| タイトルの `▲N` / `▼N` | 黄（太字） | 選択行がまだ見せていない行数（画面の上 / 下）。`ctrl-f` / `ctrl-b`（ツリーフォーカス時は `↓` / `↑` でも）で読み進められる（タイトルの `(12-41/210)` はファイル全体、こちらは選択行の担当範囲） |
 
 ### Blast radius ペイン
 
@@ -498,7 +498,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | `j` / `k` | カーソルを移動 |
 | `ctrl-d` / `ctrl-u` | カーソルを半ページ分移動 |
 | `gg` / `G` | ツリーの先頭 / 末尾へジャンプ |
-| `ctrl-f` / `ctrl-b` / `↓` / `↑` | 選択中シンボルの変更を 1 画面ずつ読み進める。画面外に残りが無くなると次 / 前の行へ進む。ファイル行には読み進める対象が無いのでカーソル移動のみ（diff 全体は Diff ペインにフォーカスして読み進める） |
+| `ctrl-f` / `ctrl-b` / `↓` / `↑` | 選択行が担当する差分を 1 画面ずつ読み進める。画面外に残りが無くなると次 / 前の行へ進む。シンボル行は自身の変更と次のシンボルまでの範囲、ファイル行は最初のシンボルより前（シンボルが 1 つも抽出されなければ diff 全体）を担当するので、ツリーを上から下へ歩けば通過した行の変更が漏れなく画面に出る。畳んだ行の担当分は一緒に隠れる（既定で畳まれている `N tests` グループを含む） |
 | `/` | 検索を開始 |
 | `n` / `N` | 次 / 前の検索結果へジャンプ |
 | `enter` | ディレクトリ行を開閉、またはファイル / シンボル行を開く（フォーカスが右へ移動） |
@@ -512,7 +512,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | `j` / `k` / `↓` / `↑` | 1 行スクロール |
 | `ctrl-d` / `ctrl-u` | 半ページ分スクロール |
 | `gg` / `G` | 右ペインの先頭 / 末尾へジャンプ |
-| `ctrl-f` / `ctrl-b` | 変更を 1 画面ずつ読み進める。ファイル行では diff 全体が対象になる唯一の場所で、ファイルを頭から読み流すための操作 |
+| `ctrl-f` / `ctrl-b` | 変更を 1 画面ずつ読み進める。ファイル行では最初のシンボルで止まらず diff 全体が対象になり、ファイルを頭から読み流すための操作 |
 | `h` / `esc` | フォーカスをツリーに戻す |
 | `]` / `[` | 次 / 前の hunk へジャンプ（Diff ペインのみ） |
 
