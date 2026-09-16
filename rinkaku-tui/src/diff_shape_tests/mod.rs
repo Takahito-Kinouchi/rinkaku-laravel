@@ -13,6 +13,10 @@
 //!   auto-sync
 //! - `marked_body_rows` — every body-row offset a symbol's range bar should
 //!   mark (all covering rows, never a hunk header or separator)
+//! - `read_through_claim` — which rendered rows each tree row is
+//!   responsible for paging through, and the partition property that
+//!   makes a top-to-bottom walk cover the whole body (ADR 0088's
+//!   2026-09-15 amendment)
 //! - `changed_line_ranges` — the Diff pane header's `range:` line data
 //!   (distinct new-side line spans across hunks, sorted and deduped, with
 //!   pure-deletion hunks excluded)
@@ -30,6 +34,7 @@ mod build_diff_pane_content;
 mod changed_line_ranges;
 mod hunk_start_lines;
 mod marked_body_rows;
+mod read_through_claim;
 mod scroll_target_line;
 mod symbol_id_for_scroll_line;
 

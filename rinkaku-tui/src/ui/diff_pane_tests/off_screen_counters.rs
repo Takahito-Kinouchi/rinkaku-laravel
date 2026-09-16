@@ -69,6 +69,36 @@ fn report_and_diff_for_a_symbol_less_file(lines: usize) -> (Report, String) {
     (report, diff_text)
 }
 
+/// The same diff as [`report_and_diff_for_a_tall_symbol`] with the symbol
+/// pushed down to line 21, so the first 20 changed lines fall outside
+/// every symbol range — the imports/leading-comment shape whose rows no
+/// symbol row will ever page, and which the file row therefore claims
+/// (ADR 0088's 2026-09-15 amendment).
+fn report_and_diff_for_a_file_with_a_leading_gap(lines: usize) -> (Report, String) {
+    let (mut report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
+    report.files[0].symbols[0].range.start = 21;
+    (report, diff_text)
+}
+
+/// The same diff against a file the pipeline skipped outright (an
+/// unsupported language — a `Cargo.toml`, a lockfile, a YAML locale), so
+/// it has no `FileReport` to read symbol ranges from at all, only a
+/// `SkippedFile` row in the tree.
+fn report_and_diff_for_a_skipped_file(lines: usize) -> (Report, String) {
+    let (mut report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
+    report.files.clear();
+    report.skipped = vec![rinkaku_core::render::SkippedFile {
+        path: "lib.rs".to_string(),
+        reason: rinkaku_core::render::SkipReason::UnsupportedLanguage,
+    }];
+    (report, diff_text)
+}
+
+fn draw_skipped_file_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
+    let (report, diff_text) = report_and_diff_for_a_skipped_file(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::File)
+}
+
 /// [`draw_tall_symbol_frame`] with the cursor left on the *file* row (row
 /// 0, `App::new`'s own default position) instead of stepping down onto the
 /// symbol — a selection that carries no `DiffFocus`, which the tree walk
@@ -95,6 +125,22 @@ fn draw_right_focused_file_row_frame(
 ) -> (crate::ui::DrawOutcome, String) {
     let (report, diff_text) = report_and_diff_for_a_tall_symbol(lines);
     draw_frame(&report, &diff_text, scroll, Selection::RightFocusedFile)
+}
+
+/// The file row of [`report_and_diff_for_a_file_with_a_leading_gap`], and
+/// its first symbol row — the two rows whose claims have to meet exactly
+/// at line 21 for the walk to cover the file.
+fn draw_leading_gap_file_row_frame(
+    scroll: usize,
+    lines: usize,
+) -> (crate::ui::DrawOutcome, String) {
+    let (report, diff_text) = report_and_diff_for_a_file_with_a_leading_gap(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::File)
+}
+
+fn draw_leading_gap_symbol_frame(scroll: usize, lines: usize) -> (crate::ui::DrawOutcome, String) {
+    let (report, diff_text) = report_and_diff_for_a_file_with_a_leading_gap(lines);
+    draw_frame(&report, &diff_text, scroll, Selection::Symbol)
 }
 
 /// A file row on a file with no symbol rows to walk on to at all.
@@ -207,11 +253,15 @@ fn should_render_the_below_counter_in_the_pane_title() {
 
 #[test]
 fn should_report_both_counters_once_the_pane_is_scrolled_into_the_middle_of_the_symbol() {
+    // 20 above, not the 19 body rows the range bar paints: a claim starts
+    // where the pane auto-scrolls to, and this symbol's own target is the
+    // `@@` header row (it shares its first body line's coordinate), so the
+    // header is one of the rows this row owes the reviewer.
     let (outcome, text) = draw_tall_symbol_frame(20, 40);
 
     assert_eq!(
         Some(ReadThrough {
-            rows_above: 19,
+            rows_above: 20,
             rows_below: 7,
             step: 13,
         }),
@@ -221,7 +271,7 @@ fn should_report_both_counters_once_the_pane_is_scrolled_into_the_middle_of_the_
         .lines()
         .find(|line| line.contains("Diff"))
         .unwrap_or_else(|| panic!("expected a Diff pane title, got:\n{text}"));
-    assert!(title_row.contains("▲19"), "title row was: {title_row}");
+    assert!(title_row.contains("▲20"), "title row was: {title_row}");
     assert!(title_row.contains("▼7"), "title row was: {title_row}");
 }
 
@@ -243,10 +293,10 @@ fn should_report_no_counters_and_show_no_marker_when_the_whole_symbol_fits() {
 
 #[test]
 fn should_offer_nothing_to_read_through_on_a_file_row_with_symbol_rows_below_it() {
-    // ADR 0088's 2026-09-09 amendments: the body is 41 rows (a `@@` header
-    // plus 40 changed lines), and the reviewer is one `↓` away from reading
-    // it symbol by symbol — paging the whole file here would show it all
-    // twice.
+    // The body is 41 rows (a `@@` header plus 40 changed lines) and the
+    // symbol covers every one of them from the first row on, so the file
+    // row's claim — the rows above its first symbol — is empty and the
+    // reviewer is one `↓` away from reading the lot.
     let (outcome, _) = draw_tall_file_row_frame(0, 40);
 
     assert_eq!(
@@ -261,6 +311,9 @@ fn should_offer_nothing_to_read_through_on_a_file_row_with_symbol_rows_below_it(
 
 #[test]
 fn should_offer_nothing_to_read_through_on_a_file_row_with_its_symbol_rows_collapsed() {
+    // Claims are read off the `Report`, not off fold state, so folding the
+    // symbol row away does not hand its rows back to the file row — the
+    // same cursor position measures the same before and after a `space`.
     let (outcome, _) = draw_collapsed_file_row_frame(0, 40);
 
     assert_eq!(
@@ -274,17 +327,16 @@ fn should_offer_nothing_to_read_through_on_a_file_row_with_its_symbol_rows_colla
 }
 
 #[test]
-fn should_offer_nothing_to_read_through_on_a_file_row_without_any_symbol_rows() {
-    // The second 2026-09-09 amendment: read-through from the tree is a
-    // symbol-row motion, so even the file rinkaku extracted no symbols from
-    // pages nothing here — `↓` walks on, and the pane's own `ctrl-f`
-    // (below) stays the way to read this diff.
+fn should_offer_the_whole_body_on_a_file_row_without_any_symbol_rows() {
+    // The 2026-09-15 amendment: no symbol row will ever page this file, so
+    // its whole body is the file row's own claim — 15 of the 41 rows fit
+    // under the shorter symbol-less header, leaving 26 below.
     let (outcome, _) = draw_symbol_less_file_frame(0, 40);
 
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 0,
+            rows_below: 26,
             step: 14,
         }),
         outcome.diff_read_through
@@ -322,10 +374,10 @@ fn should_offer_the_whole_symbol_less_file_while_the_right_pane_is_focused() {
 }
 
 #[test]
-fn should_leave_the_title_counters_to_symbol_selections() {
-    // The file-scoped `(1-15/41)` indicator already answers "is there more"
-    // for this same content, and the counters' bold yellow means "this is
-    // the range bar's symbol" — a file row paints no bar.
+fn should_render_the_title_counters_for_a_file_rows_own_claim() {
+    // The counters say what this row still owes the reviewer, so a file row
+    // that does have rows to page shows them — beside, not instead of, the
+    // file-scoped `(1-15/41)` indicator.
     let (_, text) = draw_symbol_less_file_frame(0, 40);
 
     let title_row = text
@@ -336,6 +388,21 @@ fn should_leave_the_title_counters_to_symbol_selections() {
         title_row.contains("(1-15/41)"),
         "title row was: {title_row}"
     );
+    assert!(title_row.contains("▼26"), "title row was: {title_row}");
+    assert!(!title_row.contains('▲'), "title row was: {title_row}");
+}
+
+#[test]
+fn should_leave_the_title_counters_to_a_row_with_a_claim() {
+    // A file row whose first symbol starts at the very first rendered row
+    // owes nothing, and the file-scoped indicator beside it already answers
+    // "is there more" for the content the symbol row will page.
+    let (_, text) = draw_tall_file_row_frame(0, 40);
+
+    let title_row = text
+        .lines()
+        .find(|line| line.contains("Diff"))
+        .unwrap_or_else(|| panic!("expected a Diff pane title, got:\n{text}"));
     assert!(!title_row.contains('▼'), "title row was: {title_row}");
     assert!(!title_row.contains('▲'), "title row was: {title_row}");
 }
@@ -348,6 +415,58 @@ fn should_report_the_rows_left_above_a_scrolled_right_focused_file_selection() {
         Some(ReadThrough {
             rows_above: 20,
             rows_below: 6,
+            step: 14,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_offer_the_rows_above_the_first_symbol_on_a_file_row() {
+    // The gap this amendment exists for: lines 1-20 belong to no symbol, so
+    // before it nothing in the tree ever paged them. Rows 0-20 (the `@@`
+    // header plus those 20 lines) are the file row's claim now; 14 fit, 7
+    // are left below.
+    let (outcome, _) = draw_leading_gap_file_row_frame(0, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 7,
+            step: 13,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_resume_at_the_first_symbol_where_the_file_rows_claim_ended() {
+    // The other half of the same partition: the symbol row picks the body
+    // up at row 21 and reads to the end, so the two claims meet with no row
+    // paged twice and none skipped.
+    let (outcome, _) = draw_leading_gap_symbol_frame(21, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 6,
+            step: 13,
+        }),
+        outcome.diff_read_through
+    );
+}
+
+#[test]
+fn should_offer_the_whole_body_on_a_skipped_files_row() {
+    // The file rinkaku never parsed has no `FileReport` at all, so its row
+    // reads the whole diff for the same reason a symbol-less one does:
+    // nothing below it is going to.
+    let (outcome, _) = draw_skipped_file_frame(0, 40);
+
+    assert_eq!(
+        Some(ReadThrough {
+            rows_above: 0,
+            rows_below: 26,
             step: 14,
         }),
         outcome.diff_read_through

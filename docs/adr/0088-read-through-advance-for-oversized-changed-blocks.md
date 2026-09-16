@@ -311,6 +311,98 @@ Alternatives:
   any key is known (decision 4), so the pressed key cannot reach it — the
   same reason the first 2026-09-09 amendment gave.
 
+## Amendment (2026-09-15): every row claims the part of the diff no other row reads
+
+The second 2026-09-09 amendment made read-through from the tree a
+symbol-row motion, and named its own cost: a changed file rinkaku
+extracts no symbols from can no longer be paged from the tree at all.
+Dogfooding found that the cost is larger than the file-level case it was
+stated for, because *within* a file the same hole is everywhere.
+
+A symbol row's read-through rows were `diff_shape::marked_body_rows` —
+the rows covered by that symbol's own `LineRange`. The union of a file's
+symbol ranges is not the file's diff. Imports, a file's leading module
+comment, a top-level constant, the blank lines between two functions, a
+removed block: none of them fall inside any symbol's range, so no row in
+the tree ever paged them. Measured on this repository's own
+`--base HEAD~12` diff: **1,620 of 6,108 changed lines (27%) belong to no
+symbol range**, and the runs are not all short — 102 consecutive
+unclaimed rows in `rinkaku-core/src/extract/mod.rs`, 62 in
+`signature_slice.rs`, 52 in `language/svelte.rs`. A run that long is
+several screens tall, so it never even appears as a neighbouring
+symbol's on-screen context. This is the defect the Context above names,
+re-entering through a different door: a reviewer walking the tree with
+`↓` reads a strict subset of the change and is told nothing about the
+rest.
+
+**Read-through is expressed as a partition of the file's rendered rows,
+with exactly one claim per tree row.** `diff_shape::read_through_claim`
+cuts the body at each symbol's own claim start — the row
+`scroll_target_line_for_symbol` auto-scrolls to — and hands each span to
+the row that starts it:
+
+- a **symbol row** claims its own start through the row before the next
+  symbol's start, so it reads its change *and* whatever follows it that
+  no other symbol will;
+- the **file row** claims the rows above the first symbol's start, which
+  is the whole body when the file yields no symbols at all (the
+  2026-08-24 amendment's case, restored without its special case) and
+  nothing at all when a symbol already starts at the first rendered row.
+
+The claims tile the body: their union is every rendered row, and the
+only overlap is between two symbols that resolve to the same start row
+(a nested pair — a method inside the class whose own range covers it),
+which share a claim and so are read twice rather than one of them not at
+all. Walking a file's row and then its symbol rows therefore brings every
+rendered row on screen. That is the property the motion was always
+claimed to have.
+
+This also settles what the two 2026-09-09 amendments were arguing about.
+The first stopped an expanded file row from paging a diff its symbol
+rows were about to read again; the second removed the remaining
+fold-state and tree-shape conditions for predictability, at the price of
+the symbol-less file. A claim needs neither condition: the file row
+pages only what no symbol row will, so there is no double reading to
+avoid, and the rule reads the same on every row — *this row reads its
+own share* — whatever the file's shape. Claims come from the `Report`,
+not from `nav`, so a `space` still does not change what the row under
+the cursor measures.
+
+Two smaller changes follow from the partition rather than being chosen
+separately:
+
+- `ui::scroll::ReadThroughRows::Symbol` becomes `Claim`, since a file row
+  now carries one too. `WholeBody` survives for `Focus::Right` on a file
+  row, where `ctrl-f` still skims a whole file in one motion instead of
+  stopping where its first symbol begins.
+- The `▲N`/`▼N` counters count the claim, not the symbol's own rows. They
+  answer "is there something here I have not seen at all", which is now a
+  question about the claim; a file row with rows to page therefore shows
+  them, and a symbol's count includes its hunk's `@@` header row whenever
+  that row is where the pane auto-scrolled to. The range bar stays scoped
+  to the symbol's own extent — the bar says *where this symbol is*, the
+  counters say *what is left to read*, and those were never the same
+  statement.
+
+Alternatives:
+
+- **Restoring the whole-body case for symbol-less files only.** The
+  2026-08-24 amendment's rule, and it fixes 8 files in the measurement
+  above while leaving the 102-row run untouched. The file-level hole was
+  never the whole hole.
+- **Splitting an unclaimed run into its own tree row.** Decision 3's
+  Alternatives already rejected hunk-level rows: hunk boundaries are diff
+  artifacts, not structure. A claim puts the same rows on an existing row
+  without adding diff shape to the tree.
+- **Leaving the motion alone and badging the unread count on the tree
+  row.** The original Alternatives' "informs but does not act" objection
+  applies unchanged — the reviewer would still have to switch focus and
+  scroll, per file, with no cue that they had finished.
+- **Making a collapsed file row reclaim its symbols' rows.** Fold state
+  back in the measurement, which the second 2026-09-09 amendment removed
+  for a good reason. Collapsing a file is a decision to skip it; its
+  symbols' claims go away with their rows.
+
 ## Consequences
 
 - `render_scrollable_pane` keeps its current signature and return type
@@ -327,10 +419,14 @@ Alternatives:
 - `ctrl-f`/`ctrl-b` are not vim's exact page-forward/back semantics: they
   spill over into a cursor move at a symbol boundary. This is documented
   in the help overlay and README as "read through", not as paging.
-- What a row offers to read through depends only on the row kind (does
-  the selection carry a `DiffFocus`) and which pane holds the keys — not
-  on fold state or tree shape, so the same cursor position measures the
-  same before and after a `space`.
-- A changed file rinkaku extracts no symbols from is read through with
-  the Diff pane focused, not from the tree. The tree's read-through keys
-  walk its row like any other row with nothing to read.
+- What a row offers to read through depends only on its own claim and
+  which pane holds the keys — not on fold state or tree shape, so the
+  same cursor position measures the same before and after a `space`.
+- Walking a file's row and then its symbol rows pages the file's whole
+  diff, once. A reviewer who skips rows still skips their claims: this
+  makes complete coverage available to the walk, it does not track what
+  was actually read (the rejected alternative above). The one skip that
+  is not the reviewer's own is a mixed file's `N tests` group, which
+  `Nav::with_test_groups_collapsed` folds shut before the first keypress
+  — its symbols keep their claims, the walk just does not visit them
+  until the group is expanded.

@@ -16,6 +16,11 @@
 //! commonly covers each get their own distinct scroll target instead of
 //! collapsing onto that hunk's header row.
 //!
+//! Those same coordinates carve the body into read-through claims
+//! ([`read_through_claim`], ADR 0088's 2026-09-15 amendment): one
+//! contiguous span per tree row, tiling the whole body so that walking a
+//! file's row and its symbol rows pages every rendered row exactly once.
+//!
 //! Pure and free of `ratatui` types, mirroring every other view-model in
 //! this crate (`crate::tree`/`crate::nav`/`crate::detail`/`crate::blast_radius`):
 //! `Report` + `&[FileHunks]` + a selection in, plain [`DiffPaneContent`]
@@ -282,6 +287,81 @@ pub fn marked_body_rows(
         .filter(|(_, row)| matches!(row, DiffRow::Body(Some(position)) if symbol_range.start <= *position && *position <= symbol_range.end))
         .map(|(line, _)| line)
         .collect()
+}
+
+/// Which row's read-through claim [`read_through_claim`] should return —
+/// the two row kinds that reach the Diff pane with content to show
+/// (`crate::app::App::selected_diff_target`: a present symbol row, or a
+/// file row).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadThroughSelection {
+    /// The file's own row. Claims the rows above its first symbol's start
+    /// — the whole body when the file yields no symbols at all, nothing
+    /// when a symbol already starts at the first row.
+    FileRow,
+    /// A present symbol row, identified by the symbol's range. Claims its
+    /// own start through the row before the next symbol's start.
+    Symbol(LineRange),
+}
+
+/// Every rendered row of `content` that `selection`'s row is responsible
+/// for reading through (ADR 0088's 2026-09-15 amendment) — the row set
+/// `crate::ui::scroll::marked_rows_outside_viewport` counts against, and a
+/// superset of the selected symbol's own [`marked_body_rows`].
+///
+/// The body is partitioned into one contiguous claim per *claim start* —
+/// the row [`scroll_target_line_for_symbol`] auto-scrolls to for each of
+/// `symbol_ranges` — preceded by the file row's own claim, from row 0 up
+/// to the first of those starts. Each claim runs to the next start, so the
+/// claims tile the whole body: walking a file's row and then its symbol
+/// rows brings every rendered row on screen, and brings none of them
+/// twice. That is the property the read-through motion exists for, and
+/// what a symbol-scoped row set could not give — the rows no symbol's
+/// range covers (imports, a file's leading comment, a top-level constant,
+/// a removed block) belong to no claim under it, so the walk never paged
+/// them into view.
+///
+/// Claims are keyed on the *start row* rather than on the symbol, so two
+/// symbols resolving to the same start (overlapping or nested ranges)
+/// share one claim instead of the later one silently claiming nothing.
+/// `symbol_ranges` may arrive in any order — the starts are sorted here,
+/// since a `Report`'s symbol order is not the diff's row order.
+///
+/// Returns an empty `Vec` when there is nothing for this row to read:
+/// a [`DiffPaneContent::Empty`] pane, a [`ReadThroughSelection::Symbol`]
+/// whose range no rendered row falls inside (the same "no principled
+/// target" case [`scroll_target_line_for_symbol`] returns `None` for), or
+/// a [`ReadThroughSelection::FileRow`] whose first symbol already starts
+/// at row 0.
+pub fn read_through_claim(
+    content: &DiffPaneContent,
+    symbol_ranges: &[LineRange],
+    selection: ReadThroughSelection,
+    view_mode: DiffViewMode,
+) -> Vec<usize> {
+    let rows = diff_rows(content, view_mode);
+    let mut starts: Vec<usize> = symbol_ranges
+        .iter()
+        .filter_map(|range| rows.iter().position(|row| row_is_within(*row, *range)))
+        .collect();
+    starts.sort_unstable();
+    starts.dedup();
+
+    let claim = match selection {
+        ReadThroughSelection::FileRow => 0..starts.first().copied().unwrap_or(rows.len()),
+        ReadThroughSelection::Symbol(range) => {
+            let Some(start) = rows.iter().position(|row| row_is_within(*row, range)) else {
+                return Vec::new();
+            };
+            let end = starts
+                .iter()
+                .copied()
+                .find(|next| *next > start)
+                .unwrap_or(rows.len());
+            start..end
+        }
+    };
+    claim.collect()
 }
 
 /// Builds the diff pane's shaped content for `target` (`None` mirrors
