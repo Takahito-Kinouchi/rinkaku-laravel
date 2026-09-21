@@ -427,3 +427,40 @@ bypasses `AnalysisProgress`.
   and shared state across clones. `ReleaseGuard` is tested the same way:
   dropping it releases buffered bytes, and dropping it after an explicit
   release is a no-op. No real stderr is touched in tests.
+
+## Amendment (2026-09-15): teardown is `Drop`'s alone
+
+Decision 5 above specified the `Drop` safety net as calling
+`ratatui::restore()` only, on the reasoning that it was a backstop for
+raw mode/the alternate screen while `TuiSession::run`'s own postamble
+carried the full sequence on the success path. That split was wrong in
+exactly the direction it was meant to protect against. `ratatui::restore`
+deliberately does not touch mouse capture — decision 4's `init` enables
+it precisely because `ratatui` does not — so the early-return path
+decision 5 exists for restored raw mode and the alternate screen and left
+mouse tracking on. `main.rs`'s analysis error (`--base` naming a branch
+that does not exist being the reachable everyday case) returned the user
+to a shell whose terminal still emitted `ESC[<...M` reports on every
+mouse movement, indefinitely, with nothing left running to turn them off.
+
+The fix is not a second copy of `DisableMouseCapture` in `Drop`. It is
+removing the duplication that let the two copies drift: teardown
+(`DisableMouseCapture` + `ratatui::restore()`) now lives in the `Drop`
+impl and nowhere else, and `TuiSession::run` reaches it by dropping
+`self` before returning its `result` rather than by repeating the
+sequence. The ordering decision 4 and decision 5 both rely on — terminal
+restored before the caller formats an error to stderr — is unchanged and
+now has a single implementation.
+
+Decision 5's "explicit teardown method" wording is likewise retired:
+`main.rs` never grew one, and does not need one now that `drop(session)`
+performs the whole sequence.
+
+- **Testing**: the mouse-capture half is extracted as a writer-generic
+  `disable_mouse_capture(&mut impl Write)` and unit-tested against an
+  in-memory buffer for the exact escape sequence, which is meaningful
+  only because there is now a single teardown site for it to stand in
+  for. The `Drop`-to-real-terminal wiring itself remains outside unit
+  test scope, per this ADR's original testing note — covered by
+  pty-driven dynamic verification that no mouse-tracking mode is left
+  enabled after an analysis error.

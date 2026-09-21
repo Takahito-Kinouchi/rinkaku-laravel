@@ -11,7 +11,7 @@ use super::scroll::{
 };
 use super::style::{expand_tabs_text, pane_border_style, styled_content_spans};
 use crate::app::{App, DiffTarget, DiffViewMode, Focus, ReadThrough};
-use crate::diff_shape::{self, AttributedHunk, DiffPaneContent};
+use crate::diff_shape::{self, AttributedHunk, DiffPaneContent, ReadThroughSelection};
 use crate::diff_view::{DiffLine, DiffLineKind};
 use crate::highlight::{self, HighlightedFile, TokenSpan};
 use crate::row_view::{BadgeContext, push_badge_spans};
@@ -21,6 +21,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
+use rinkaku_core::diff::LineRange;
 use rinkaku_core::render::Report;
 
 /// The Diff pane's own area width below which split (side-by-side)
@@ -222,6 +223,15 @@ pub(crate) fn draw_diff_pane(
     } else {
         mark_range_bar_lines(&mut unified_lines, &marked_rows);
     }
+    let selection_is_symbol = selected_row_is_symbol(app);
+    let claimed_rows = claimed_read_through_rows(
+        app,
+        report,
+        diff_content,
+        path,
+        selection_is_symbol,
+        view_mode,
+    );
 
     let ranges = crate::diff_shape::changed_line_ranges(
         &hunks
@@ -236,7 +246,7 @@ pub(crate) fn draw_diff_pane(
     // `diff_pane_header_lines` unconditionally — pairing it with `path`
     // there would print the path twice.
     let header_name = app.selected_diff_header_name();
-    let selection_name = if selected_row_is_symbol(app) {
+    let selection_name = if selection_is_symbol {
         header_name
     } else {
         None
@@ -273,7 +283,7 @@ pub(crate) fn draw_diff_pane(
         app.right_pane_scroll(),
         area,
         focused,
-        read_through_rows(&marked_rows, app.focus()),
+        read_through_rows(&claimed_rows, selection_is_symbol, app.focus()),
     );
     RightPaneRender {
         clamped_scroll: Some(render.clamped_scroll),
@@ -312,41 +322,90 @@ fn range_bar_lines(
     diff_content: &DiffPaneContent,
     view_mode: DiffViewMode,
 ) -> Vec<usize> {
-    let Some(focus) = app.selected_diff_focus(report) else {
-        return Vec::new();
-    };
-    let Some(range) = report
-        .files
-        .iter()
-        .find(|file| file.path == focus.path)
-        .and_then(|file| file.symbols.iter().find(|s| s.id == focus.symbol_id))
-        .map(|symbol| symbol.range)
-    else {
+    let Some(range) = selected_symbol_range(app, report) else {
         return Vec::new();
     };
     diff_shape::marked_body_rows(diff_content, range, view_mode)
 }
 
-/// What this frame offers to read through (ADR 0088 and its amendments),
-/// given the range bar's own marked rows and which pane holds the keys.
+/// The selected symbol's own line range, or `None` on any row that carries
+/// no [`crate::app::DiffFocus`] (a file or directory row, a removed symbol)
+/// or whose focus names a symbol this `report` no longer holds.
+fn selected_symbol_range(app: &App, report: &Report) -> Option<LineRange> {
+    let focus = app.selected_diff_focus(report)?;
+    report
+        .files
+        .iter()
+        .find(|file| file.path == focus.path)
+        .and_then(|file| file.symbols.iter().find(|s| s.id == focus.symbol_id))
+        .map(|symbol| symbol.range)
+}
+
+/// The rows the current selection is responsible for reading through
+/// ([`crate::diff_shape::read_through_claim`], ADR 0088's 2026-09-15
+/// amendment) — a *file* row's claim is the body above its first symbol
+/// (the whole body when the file yields no symbols at all), a symbol row's
+/// is its own change plus whatever follows it up to the next symbol.
 ///
-/// `marked_rows` is empty exactly when the cursor sits on a row with no
-/// [`crate::app::DiffFocus`] — a file or directory row. From the tree that
-/// is a row to *walk past*, not a body to page: read-through there is
-/// symbol-scoped, so the arrows and `ctrl-f` move the cursor on to the
-/// symbol rows instead of paging the same diff the walk is about to read
-/// again (ADR 0088's second 2026-09-09 amendment).
+/// The file's symbol ranges come from its [`Report`] entry; a path with no
+/// entry at all (a skipped file — an unsupported language, a binary blob)
+/// contributes no ranges, which is what makes its file row claim the whole
+/// diff rather than nothing.
 ///
-/// [`Focus::Right`] is where a whole file diff is still a reading unit:
-/// the pane has the keys, no tree walk is running, and `ctrl-f` there
-/// remains the deliberate way to skim a file top to bottom.
-fn read_through_rows(marked_rows: &[usize], focus: Focus) -> ReadThroughRows<'_> {
-    if !marked_rows.is_empty() {
-        ReadThroughRows::Symbol(marked_rows)
-    } else if focus == Focus::Right {
-        ReadThroughRows::WholeBody
+/// Empty for a row that reaches this pane with no diff of its own, which
+/// [`read_through_rows`] turns into "walk past me".
+fn claimed_read_through_rows(
+    app: &App,
+    report: &Report,
+    diff_content: &DiffPaneContent,
+    path: &str,
+    selection_is_symbol: bool,
+    view_mode: DiffViewMode,
+) -> Vec<usize> {
+    let symbol_ranges: Vec<_> = report
+        .files
+        .iter()
+        .find(|file| file.path == path)
+        .map(|file| file.symbols.iter().map(|symbol| symbol.range).collect())
+        .unwrap_or_default();
+
+    let selection = if selection_is_symbol {
+        match selected_symbol_range(app, report) {
+            Some(range) => ReadThroughSelection::Symbol(range),
+            None => return Vec::new(),
+        }
     } else {
+        ReadThroughSelection::FileRow
+    };
+
+    diff_shape::read_through_claim(diff_content, &symbol_ranges, selection, view_mode)
+}
+
+/// What this frame offers to read through (ADR 0088 and its amendments),
+/// given the selection's own claim and which pane holds the keys.
+///
+/// From the tree, the claim *is* the reading unit: each row pages the part
+/// of the diff no other row will, so a top-to-bottom walk covers the whole
+/// body and covers no row twice (ADR 0088's 2026-09-15 amendment). An
+/// empty claim — a file row whose first symbol already starts at the first
+/// rendered row — leaves nothing to page, so the keys move the cursor
+/// instead.
+///
+/// [`Focus::Right`] on a file row keeps the whole diff as one reading
+/// unit: the pane has the keys, no tree walk is running, and `ctrl-f`
+/// there remains the deliberate way to skim a file top to bottom rather
+/// than stopping where the first symbol begins.
+fn read_through_rows(
+    claimed_rows: &[usize],
+    selection_is_symbol: bool,
+    focus: Focus,
+) -> ReadThroughRows<'_> {
+    if focus == Focus::Right && !selection_is_symbol {
+        ReadThroughRows::WholeBody
+    } else if claimed_rows.is_empty() {
         ReadThroughRows::DeferredToRowWalk
+    } else {
+        ReadThroughRows::Claim(claimed_rows)
     }
 }
 

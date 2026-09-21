@@ -115,17 +115,17 @@ pub(crate) fn render_scrollable_pane(
 /// What [`render_marked_scrollable_pane`] reports back about the frame it
 /// just drew: the clamped scroll offset every caller already folds back
 /// into `App`, plus ADR 0088's two marks-derived values the Diff pane
-/// needs — how much of the selected symbol is off-screen, and how far one
-/// screen actually advances.
+/// needs — how much of the selection's read-through claim is off-screen,
+/// and how far one screen actually advances.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct ScrollablePaneRender {
     /// The actually-applied (clamped) scroll offset, in `requested_scroll`'s
     /// own logical-line unit — see [`render_scrollable_pane`]'s doc comment
     /// on why every caller folds this back into `App`.
     pub(crate) clamped_scroll: usize,
-    /// How many `marked_rows` fall above/below the viewport this frame
+    /// How many of `rows` fall above/below the viewport this frame
     /// ([`marked_rows_outside_viewport`]). All-zero for a caller that
-    /// passes no marks.
+    /// passes no rows.
     pub(crate) outside: MarkedRowsOutsideViewport,
     /// How many *logical* rows the viewport currently spans — the read-
     /// through step (ADR 0088) is derived from this rather than from
@@ -149,15 +149,15 @@ pub(crate) struct ScrollablePaneRender {
 /// The title carries the counts as a bold-yellow `▲N`/`▼N` suffix after
 /// the existing `(first-last/total)` indicator — bold yellow because that
 /// is the range bar's own color (`crate::ui::diff_pane::range_bar_span`),
-/// which is what ties the numbers to the selected symbol rather than to
-/// the file-scoped indicator sitting immediately to their left. Written
-/// after that indicator so a title too narrow to hold both loses the
-/// symbol-scoped half first — the file-scoped one is the half that is
-/// meaningful for every pane.
+/// which is what ties the numbers to what the reviewer is reading through
+/// rather than to the file-scoped indicator sitting immediately to their
+/// left. Written after that indicator so a title too narrow to hold both
+/// loses the selection-scoped half first — the file-scoped one is the
+/// half that is meaningful for every pane.
 // One parameter past clippy's threshold, and every one of them is an
 // independent piece of already-computed content (see `crate::ui::draw`'s
-// own identical allowance) — `marked_rows` in particular is computed by
-// the caller for the range bar and passed through, not derived here.
+// own identical allowance) — `rows` in particular is computed by the
+// caller from the current selection and passed through, not derived here.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_marked_scrollable_pane(
     frame: &mut Frame,
@@ -243,7 +243,7 @@ pub(crate) fn render_marked_scrollable_pane(
     let block = Block::bordered()
         .title(marked_title_line(
             title,
-            symbol_scoped_counters(rows, outside),
+            claim_scoped_counters(rows, outside),
         ))
         .border_style(pane_border_style(focused));
 
@@ -259,19 +259,17 @@ pub(crate) fn render_marked_scrollable_pane(
     }
 }
 
-/// The counters the title should show: ADR 0088's amendment keeps them
-/// scoped to a *symbol* selection. On a [`ReadThroughRows::WholeBody`] pane
-/// the title's own `(first-last/total)` indicator already answers the same
-/// question for the same content, so a second pair of numbers beside it
-/// would say nothing new — and the counters' bold yellow is meaningful
-/// precisely because it matches a range bar that a symbol-less selection
-/// does not paint.
-fn symbol_scoped_counters(
+/// The counters the title should show: the rows this selection still owes
+/// the reviewer, which is exactly its [`ReadThroughRows::Claim`]. On a
+/// [`ReadThroughRows::WholeBody`] pane the title's own `(first-last/total)`
+/// indicator already answers the same question for the same content, so a
+/// second pair of numbers beside it would say nothing new.
+fn claim_scoped_counters(
     rows: ReadThroughRows<'_>,
     outside: MarkedRowsOutsideViewport,
 ) -> MarkedRowsOutsideViewport {
     match rows {
-        ReadThroughRows::Symbol(_) => outside,
+        ReadThroughRows::Claim(_) => outside,
         ReadThroughRows::WholeBody
         | ReadThroughRows::DeferredToRowWalk
         | ReadThroughRows::Unmeasured => MarkedRowsOutsideViewport::default(),
@@ -334,10 +332,10 @@ fn visible_logical_range(
     ))
 }
 
-/// How many *marked* logical rows sit outside the viewport (ADR 0088) —
-/// the Diff pane's answer to "does the selected symbol's change continue
-/// past this screen, and by how much", counted in the same logical-line
-/// unit `App::right_pane_scroll` and `crate::diff_shape::marked_body_rows`
+/// How many *claimed* logical rows sit outside the viewport (ADR 0088) —
+/// the Diff pane's answer to "does what this row owes me continue past
+/// this screen, and by how much", counted in the same logical-line unit
+/// `App::right_pane_scroll` and `crate::diff_shape::read_through_claim`
 /// already share.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct MarkedRowsOutsideViewport {
@@ -345,29 +343,34 @@ pub(crate) struct MarkedRowsOutsideViewport {
     pub(crate) below: usize,
 }
 
-/// What a pane offers to read through (ADR 0088, scope widened by its
-/// first amendment and narrowed back to the Diff pane's own focus by the
-/// second 2026-09-09 one) — the input [`marked_rows_outside_viewport`]
-/// counts against.
+/// What a pane offers to read through (ADR 0088, reshaped by its
+/// amendments) — the input [`marked_rows_outside_viewport`] counts
+/// against.
 ///
-/// The [`Self::Symbol`]/[`Self::WholeBody`] pair exists because a file's
-/// whole diff is still a reading unit somewhere: with the Diff pane
-/// focused, `ctrl-f` pages it top to bottom. From the tree it is not —
-/// there read-through is scoped to the selected symbol's own rows, and a
-/// selection that has none is [`Self::DeferredToRowWalk`].
+/// The [`Self::Claim`]/[`Self::WholeBody`] pair exists because a file's
+/// whole diff is a reading unit in one place only: with the Diff pane
+/// focused, `ctrl-f` pages it top to bottom in one motion. From the tree
+/// the same rows arrive one claim at a time — the file row reads what
+/// precedes its first symbol, each symbol row reads its own change and
+/// whatever follows it up to the next symbol (ADR 0088's 2026-09-15
+/// amendment, `crate::diff_shape::read_through_claim`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReadThroughRows<'a> {
-    /// The selected symbol's own rows — the same slice the Diff pane's
-    /// range bar paints.
-    Symbol(&'a [usize]),
-    /// No symbol is selected, so the whole pane body is the thing to read.
+    /// The rows the selected row is responsible for paging through —
+    /// `crate::diff_shape::read_through_claim`'s own output. A superset of
+    /// the slice the Diff pane's range bar paints, which stays scoped to
+    /// the selected symbol's own extent.
+    Claim(&'a [usize]),
+    /// The whole pane body is the thing to read, in one motion rather than
+    /// one claim at a time — `ctrl-f` on a file row with the Diff pane
+    /// focused.
     WholeBody,
-    /// No symbol is selected and the tree has the keys, so this frame
-    /// offers nothing to page: read-through there is the row walk itself
-    /// (ADR 0088's 2026-09-09 amendments). Measured as zero, exactly like
-    /// [`Self::Unmeasured`] — the two are distinct because they are zero
-    /// for opposite reasons, and only this one is a claim about the
-    /// *selection* rather than about the pane.
+    /// This selection's claim is empty, so this frame offers nothing to
+    /// page: read-through is the row walk itself (ADR 0088's 2026-09-09
+    /// amendments). Measured as zero, exactly like [`Self::Unmeasured`] —
+    /// the two are distinct because they are zero for opposite reasons,
+    /// and only this one says something about the *selection* rather than
+    /// about the pane.
     DeferredToRowWalk,
     /// This pane does not participate in read-through at all (every pane
     /// except the Diff pane).
@@ -381,7 +384,7 @@ pub(crate) enum ReadThroughRows<'a> {
 /// Defined against the *visible logical range* — the logical rows the
 /// first and last visible display rows were wrapped from — rather than
 /// against each marked row's own display position, so one pass over
-/// `marked_rows` suffices no matter how large the wrapped body is
+/// the claimed rows suffices no matter how large the wrapped body is
 /// (`logical_line_to_display_row` is itself a scan, and calling it per
 /// marked row would make this O(marked × display rows) on every frame).
 ///
@@ -406,12 +409,12 @@ pub(crate) fn marked_rows_outside_viewport(
         ReadThroughRows::Unmeasured | ReadThroughRows::DeferredToRowWalk => {
             MarkedRowsOutsideViewport::default()
         }
-        ReadThroughRows::Symbol(marked_rows) => MarkedRowsOutsideViewport {
-            above: marked_rows
+        ReadThroughRows::Claim(claimed_rows) => MarkedRowsOutsideViewport {
+            above: claimed_rows
                 .iter()
                 .filter(|&&row| row < first_visible)
                 .count(),
-            below: marked_rows
+            below: claimed_rows
                 .iter()
                 .filter(|&&row| row > last_visible)
                 .count(),
