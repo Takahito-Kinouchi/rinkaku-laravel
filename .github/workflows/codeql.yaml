@@ -1,0 +1,76 @@
+# CodeQL code scanning, defined as a workflow file rather than through
+# GitHub's "default setup" (Settings -> Code security -> Code scanning).
+#
+# Default setup does not analyze Dependabot's pull requests. Its check
+# comes back `neutral` within a second — "Code scanning cannot determine
+# the alerts introduced by this pull request, because 2 configurations
+# present on refs/heads/main were not found" — so a `main` rule that
+# expects code scanning results is never satisfied and every weekly
+# dependency bump sits un-mergeable (PR #33). A committed workflow runs on
+# a Dependabot pull request like on any other.
+#
+# This is not a new check: it is the analysis code scanning already ran,
+# moved out of repository settings and into version control. It is the one
+# CI job with no `make` equivalent (CLAUDE.md's toolchain rule) because
+# CodeQL's analysis is GitHub-side and has no local counterpart.
+name: CodeQL
+
+on:
+  # Unfiltered by path, for the same reason the audit workflow gives: a
+  # path-filtered workflow reports no check run at all on a pull request
+  # that misses the filter, and a required check that never reports blocks
+  # the pull request forever.
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Mondays 00:30 UTC, half an hour behind the audit job so the two
+    # weekly runs don't queue against each other. Catches queries added to
+    # CodeQL after the code they would flag was last touched.
+    - cron: "30 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    # Same job names default setup produced ("Analyze (rust)",
+    # "Analyze (actions)"), so required status checks on `main` keep
+    # matching without being reconfigured.
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Stated explicitly rather than left to the workflow default: a run
+      # triggered by Dependabot gets a read-only token unless the workflow
+      # asks for more, and without write here the analysis this job just
+      # ran cannot be uploaded — which is the failure this workflow exists
+      # to remove.
+      security-events: write
+    strategy:
+      # One language's extractor failing should not hide the other's
+      # results.
+      fail-fast: false
+      matrix:
+        language: [actions, rust]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          languages: ${{ matrix.language }}
+          # Neither extractor observes a build: both read the sources
+          # directly, so there is nothing for `autobuild` to drive.
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          # Matches the configuration names default setup registered on
+          # `main` ("/language:actions", "/language:rust"), so the switch
+          # continues the existing analyses instead of starting new ones
+          # alongside them.
+          category: "/language:${{ matrix.language }}"
