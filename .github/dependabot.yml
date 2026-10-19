@@ -48,3 +48,11 @@ updates:
     commit-message:
       prefix: ci
       include: scope
+    groups:
+      # `init` and `analyze` must run the same CodeQL release: bumped in
+      # separate PRs, each PR pairs a new `init` with an old `analyze` (or
+      # vice versa) and the analysis fails as a configuration error
+      # (PRs #45, #46).
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
