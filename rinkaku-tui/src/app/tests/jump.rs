@@ -20,7 +20,7 @@ use rinkaku_core::render::Report;
 /// exercise it directly (this module's own tests call `Nav`/`App`
 /// methods directly rather than through `crate::lib::resolve_goto`,
 /// which lives in a different module and is tested there instead).
-fn report_with_caller_and_callee() -> Report {
+pub(super) fn report_with_caller_and_callee() -> Report {
     let mut report = report_with_two_directories();
     report.files[0].symbols[0].id = "a/one.rs::foo".to_string();
     report.files[1].symbols[0].id = "b/two.rs::bar".to_string();

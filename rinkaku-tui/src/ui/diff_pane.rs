@@ -14,8 +14,8 @@ use crate::app::{App, DiffTarget, DiffViewMode, Focus, ReadThrough};
 use crate::diff_shape::{self, AttributedHunk, DiffPaneContent, ReadThroughSelection};
 use crate::diff_view::{DiffLine, DiffLineKind};
 use crate::highlight::{self, HighlightedFile, TokenSpan};
-use crate::row_view::{BadgeContext, push_badge_spans};
-use crate::tree::{Badges, NodeKind};
+use crate::row_view::symbol_marker_span;
+use crate::tree::NodeKind;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -52,83 +52,83 @@ pub(crate) const REMOVED_BG: Color = Color::Indexed(52);
 pub(crate) const DIFF_PANE_TITLE: &str = " Diff ";
 
 /// Builds the Diff pane's pinned in-pane header (above the scrollable hunk
-/// content via `render_scrollable_pane`'s `header_lines` parameter, so the
-/// row's identity and its badge summary stay visible no matter how far the
-/// reviewer has scrolled into the hunks):
+/// content via `render_scrollable_pane`'s `header_lines` parameter, so it
+/// stays visible however far the reviewer scrolls into the hunks). ADR 0099
+/// decision 5: the header says only what the diff below cannot.
 ///
-/// - Line 1 (bold): `"<symbol name> · <path>"` for a symbol row, or the
-///   bare `path` for a file/skipped-file row (`selection_name` is `None`
-///   there). Truncated from the *head* when it overflows `width` — the
-///   symbol name or a path's basename is the informative tail.
-/// - Line 2 (badges via [`push_badge_spans`]): the exact same badge set
-///   the left tree row renders for this row — reused verbatim so the two
-///   views can't drift, and the diff pane inherits every future badge
-///   change for free. Rendered under [`BadgeContext::File`]: a `Dir` row
-///   never reaches this header (no diff to show), and a symbol row's
-///   badges ([`crate::tree::symbol_badges`]) contribute the same fields
-///   `BadgeContext::File` reads. Omitted when the row's badges are all
-///   zero.
-/// - Line 3 (dim, only when `ranges` is non-empty): `"range: 23-73, ..."`
-///   — the distinct new-side line spans. `ranges` must arrive already
-///   sorted+deduped ([`crate::diff_shape::changed_line_ranges`]). On
-///   overflow the range list itself is head-truncated (the *later* line
-///   numbers are usually what the reviewer scrolled to see); the
-///   `"range: "` label stays fixed so the line's meaning survives.
+/// - Line 1 (bold): the row's own tree mark (`mark`, for a symbol row),
+///   then `"<symbol name> · <path>"` for a symbol row, or the bare `path`
+///   for a file row (`selection_name` is `None` there). Truncated from the
+///   *head* when it overflows `width` — the symbol name or a path's
+///   basename is the informative tail.
+/// - Line 2 (only when `used_by` is non-empty): `↑ N: a · b ×2 · ...`, the
+///   production symbols that use this one — the same set behind the tree
+///   row's flush-right count (`crate::row_view::row_uses_count`) — with
+///   `(M unchecked)` after `N` once some of them are checked off.
+///
+/// The `range: 23-73, ...` line this header used to carry is gone: it
+/// listed the whole file's hunks, so it read the same for every symbol in
+/// the file.
 pub(crate) fn diff_pane_header_lines(
+    mark: Option<Span<'static>>,
     selection_name: Option<&str>,
     path: &str,
-    badges: &Badges,
-    ranges: &[(usize, usize)],
+    used_by: &[String],
+    unchecked_users: usize,
     width: usize,
 ) -> Vec<Line<'static>> {
     let identification = match selection_name {
         Some(name) => format!("{name} · {path}"),
         None => path.to_string(),
     };
-    let mut lines = vec![Line::styled(
-        truncate_to_width_keeping_tail(&identification, width),
-        Style::default().add_modifier(Modifier::BOLD),
-    )];
-
-    let mut badge_spans: Vec<Span<'static>> = Vec::new();
-    push_badge_spans(&mut badge_spans, badges, BadgeContext::File);
-    if !badge_spans.is_empty() {
-        lines.push(truncate_line_to_width(&Line::from(badge_spans), width));
+    let mut first_line = Vec::new();
+    let mut name_budget = width;
+    if let Some(mark) = mark.filter(|mark| !mark.content.trim().is_empty()) {
+        name_budget = name_budget.saturating_sub(mark.width() + 1);
+        first_line.push(mark);
+        first_line.push(Span::raw(" "));
     }
+    first_line.push(Span::styled(
+        truncate_to_width_keeping_tail(&identification, name_budget),
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+    let mut lines = vec![Line::from(first_line)];
 
-    if !ranges.is_empty() {
-        let prefix = "range: ";
-        // Drop the whole line rather than push a `range: ` prefix with
-        // nothing after it — a truncated tail is meaningful, an empty tail
-        // is not, and letting the prefix render alone would overflow
-        // `width` (ratatui clips silently, so the overflow reads as
-        // "range: " being the whole message).
-        if width > prefix.chars().count() {
-            let range_list = ranges
-                .iter()
-                .map(|(start, end)| {
-                    if start == end {
-                        start.to_string()
-                    } else {
-                        format!("{start}-{end}")
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            let range_budget = width - prefix.chars().count();
-            let truncated_range_list = truncate_to_width_keeping_tail(&range_list, range_budget);
-            let range_line = Line::from(vec![
-                Span::raw(prefix),
-                Span::styled(
-                    truncated_range_list,
-                    Style::default().add_modifier(Modifier::DIM),
-                ),
-            ]);
-            lines.push(range_line);
-        }
+    if !used_by.is_empty() {
+        // How many are left to read only once the reviewer has started
+        // checking them off (ADR 0099 decision 5): before that it would
+        // just repeat the total.
+        let progress = if unchecked_users == used_by.len() {
+            String::new()
+        } else {
+            format!(" ({unchecked_users} unchecked)")
+        };
+        let users = Line::from(vec![
+            Span::styled(
+                format!("{} {}{progress}: ", crate::glyph::USED_BY, used_by.len()),
+                crate::glyph::selection(),
+            ),
+            Span::raw(users_summary(used_by)),
+        ]);
+        lines.push(truncate_line_to_width(&users, width));
     }
 
     lines
+}
+
+/// `used_by`'s names joined with ` · `, a name that appears several times
+/// (two `kind_abbrev`s in different files) written once as `name ×N`.
+/// `used_by` arrives sorted (`rinkaku_core::graph::FanIn::used_by`), so
+/// equal names are adjacent.
+pub(crate) fn users_summary(used_by: &[String]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for group in used_by.chunk_by(|a, b| a == b) {
+        match group.len() {
+            1 => parts.push(group[0].clone()),
+            count => parts.push(format!("{} ×{count}", group[0])),
+        }
+    }
+    parts.join(" · ")
 }
 
 /// Draws the diff pane (TUI iteration 2, [`crate::app::RightPane::Diff`];
@@ -233,12 +233,6 @@ pub(crate) fn draw_diff_pane(
         view_mode,
     );
 
-    let ranges = crate::diff_shape::changed_line_ranges(
-        &hunks
-            .iter()
-            .map(|attributed| &attributed.hunk)
-            .collect::<Vec<_>>(),
-    );
     let header_width = area.width.saturating_sub(2) as usize;
 
     // `selected_diff_header_name` returns the path itself on a file row
@@ -251,12 +245,22 @@ pub(crate) fn draw_diff_pane(
     } else {
         None
     };
-    let selected_badges = selected_row_badges(app);
+    let user_ids = app
+        .selected_symbol_id()
+        .map(|id| app.edges().users_of(id))
+        .unwrap_or(&[]);
+    let unchecked_users = user_ids.iter().filter(|id| !app.is_checked(id)).count();
+    let mut users: Vec<String> = user_ids
+        .iter()
+        .map(|id| app.edges().name_of(id).to_string())
+        .collect();
+    users.sort();
     let mut header_lines = diff_pane_header_lines(
+        selected_row_mark(app),
         selection_name,
         path,
-        &selected_badges,
-        &ranges,
+        &users,
+        unchecked_users,
         header_width,
     );
     // ADR 0044 decision 7: the toggle stays flipped even when the pane is
@@ -421,23 +425,15 @@ fn selected_row_is_symbol(app: &App) -> bool {
     matches!(&row.node.kind, NodeKind::Symbol(symbol_ref) if !symbol_ref.removed)
 }
 
-/// The `Badges` on the row currently under the cursor — read from the
-/// same `nav.rows(tree)` lookup every other selection accessor already
-/// uses, so the diff pane's line 2 renders exactly what the tree row
-/// renders (single source of truth for what a row's badges say).
-///
-/// Returns [`Badges::default`] (all-zero) when there is no row, or when
-/// the cursor is on a `Dir`/`Section`/`TestGroup` — those never reach the
-/// header path at all in practice (empty pane placeholder instead), but
-/// returning an empty badge set here is the honest fallback.
-fn selected_row_badges(app: &App) -> Badges {
+/// The tree mark of the row under the cursor ([`symbol_marker_span`]),
+/// repeated in the header so the two panes agree on what the row is.
+/// `None` on any non-symbol row.
+fn selected_row_mark(app: &App) -> Option<Span<'static>> {
     let rows = app.nav().rows(app.tree());
-    let Some(row) = rows.get(app.nav().cursor()) else {
-        return Badges::default();
-    };
+    let row = rows.get(app.nav().cursor())?;
     match &row.node.kind {
-        NodeKind::File | NodeKind::Symbol(_) => row.node.badges,
-        NodeKind::Dir | NodeKind::Section(_) | NodeKind::TestGroup { .. } => Badges::default(),
+        NodeKind::Symbol(symbol_ref) => Some(symbol_marker_span(symbol_ref, &row.node.badges)),
+        _ => None,
     }
 }
 
@@ -515,13 +511,14 @@ fn new_side_line_numbers(hunk: &crate::diff_view::Hunk) -> Vec<Option<usize>> {
 }
 
 /// Prepends a 1-character annotation-marker column (ADR 0048) to `line`: a
-/// cyan `*` when `has_annotation`, a space otherwise — every diff-pane row
+/// `✎` (ADR 0099, the same mark as the tree's `✎N` badge) when
+/// `has_annotation`, a space otherwise — every diff-pane row
 /// gets this column regardless, so the marker's presence/absence never
 /// shifts the rest of the line's own columns out of alignment with its
 /// neighbors.
 fn prefix_annotation_marker(line: Line<'static>, has_annotation: bool) -> Line<'static> {
     let marker = if has_annotation {
-        Span::styled("*", Style::default().fg(Color::Cyan))
+        Span::styled(crate::glyph::NOTE, crate::glyph::uncolored_mark())
     } else {
         Span::raw(" ")
     };
@@ -536,17 +533,16 @@ fn prefix_annotation_marker(line: Line<'static>, has_annotation: bool) -> Line<'
     Line::from(spans).style(line.style)
 }
 
-/// The range bar's own span: a bold yellow `┃`, painted into the gutter
+/// The range bar's own span: a bold cyan `┃` (cyan = the current selection,
+/// ADR 0099), painted into the gutter
 /// column [`prefix_annotation_marker`] already reserves on every hunk body
 /// row (ADR 0048) — the range bar never touches a hunk header or separator
 /// row, both of which carry no such column ([`crate::diff_shape::marked_body_rows`]'s
 /// own doc comment on why it excludes them).
 fn range_bar_span() -> Span<'static> {
     Span::styled(
-        "┃",
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
+        crate::glyph::RANGE_BAR,
+        crate::glyph::selection().add_modifier(Modifier::BOLD),
     )
 }
 
@@ -556,7 +552,7 @@ fn range_bar_span() -> Span<'static> {
 /// this feature's whole point: auto-scroll alone gives no feedback once the
 /// whole diff already fits on screen and no scroll ever happens.
 ///
-/// The annotation marker (ADR 0048's cyan `*`) wins on a row that carries
+/// The annotation marker (ADR 0048's `✎`, ADR 0099) wins on a row that carries
 /// both: an annotation is a reviewer's own persistent note, so it stays
 /// visible even where the range bar would otherwise paint over it — the
 /// reverse priority of the two glyphs' shared gutter column.
@@ -574,7 +570,7 @@ fn mark_range_bar_lines(lines: &mut [Line<'static>], marked_rows: &[usize]) {
         let Some(gutter) = line.spans.first_mut() else {
             continue;
         };
-        if gutter.content.as_ref() == "*" {
+        if gutter.content.as_ref() == crate::glyph::NOTE {
             continue;
         }
         *gutter = range_bar_span();

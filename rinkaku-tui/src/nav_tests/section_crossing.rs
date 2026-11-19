@@ -141,7 +141,7 @@ fn should_expand_all_restore_the_section_row_children() {
 }
 
 #[test]
-fn should_collapse_only_the_dir_when_a_real_tests_directory_sits_inside_the_section() {
+fn should_collapse_only_the_dir_when_a_real_tests_directory_sits_beside_the_section() {
     // Regression: `TESTS_SECTION_PATH` used to be the literal `__tests__`,
     // which a repository's real top-level `__tests__/` directory
     // (Jest/Vitest's standard convention) produces as a `Dir` path — so
@@ -149,31 +149,20 @@ fn should_collapse_only_the_dir_when_a_real_tests_directory_sits_inside_the_sect
     // directory row collapsed the whole Tests section with it.
     let tree = Tree {
         roots: vec![
-            dir_node("src", vec![file_node("src/lib.ts", vec![])]),
-            section_node(vec![dir_node(
-                "__tests__",
-                vec![file_node("__tests__/app.test.ts", vec![])],
-            )]),
+            dir_node("__tests__", vec![file_node("__tests__/helper.ts", vec![])]),
+            section_node(vec![file_node("app.test.ts", vec![])]),
         ],
     };
-    let mut nav = Nav::new();
-    // Row order: src(0), src/lib.ts(1), Tests(2), __tests__(3), app.test.ts(4).
-    nav = nav.handle(Action::CursorTo(3), &tree);
-
-    nav = nav.handle(Action::ToggleExpand, &tree);
+    // Row order: __tests__(0), helper.ts(1), Tests(2), app.test.ts(3).
+    let nav = Nav::new().handle(Action::ToggleExpand, &tree);
 
     let rows = nav.rows(&tree);
     assert_eq!(
-        vec![
-            "src",
-            "src/lib.ts",
-            crate::tree::TESTS_SECTION_PATH,
-            "__tests__"
-        ],
+        vec!["__tests__", crate::tree::TESTS_SECTION_PATH, "app.test.ts"],
         row_paths(&rows)
     );
-    assert_eq!(true, rows[2].expanded);
-    assert_eq!(false, rows[3].expanded);
+    assert_eq!(false, rows[0].expanded);
+    assert_eq!(true, rows[1].expanded);
 }
 
 #[test]

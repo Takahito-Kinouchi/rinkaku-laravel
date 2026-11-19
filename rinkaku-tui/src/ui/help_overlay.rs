@@ -10,14 +10,11 @@ use super::overlay::centered_rect;
 use super::scroll::{Body, render_scrollable_pane};
 use crate::app::{Focus, Screen};
 use crate::locale::Locale;
-use crate::row_view::{
-    band_style, cyan_badge_style, risk_marker_style, split_badge_style, symbol_marker_span,
-    symbol_name_style, test_badge_style, warning_badge_style,
-};
-use crate::tree::SymbolRef;
+use crate::row_view::{band_style, symbol_marker_span, symbol_name_style, test_badge_style};
+use crate::tree::{Badges, SymbolRef};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Clear;
 use rinkaku_core::extract::{Classification, SymbolKind};
@@ -105,7 +102,9 @@ fn markers_legend_lines(locale: Locale) -> Vec<Line<'static>> {
         .iter()
         .map(|entry| {
             let swatch = marker_swatch_spans(entry.swatch);
-            let swatch_width: usize = swatch.iter().map(|span| span.content.len()).sum();
+            // Display width, not byte length: `▾`/`↻`/`✎` are three bytes
+            // but one column.
+            let swatch_width: usize = swatch.iter().map(|span| span.width()).sum();
             let padding = MARKER_SWATCH_COLUMN_WIDTH
                 .saturating_sub(swatch_width)
                 .max(1);
@@ -125,18 +124,23 @@ fn markers_legend_lines(locale: Locale) -> Vec<Line<'static>> {
 /// value, reusing `crate::row_view`'s own style producers so the legend can
 /// never drift from what the tree pane actually renders.
 fn marker_swatch_spans(swatch: &'static str) -> Vec<Span<'static>> {
+    let no_users = Badges::default();
+    let many_users = Badges {
+        fan_in: rinkaku_core::graph::HIGH_FAN_IN_THRESHOLD,
+        ..Badges::default()
+    };
+    let changed = legend_symbol(Some(Classification::SignatureChanged), false, false);
     match swatch {
-        "+" => vec![symbol_marker_span(&legend_symbol(
-            Some(Classification::Added),
-            false,
-            false,
-        ))],
-        "~" => vec![symbol_marker_span(&legend_symbol(
-            Some(Classification::SignatureChanged),
-            false,
-            false,
-        ))],
-        "x" => vec![symbol_marker_span(&legend_symbol(None, true, false))],
+        "+" => vec![symbol_marker_span(
+            &legend_symbol(Some(Classification::Added), false, false),
+            &no_users,
+        )],
+        "○" => vec![symbol_marker_span(&changed, &no_users)],
+        "●" => vec![symbol_marker_span(&changed, &many_users)],
+        "-" => vec![symbol_marker_span(
+            &legend_symbol(None, true, false),
+            &no_users,
+        )],
         "(dimmed name)" => vec![Span::styled(
             swatch,
             symbol_name_style(&legend_symbol(Some(Classification::BodyOnly), false, false)),
@@ -145,35 +149,20 @@ fn marker_swatch_spans(swatch: &'static str) -> Vec<Span<'static>> {
             swatch,
             symbol_name_style(&legend_symbol(None, true, false)),
         )],
-        "(cycle)" => vec![Span::styled(
-            swatch,
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )],
-        "!" => vec![Span::styled(swatch, risk_marker_style())],
-        "lines:N" => vec![Span::styled(swatch, band_style(FileSizeBand::Watch))],
-        "chg:N" => badge_swatch_spans("chg:", cyan_badge_style()),
-        "api:N" => badge_swatch_spans("api:", warning_badge_style()),
-        "fan-in:N" => badge_swatch_spans("fan-in:", cyan_badge_style()),
-        "warn:N" => badge_swatch_spans("warn:", warning_badge_style()),
-        "split:N" => badge_swatch_spans("split:", split_badge_style()),
-        "tests:0" => vec![
-            Span::raw("tests:"),
-            Span::styled("0", warning_badge_style()),
+        "N" => vec![Span::styled(swatch, crate::glyph::deferred())],
+        "↑ / ↓" => vec![Span::styled(swatch, crate::glyph::selection())],
+        "↻" => vec![crate::row_view::cycle_marker_span()],
+        "✎N" => vec![Span::styled(swatch, crate::glyph::uncolored_mark())],
+        "✓" => vec![Span::styled(swatch, crate::glyph::deferred())],
+        "N lines" => vec![Span::styled(swatch, band_style(FileSizeBand::Warn))],
+        "↑ N: ..." => vec![
+            Span::styled("↑ N:", crate::glyph::selection()),
+            Span::raw(" ..."),
         ],
         "[test] (N symbols)" => vec![Span::styled(swatch, test_badge_style())],
-        "N tests" => vec![Span::styled(swatch, Style::default().fg(Color::DarkGray))],
-        "(skipped: ...)" => vec![Span::styled(swatch, Style::default().fg(Color::DarkGray))],
+        "N tests" | "(skipped: ...)" => vec![Span::styled(swatch, crate::glyph::deferred())],
         _ => vec![Span::raw(swatch)],
     }
-}
-
-/// A `label:N` badge swatch split into a plain label span and an `N`
-/// numeral span styled with `number_style` — the same label/number split
-/// [`crate::row_view::push_badge_spans`] renders on the real tree row.
-fn badge_swatch_spans(label: &'static str, number_style: Style) -> Vec<Span<'static>> {
-    vec![Span::raw(label), Span::styled("N", number_style)]
 }
 
 /// Draws the `?` help overlay (ADR 0020, scrolling added post-hoc once the

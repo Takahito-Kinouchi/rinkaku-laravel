@@ -8,7 +8,7 @@ use super::style::pane_border_style;
 use crate::app::{App, BlastRadiusSelection, Focus};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
@@ -86,10 +86,11 @@ pub(crate) fn draw_blast_radius_pane(
 /// into styled [`Line`]s: indentation by depth (same `INDENT_WIDTH`-per-level
 /// convention as `crate::row_view::entry_row_line`), a dimmed style for
 /// `outside_prefix` lines (reached only by expanding a dependency edge past
-/// the pivoted path), a `(see above)` suffix for `already_printed` lines
-/// (matching `rinkaku-core::render`'s Markdown tree), and yellow/bold for a
-/// cycle-warning line (matching `entry_row_line`'s existing `(cycle)`
-/// marker styling).
+/// the pivoted path), a dimmed `(shown above)` suffix for `already_printed`
+/// lines, and the uncolored-mark style for a cycle-warning line, whose
+/// label already starts with `↻` (ADR 0099). Every other line is bulleted
+/// with `↓` ("the pivot reaches this") rather than `-`, which means
+/// "removed" everywhere else in the TUI.
 pub(crate) fn blast_radius_pane_lines(
     view: &crate::blast_radius::BlastRadiusView,
 ) -> Vec<Line<'static>> {
@@ -98,18 +99,25 @@ pub(crate) fn blast_radius_pane_lines(
         .iter()
         .map(|line| {
             let indent = " ".repeat(line.depth * INDENT_WIDTH);
-            let mut style = Style::default();
             if line.is_cycle_warning {
-                style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
-            } else if line.outside_prefix {
-                style = style.add_modifier(Modifier::DIM);
+                return Line::from(Span::styled(
+                    format!("{indent}{}", line.label),
+                    crate::glyph::uncolored_mark(),
+                ));
             }
-            let text = if line.already_printed {
-                format!("{indent}- {} (see above)", line.label)
+            let style = if line.outside_prefix {
+                Style::default().add_modifier(Modifier::DIM)
             } else {
-                format!("{indent}- {}", line.label)
+                Style::default()
             };
-            Line::from(Span::styled(text, style))
+            let mut spans = vec![Span::styled(
+                format!("{indent}{} {}", crate::glyph::REACHES, line.label),
+                style,
+            )];
+            if line.already_printed {
+                spans.push(Span::styled(" (shown above)", crate::glyph::deferred()));
+            }
+            Line::from(spans)
         })
         .collect()
 }

@@ -43,7 +43,7 @@ fn should_prefix_annotation_marker_only_on_the_line_inside_the_annotation_range_
         .iter()
         .find(|line| line.contains("fn foo() {}"))
         .expect("added line present");
-    assert!(marked.starts_with("*"));
+    assert!(marked.starts_with(crate::glyph::NOTE));
     let unmarked_context = rendered
         .iter()
         .find(|line| line.contains("fn b() {}"))
@@ -67,11 +67,15 @@ fn should_prefix_annotation_marker_only_on_the_new_side_in_split_view() {
         .iter()
         .find(|line| line.contains("fn foo() {}"))
         .expect("added line present on the new side");
-    assert!(marked_right.starts_with("*"));
+    assert!(marked_right.starts_with(crate::glyph::NOTE));
     // The old side never carries the marker column at all (ADR 0048:
     // `AnnotationLocation`'s anchoring is new-side only) — every left-side line
     // stays exactly as it would with an empty `AnnotationMarkers`.
-    assert!(left_rendered.iter().all(|line| !line.starts_with("*")));
+    assert!(
+        left_rendered
+            .iter()
+            .all(|line| !line.starts_with(crate::glyph::NOTE))
+    );
 }
 
 /// A replaced line: the `-`/`+` pair share one new-side coordinate
@@ -111,7 +115,13 @@ fn should_not_prefix_annotation_marker_on_the_removed_half_of_a_replaced_line() 
         .iter()
         .find(|line| line.contains("fn foo(x: u64) {}"))
         .expect("added line present");
-    assert_eq!((" ", "*"), (&removed[..1], &added[..1]));
+    assert_eq!(
+        (true, true),
+        (
+            removed.starts_with(' '),
+            added.starts_with(crate::glyph::NOTE)
+        )
+    );
 }
 
 fn line_text(line: &ratatui::text::Line<'_>) -> String {

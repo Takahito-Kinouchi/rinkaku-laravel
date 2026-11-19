@@ -8,16 +8,18 @@
 //! transformation, unit-tested here the same way `crate::tree`/`crate::nav`
 //! test their own plain-data outputs. Layout (which rows are visible at
 //! all, where the split between panes falls, and computing each row's
-//! `label` from ancestor context — see [`relative_label`]) is `crate::ui`'s
+//! `label` from ancestor context — see [`relative_labels`]) is `crate::ui`'s
 //! job; this module only decides one row's content and styling given that
 //! label.
 
+use crate::connections::{Connection, ProductionEdges};
+use crate::glyph;
 use crate::nav::Row;
 use crate::order::DirRank;
 use crate::tree::{Badges, NodeKind, SymbolRef};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use rinkaku_core::extract::{Classification, SymbolKind};
+use rinkaku_core::extract::Classification;
 use rinkaku_core::file_size::FileSizeBand;
 use std::collections::HashMap;
 
@@ -26,27 +28,31 @@ const INDENT_WIDTH: usize = 2;
 
 /// Builds the styled [`Line`] for one visible row.
 ///
-/// `label` is this row's display name: for a `Dir`/`File` row, the
-/// segment(s) of `crate::tree::TreeNode::path` not already implied by an
-/// ancestor row on screen (see [`relative_label`], which `crate::ui` uses
-/// to compute it while walking the tree — a pure per-row function like
-/// this one has no ancestor context of its own, since `crate::nav::Row`
-/// only exposes one node). Unused for a `Symbol` row, which always
-/// displays `SymbolRef::name` regardless of `label`.
+/// `label` is this row's display name: for a `Dir`/`File` row, its path as
+/// [`relative_labels`] shortens it below its divider — a pure per-row
+/// function like this one has no context of its own, since
+/// `crate::nav::Row` only exposes one node. Unused for a `Symbol` row,
+/// which always displays `SymbolRef::name` regardless of `label`.
 ///
-/// `ranks` is consulted only for a [`NodeKind::Dir`] row, to show the
-/// `(cycle)` warning marker (ADR 0016 decision 4 / ADR 0008's existing
-/// symbol-level cycle warning) — a directory's own `crate::order::DirRank`
-/// is looked up by its `path`, matching `crate::order`'s own map key.
-/// `selected` styles the row for the cursor (reverse video), independent
-/// of the node's own kind-based styling.
+/// `ranks` is consulted only for a [`NodeKind::Dir`] row, to show the `↻`
+/// cycle mark (ADR 0016 decision 4 / ADR 0008's existing symbol-level
+/// cycle warning) — a directory's own `crate::order::DirRank` is looked up
+/// by its `path`, matching `crate::order`'s own map key. `state` carries
+/// the cursor-relative facts (see [`RowState`]); `selected` styles the row
+/// for the cursor (reverse video), independent of the node's own
+/// kind-based styling.
 pub fn entry_row_line(
     row: &Row<'_>,
     label: &str,
     ranks: &HashMap<String, DirRank>,
     annotation_markers: &crate::annotation_markers::AnnotationMarkers,
-    selected: bool,
+    state: RowState,
 ) -> Line<'static> {
+    let RowState {
+        connection,
+        checked,
+        selected,
+    } = state;
     let indent = " ".repeat(row.depth * INDENT_WIDTH);
     let mut spans = vec![Span::raw(indent)];
 
@@ -54,21 +60,14 @@ pub fn entry_row_line(
         NodeKind::Dir => {
             let in_cycle = ranks.get(&row.node.path).is_some_and(|rank| rank.in_cycle);
             spans.push(Span::raw(format!("{} ", expand_marker(row))));
-            push_risk_marker_span(&mut spans, is_high_risk(&row.node.badges));
+            push_hidden_risk_span(&mut spans, row);
             spans.push(Span::styled(
                 label.to_string(),
                 Style::default().add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::raw(" "));
-            push_badge_spans(&mut spans, &row.node.badges, BadgeContext::Dir);
             if in_cycle {
                 spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    "(cycle)",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ));
+                spans.push(cycle_marker_span());
             }
         }
         NodeKind::Section(section_kind) => {
@@ -83,8 +82,6 @@ pub fn entry_row_line(
                 section_kind.label(),
                 Style::default().add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::raw(" "));
-            push_badge_spans(&mut spans, &row.node.badges, BadgeContext::Dir);
         }
         NodeKind::TestGroup { count } => {
             spans.push(Span::raw(format!("{} ", expand_marker(row))));
@@ -106,10 +103,9 @@ pub fn entry_row_line(
                 spans.push(test_badge_span(count));
                 spans.push(Span::raw(" "));
             }
-            push_risk_marker_span(&mut spans, is_high_risk(&row.node.badges));
+            push_hidden_risk_span(&mut spans, row);
             spans.push(Span::styled(label.to_string(), file_label_style(row.node)));
-            spans.push(Span::raw(" "));
-            push_badge_spans(&mut spans, &row.node.badges, BadgeContext::File);
+            push_oversized_file_span(&mut spans, &row.node.badges);
             push_annotation_badge_span(
                 &mut spans,
                 annotation_markers.file_counts.get(&row.node.path).copied(),
@@ -125,19 +121,19 @@ pub fn entry_row_line(
             }
         }
         NodeKind::Symbol(symbol_ref) => {
-            spans.push(Span::raw("  "));
-            spans.push(symbol_marker_span(symbol_ref));
+            spans.push(connection_span(connection));
+            if checked {
+                spans.push(Span::styled(glyph::CHECKED, glyph::deferred()));
+            } else {
+                spans.push(symbol_marker_span(symbol_ref, &row.node.badges));
+            }
             spans.push(Span::raw(" "));
-            spans.push(Span::raw(format!("{} ", kind_abbrev(symbol_ref.kind))));
-            push_risk_marker_span(
-                &mut spans,
-                is_high_risk_symbol(symbol_ref, &row.node.badges),
-            );
-            spans.push(Span::styled(
-                symbol_ref.name.clone(),
-                symbol_name_style(symbol_ref),
-            ));
-            push_test_coverage_badge_span(&mut spans, row.node.badges.test_count);
+            let name_style = if checked {
+                glyph::deferred()
+            } else {
+                symbol_name_style(symbol_ref)
+            };
+            spans.push(Span::styled(symbol_ref.name.clone(), name_style));
             push_annotation_badge_span(
                 &mut spans,
                 annotation_markers
@@ -149,6 +145,9 @@ pub fn entry_row_line(
     }
 
     let mut line = Line::from(spans);
+    if connection == Connection::Unrelated && !selected {
+        line = line.style(Style::default().add_modifier(Modifier::DIM));
+    }
     if selected {
         line = line.style(Style::default().add_modifier(Modifier::REVERSED));
     }
@@ -156,271 +155,167 @@ pub fn entry_row_line(
 }
 
 /// The expand/collapse indicator for a `Dir`/`File` row: `" "` (blank) for
-/// a childless node (nothing to expand), `"v"` when its children are
-/// currently shown, `">"` when collapsed.
+/// a childless node (nothing to expand), [`glyph::EXPANDED`] when its
+/// children are currently shown, [`glyph::COLLAPSED`] when collapsed.
 fn expand_marker(row: &Row<'_>) -> &'static str {
     if row.node.children.is_empty() {
         " "
     } else if row.expanded {
-        "v"
+        glyph::EXPANDED
     } else {
-        ">"
+        glyph::COLLAPSED
     }
 }
 
-/// Computes the display label for every row in `rows` (as returned by
-/// `crate::nav::Nav::rows`), stripping each `Dir`/`File` node's ancestor
-/// directory path already shown by a preceding row on screen — e.g. a
-/// `"src/foo"` directory nested under a `"src"` row displays as `"foo"`,
-/// not the repeated `"src/foo"` its `TreeNode::path` carries in full (per
-/// `crate::tree::TreeNode::path`'s own doc comment).
+/// What `crate::ui::entry` knows about a row beyond the tree itself: how
+/// it relates to the cursor's symbol (ADR 0099 decision 3), whether the
+/// reviewer has checked it off (decision 4), and whether the cursor is on
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowState {
+    pub connection: Connection,
+    /// A checked symbol row trades its mark for a gray `✓` and dims its
+    /// name: read, so it can wait.
+    pub checked: bool,
+    pub selected: bool,
+}
+
+impl Default for RowState {
+    fn default() -> Self {
+        Self {
+            connection: Connection::Neutral,
+            checked: false,
+            selected: false,
+        }
+    }
+}
+
+/// The two columns in front of a symbol row's mark: `↑` when it uses the
+/// symbol under the cursor, `↓` when that symbol uses it (ADR 0099
+/// decision 3), blank otherwise.
+fn connection_span(connection: Connection) -> Span<'static> {
+    match connection {
+        Connection::UsesCursor => Span::styled(format!("{} ", glyph::USED_BY), glyph::selection()),
+        Connection::UsedByCursor => Span::styled(format!("{} ", glyph::USES), glyph::selection()),
+        Connection::Neutral | Connection::Unrelated => Span::raw("  "),
+    }
+}
+
+/// The dependency-cycle mark (ADR 0099: `↻` everywhere a cycle is shown).
 ///
-/// This only works correctly because `rows` is a pre-order flattening
-/// (`Nav::rows`'s own doc comment): a directory's ancestor rows always
-/// appear earlier in the slice, at a strictly smaller `depth`, so tracking
-/// "the most recent path seen at each depth" while scanning forward once
-/// is enough to compute every row's relative label in a single pass — no
-/// need to reconstruct the tree's own recursive shape here. A `Symbol`
-/// row's label is never consulted by `entry_row_line` (it always shows
-/// `SymbolRef::name` instead), so this function returns an empty string
-/// for those rows rather than computing a meaningless one.
+/// `pub(crate)`: also reused by `crate::ui::help_overlay`'s Markers legend.
+pub(crate) fn cycle_marker_span() -> Span<'static> {
+    Span::styled(glyph::CYCLE, glyph::uncolored_mark())
+}
+
+/// Computes the display label for every row in `rows` (as returned by
+/// `crate::nav::Nav::rows`): a divider row (a top-level directory) shows
+/// its full path, and a file row under it shows its path relative to that
+/// divider — `render/markdown.rs` under `rinkaku-core/src` — since the
+/// directories between the two get no row of their own (ADR 0099 decision
+/// 2). A file with no divider above it (a top-level file, or one under the
+/// synthetic Tests section, whose path is no prefix of anything) shows its
+/// full path.
+///
+/// `rows` is a pre-order flattening (`Nav::rows`' own doc comment), so the
+/// most recent divider seen while scanning forward is the one a file sits
+/// under, and a later top-level file is never mistaken for one: a
+/// top-level file is a sibling of the divider, not under it, so the
+/// divider's path is no prefix of its path. A `Symbol` row's label is never
+/// consulted by `entry_row_line` (it always shows `SymbolRef::name`), so
+/// this returns an empty string for those rows.
 pub fn relative_labels(rows: &[Row<'_>]) -> Vec<String> {
-    // `ancestor_path_at[d]` is the full `TreeNode::path` of the most
-    // recent `Dir`/`File` row seen at depth `d` — the nearest enclosing
-    // ancestor for any later row at depth `d + 1`.
-    let mut ancestor_path_at: Vec<Option<String>> = Vec::new();
-
+    let mut divider_path: Option<&str> = None;
     rows.iter()
-        .map(|row| {
-            if matches!(row.node.kind, NodeKind::Symbol(_)) {
-                return String::new();
+        .map(|row| match &row.node.kind {
+            NodeKind::Dir => {
+                divider_path = Some(row.node.path.as_str());
+                row.node.path.clone()
             }
-
-            let parent_path = row.depth.checked_sub(1).and_then(|parent_depth| {
-                ancestor_path_at
-                    .get(parent_depth)
-                    .and_then(|p| p.as_deref())
-            });
-            let label = match parent_path {
-                Some(parent) => row
-                    .node
-                    .path
-                    .strip_prefix(parent)
-                    .and_then(|rest| rest.strip_prefix('/'))
-                    .unwrap_or(&row.node.path)
-                    .to_string(),
-                None => row.node.path.clone(),
-            };
-
-            if ancestor_path_at.len() <= row.depth {
-                ancestor_path_at.resize(row.depth + 1, None);
+            NodeKind::Section(_) => {
+                divider_path = Some(row.node.path.as_str());
+                String::new()
             }
-            ancestor_path_at[row.depth] = Some(row.node.path.clone());
-            // Truncate any deeper stale entries from a sibling subtree
-            // this row's own depth just returned to (a pre-order walk can
-            // go from a deep leaf back up to a shallower sibling), so a
-            // later row never mistakes a previous, now-unrelated branch's
-            // path for its actual parent.
-            ancestor_path_at.truncate(row.depth + 1);
-
-            label
+            NodeKind::File => divider_path
+                .and_then(|divider| row.node.path.strip_prefix(divider))
+                .and_then(|rest| rest.strip_prefix('/'))
+                .unwrap_or(&row.node.path)
+                .to_string(),
+            NodeKind::Symbol(_) | NodeKind::TestGroup { .. } => String::new(),
         })
         .collect()
 }
 
-/// Which side of the tree a badge row is on — `Dir` rows render the
-/// aggregated file-size warning counts (`warn:N split:N`), `File` rows
-/// render this file's own `lines:N` instead. `NodeKind::Symbol` never
-/// reaches badge rendering (symbol rows have their own layout, no badge
-/// summary), so this only needs the two cases.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BadgeContext {
-    Dir,
-    File,
+/// How many other production symbols use this row's symbol (ADR 0099
+/// decision 1), for `crate::ui::entry` to draw flush right: `Some` only on
+/// a symbol row with users. Read from the same edge index as the `↑`
+/// arrows and the Diff header's user list, so the three always agree.
+pub(crate) fn row_uses_count(row: &Row<'_>, edges: &ProductionEdges) -> Option<usize> {
+    match &row.node.kind {
+        NodeKind::Symbol(symbol_ref) => {
+            Some(edges.users_of(&symbol_ref.id).len()).filter(|&count| count > 0)
+        }
+        _ => None,
+    }
 }
 
-/// Appends the compact badge summary for a `Dir`/`File` row to `spans`:
-/// changed-symbol count, contract-change count, fan-in, and (per
-/// `context`) either the file-size-warning aggregate (`warn:N split:N`
-/// on a directory) or this file's own line count (`lines:N` on a file
-/// row). Each badge is only emitted when its underlying counter is
-/// nonzero (an all-zero badge set adds nothing, keeping quiet rows
-/// quiet).
-///
-/// Badge encoding rationale:
-/// - All three badges use text labels (`chg:` / `api:` / `fan-in:`)
-///   matching the file-size badges' `lines:` / `warn:` / `split:`
-///   convention (see ADR 0013 amendments 2026-07-13 and
-///   feat/label-contract-changes-badge). The single-glyph prefixes they
-///   originally replaced (`~` for changed, `!` for contract change, `^`
-///   for fan-in) conveyed no semantic hint on their own to a first-time
-///   reviewer — `!` in particular read as generic "warning" rather than
-///   pointing at *what* changed. The fan-in badge's label itself was
-///   later relabeled again, from `ref:` to `fan-in:` (ADR 0034): `ref:`
-///   collided visually with the unrelated `gr` ("go to references")
-///   keybinding despite naming a different concept, and "hotspot" (the
-///   underlying aggregation's original name) collided with an unrelated
-///   well-known term (CodeScene's change-frequency metric) — "fan-in"
-///   has neither problem and matches the detail pane's own `fan-in: N`
-///   wording. The label stays default color so the eye lands on the
-///   number, matching the file-size badges' split-span pattern.
-/// - `chg:`/`fan-in:` numbers are cyan (informational counts), but
-///   `api:` is yellow — the same warning color as the file-size `warn:`
-///   badge below — because a contract change (signature-changed or
-///   removed symbol) is the one badge that flags something a caller
-///   should double-check, restoring in color the "pay attention" signal
-///   the original `!` glyph carried on its own.
-/// - The file-size badges (ADR 0028, amended to always show a line count)
-///   deliberately use **text labels plus color** rather than an emoji
-///   glyph (`⚠` / `🚨`): terminal emoji rendering width is inconsistent
-///   enough to distort the tree column layout. The per-file `lines:N`
-///   badge's color follows [`band_style`]'s 4-band scale, independent of
-///   the directory-level `warn:N split:N` aggregate, which only ever
-///   counts `Warn`/`Split` files (see `Badges`' doc comment).
-pub(crate) fn push_badge_spans(
-    spans: &mut Vec<Span<'static>>,
-    badges: &Badges,
-    context: BadgeContext,
-) {
-    let mut wrote_any_ascii_badge = false;
-    if badges.changed_symbols > 0 {
-        spans.push(Span::raw("chg:"));
+/// The style for a row's [`row_uses_count`] number: as red as the row's own
+/// `●` when the symbol may break its users, otherwise gray.
+pub(crate) fn uses_count_style(row: &Row<'_>) -> Style {
+    match &row.node.kind {
+        NodeKind::Symbol(symbol_ref) if is_high_risk_symbol(symbol_ref, &row.node.badges) => {
+            glyph::danger()
+        }
+        _ => glyph::deferred(),
+    }
+}
+
+/// Appends `N lines` to a file row whose size is past the warn threshold
+/// (ADR 0028's Warn/Split bands) — the only files whose size calls for
+/// action, so the only ones that show it (ADR 0099 decision 1).
+fn push_oversized_file_span(spans: &mut Vec<Span<'static>>, badges: &Badges) {
+    let (Some(band), Some(line_count)) = (badges.own_file_size_band, badges.own_file_line_count)
+    else {
+        return;
+    };
+    if matches!(band, FileSizeBand::Warn | FileSizeBand::Split) {
+        spans.push(Span::raw(" "));
         spans.push(Span::styled(
-            badges.changed_symbols.to_string(),
-            cyan_badge_style(),
+            format!("{line_count} lines"),
+            band_style(band),
         ));
-        wrote_any_ascii_badge = true;
-    }
-    if badges.contract_changes > 0 {
-        if wrote_any_ascii_badge {
-            spans.push(Span::raw(" "));
-        }
-        spans.push(Span::raw("api:"));
-        spans.push(Span::styled(
-            badges.contract_changes.to_string(),
-            warning_badge_style(),
-        ));
-        wrote_any_ascii_badge = true;
-    }
-    if badges.fan_in > 0 {
-        if wrote_any_ascii_badge {
-            spans.push(Span::raw(" "));
-        }
-        spans.push(Span::raw("fan-in:"));
-        spans.push(Span::styled(badges.fan_in.to_string(), cyan_badge_style()));
-        wrote_any_ascii_badge = true;
-    }
-
-    match context {
-        BadgeContext::File => {
-            if let (Some(band), Some(line_count)) =
-                (badges.own_file_size_band, badges.own_file_line_count)
-            {
-                // Leading space only when a preceding badge wrote
-                // something — otherwise the row would gain a stray gap.
-                if wrote_any_ascii_badge {
-                    spans.push(Span::raw(" "));
-                }
-                spans.push(Span::raw("lines:"));
-                spans.push(Span::styled(line_count.to_string(), band_style(band)));
-            }
-        }
-        BadgeContext::Dir => {
-            let has_warn = badges.file_size_warn_count > 0;
-            let has_split = badges.file_size_split_count > 0;
-            if (has_warn || has_split) && wrote_any_ascii_badge {
-                spans.push(Span::raw(" "));
-            }
-            if has_warn {
-                spans.push(Span::raw("warn:"));
-                spans.push(Span::styled(
-                    badges.file_size_warn_count.to_string(),
-                    warning_badge_style(),
-                ));
-            }
-            if has_warn && has_split {
-                spans.push(Span::raw(" "));
-            }
-            if has_split {
-                spans.push(Span::raw("split:"));
-                spans.push(Span::styled(
-                    badges.file_size_split_count.to_string(),
-                    split_badge_style(),
-                ));
-            }
-        }
     }
 }
 
-/// Style for the `chg:`/`fan-in:` badge numbers (cyan, informational
-/// counts — see [`push_badge_spans`]'s badge encoding rationale).
-///
-/// `pub(crate)`: also reused by `crate::ui::overlay`'s Markers legend.
-pub(crate) fn cyan_badge_style() -> Style {
-    Style::default().fg(Color::Cyan)
-}
-
-/// Appends an `ann:N` badge (ADR 0048, ADR 0058) — "this row has N review
-/// annotations attached" — in the same cyan-number style
-/// [`cyan_badge_style`] already uses for informational counts
-/// (`chg:`/`fan-in:`), a no-op when `count` is `None` or `0`. Kept as its
-/// own function rather than folded into [`push_badge_spans`]: that
-/// function's `Badges` input is baked once at tree-build time
+/// Appends a `✎N` badge (ADR 0048, ADR 0058, glyph per ADR 0099) — "this
+/// row has N review annotations attached" — a no-op when `count` is `None`
+/// or `0`. Read from `crate::annotation_markers` rather than the row's
+/// `Badges`: those are baked once at tree-build time
 /// (`crate::tree::build_tree`'s own doc comment), while annotation counts
 /// change during the session (`crate::annotation_markers`'s own module doc
-/// comment) — a genuinely different data source, not just a different
-/// badge label. `ann:` rather than `n:` (ADR 0058) — `n` no longer names
-/// this feature's key binding, so keeping it as the badge abbreviation
-/// would be a stale mnemonic.
+/// comment).
 fn push_annotation_badge_span(spans: &mut Vec<Span<'static>>, count: Option<usize>) {
     let Some(count) = count.filter(|&count| count > 0) else {
         return;
     };
     spans.push(Span::raw(" "));
-    spans.push(Span::raw("ann:"));
-    spans.push(Span::styled(count.to_string(), cyan_badge_style()));
+    spans.push(Span::styled(
+        format!("{}{count}", glyph::NOTE),
+        glyph::uncolored_mark(),
+    ));
 }
 
-/// Appends a `tests:0` badge (ADR 0059) to a symbol row — the inverse of
-/// [`push_annotation_badge_span`]'s "only nonzero renders" rule: zero is
-/// the signal here (no test symbol references this one), so only an exact
-/// `Some(0)` renders.
-fn push_test_coverage_badge_span(spans: &mut Vec<Span<'static>>, test_count: Option<usize>) {
-    if test_count != Some(0) {
-        return;
-    }
-    spans.push(Span::raw(" "));
-    spans.push(Span::raw("tests:"));
-    spans.push(Span::styled("0", warning_badge_style()));
-}
-
-/// Style for the `api:`/`warn:` badge numbers (yellow — the "pay
-/// attention" color, see [`push_badge_spans`]'s badge encoding rationale).
-///
-/// `pub(crate)`: also reused by `crate::ui::overlay`'s Markers legend.
-pub(crate) fn warning_badge_style() -> Style {
-    Style::default().fg(Color::Yellow)
-}
-
-/// Style for the `split:` badge number (red).
-///
-/// `pub(crate)`: also reused by `crate::ui::overlay`'s Markers legend.
-pub(crate) fn split_badge_style() -> Style {
-    Style::default().fg(Color::Red)
-}
-
-/// File-row `lines:N` badge style per [`FileSizeBand`] (ADR 0028
-/// amendment). `Split` is additionally bold so it doesn't read
-/// identically to `Warn`, which shares its red foreground.
+/// The `N lines` style for an oversized file (ADR 0028's bands): red for
+/// Warn, bold red for Split. A Normal/Watch file shows no line count at all
+/// (ADR 0099), so those bands have no style of their own.
 ///
 /// `pub(crate)`: also reused by `crate::ui::overlay`'s Markers legend, the
 /// single source of truth for that legend's swatch styles.
 pub(crate) fn band_style(band: FileSizeBand) -> Style {
     match band {
-        FileSizeBand::Normal => Style::default(),
-        FileSizeBand::Watch => Style::default().fg(Color::Yellow),
-        FileSizeBand::Warn => Style::default().fg(Color::Red),
-        FileSizeBand::Split => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        FileSizeBand::Normal | FileSizeBand::Watch => Style::default(),
+        FileSizeBand::Warn => glyph::danger(),
+        FileSizeBand::Split => glyph::danger().add_modifier(Modifier::BOLD),
     }
 }
 
@@ -487,28 +382,36 @@ fn test_badge_span(symbol_count: usize) -> Span<'static> {
     )
 }
 
-/// Style for the `[test] (N symbols)` whole-test-file badge (magenta).
+/// Style for the `[test] (N symbols)` whole-test-file badge: test code is
+/// "can wait" gray everywhere (ADR 0099), the same as a `N tests` group.
 ///
 /// `pub(crate)`: also reused by `crate::ui::overlay`'s Markers legend.
 pub(crate) fn test_badge_style() -> Style {
-    Style::default().fg(Color::Magenta)
+    glyph::deferred()
 }
 
-/// A symbol row's leading classification marker: `+` added, `~`
-/// signature-changed, ` ` (blank, one column) body-only or unclassified,
-/// `x` removed. Kept as its own single-character span (rather than folded
-/// into `symbol_name_style`) so it reads as a consistent left-aligned
-/// column across rows regardless of name length.
+/// A symbol row's one mark (ADR 0099 decision 1): what happened to the
+/// symbol and how much it matters, in a single column.
+///
+/// - `●` red: signature changed and it has users ([`is_high_risk_symbol`])
+///   — it may break them
+/// - `○` yellow: signature changed, no users to speak of
+/// - `+` green: added
+/// - `-` red: removed (the same mark the diff uses for a removed line)
+/// - blank: body-only or unclassified (the name dims instead)
 ///
 /// `pub(crate)`: also reused by `crate::ui::overlay`'s Markers legend.
-pub(crate) fn symbol_marker_span(symbol_ref: &SymbolRef) -> Span<'static> {
+pub(crate) fn symbol_marker_span(symbol_ref: &SymbolRef, badges: &Badges) -> Span<'static> {
     if symbol_ref.removed {
-        return Span::styled("x", Style::default().fg(Color::Red));
+        return Span::styled(glyph::REMOVED, glyph::danger());
     }
     match symbol_ref.classification {
-        Some(Classification::Added) => Span::styled("+", Style::default().fg(Color::Green)),
+        Some(Classification::Added) => Span::styled(glyph::ADDED, glyph::added()),
+        Some(Classification::SignatureChanged) if is_high_risk_symbol(symbol_ref, badges) => {
+            Span::styled(glyph::MAY_BREAK, risk_marker_style())
+        }
         Some(Classification::SignatureChanged) => {
-            Span::styled("~", Style::default().fg(Color::Yellow))
+            Span::styled(glyph::SIGNATURE_CHANGED, glyph::contract())
         }
         Some(Classification::BodyOnly) | None => Span::raw(" "),
     }
@@ -545,67 +448,43 @@ pub(crate) fn symbol_name_style(symbol_ref: &SymbolRef) -> Style {
     }
 }
 
-/// Whether a `Dir`/`File` row's aggregated badges warrant the `!` risk
-/// co-occurrence marker (visual-encoding prototype): a contract change
-/// (signature change or removal) sitting on top of at least one high-fan-in
-/// symbol in the same subtree — the combination that makes a change both
-/// hard to miss (contract change) and wide-reaching (fan-in), which neither
-/// count alone conveys.
-fn is_high_risk(badges: &Badges) -> bool {
-    badges.contract_changes > 0 && badges.fan_in >= rinkaku_core::graph::HIGH_FAN_IN_THRESHOLD
-}
-
-/// The symbol-row equivalent of [`is_high_risk`]: a signature-changed
-/// symbol whose own fan-in (already test-referrer-excluded, see
+/// Whether a symbol may break its users: its signature changed and its
+/// own fan-in (already test-referrer-excluded, see
 /// `rinkaku_core::graph::compute_fan_ins`) clears the high-fan-in
-/// threshold. Unlike `Dir`/`File`'s aggregated `Badges::fan_in` (a sum
-/// across every high-fan-in symbol in the subtree), a symbol's own badge
-/// only ever holds *its own* fan-in (`crate::tree::symbol_badges`), so the
-/// comparison is meaningful without aggregation.
+/// threshold. A symbol's own badge only ever holds *its own* fan-in
+/// (`crate::tree::symbol_badges`), so the comparison needs no aggregation.
 ///
-/// ADR 0059's `tests:0` signal deliberately does **not** escalate to this
-/// marker: it fires on most changed symbols in practice, and the marker
+/// ADR 0059's test-coverage signal deliberately does **not** escalate to
+/// this mark: it fires on most changed symbols in practice, and the mark
 /// only earns attention by staying rare (ADR 0043).
-fn is_high_risk_symbol(symbol_ref: &SymbolRef, badges: &Badges) -> bool {
+pub(crate) fn is_high_risk_symbol(symbol_ref: &SymbolRef, badges: &Badges) -> bool {
     symbol_ref.classification == Some(Classification::SignatureChanged)
         && badges.fan_in >= rinkaku_core::graph::HIGH_FAN_IN_THRESHOLD
 }
 
-/// Appends the `!` risk marker span (bold red) followed by a space, or
-/// nothing at all when `is_risky` is `false` — callers push this right
-/// after the expand marker and before the label so a non-risky row's
-/// layout is untouched (no reserved gutter column).
-fn push_risk_marker_span(spans: &mut Vec<Span<'static>>, is_risky: bool) {
-    if is_risky {
-        spans.push(Span::styled("!", risk_marker_style()));
+/// Whether any symbol under `node` may break its users.
+fn subtree_has_high_risk_symbol(node: &crate::tree::TreeNode) -> bool {
+    match &node.kind {
+        NodeKind::Symbol(symbol_ref) => is_high_risk_symbol(symbol_ref, &node.badges),
+        _ => node.children.iter().any(subtree_has_high_risk_symbol),
+    }
+}
+
+/// Puts a `●` in front of a collapsed `Dir`/`File` row hiding a symbol
+/// that may break its users. An expanded row gets none: the `●` is on the
+/// symbol's own row, right below, and repeating it on every ancestor is
+/// what made one problem look like four (ADR 0099 decision 1).
+fn push_hidden_risk_span(spans: &mut Vec<Span<'static>>, row: &Row<'_>) {
+    if !row.expanded && subtree_has_high_risk_symbol(row.node) {
+        spans.push(Span::styled(glyph::MAY_BREAK, risk_marker_style()));
         spans.push(Span::raw(" "));
     }
 }
 
-/// The `!` risk marker's style (bold red), factored out of
-/// [`push_risk_marker_span`] so `crate::ui::overlay`'s Markers legend can
-/// reuse it too.
+/// The `●` mark's style (bold red), factored out so
+/// `crate::ui::overlay`'s Markers legend can reuse it too.
 pub(crate) fn risk_marker_style() -> Style {
-    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
-}
-
-/// A short, fixed-width kind abbreviation for a symbol row (mirrors
-/// `render.rs`'s Markdown rendering's own `fn`/`struct`/... prefixes, just
-/// abbreviated further since the entry view is column-constrained).
-fn kind_abbrev(kind: SymbolKind) -> &'static str {
-    match kind {
-        SymbolKind::Function => "fn",
-        SymbolKind::Struct => "struct",
-        SymbolKind::Enum => "enum",
-        SymbolKind::Trait => "trait",
-        SymbolKind::Class => "class",
-        SymbolKind::Interface => "iface",
-        SymbolKind::TypeAlias => "type",
-        SymbolKind::Block => "block",
-        SymbolKind::Section => "section",
-        SymbolKind::ComponentApi => "api",
-        SymbolKind::Component => "component",
-    }
+    glyph::danger().add_modifier(Modifier::BOLD)
 }
 
 #[cfg(test)]

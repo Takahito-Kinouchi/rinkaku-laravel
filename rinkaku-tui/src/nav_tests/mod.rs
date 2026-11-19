@@ -17,6 +17,8 @@
 //! - `section_crossing` — ADR 0035 Phase B: `Nav` treating a
 //!   `NodeKind::Section` like a `Dir` for expand/collapse and cursor
 //!   traversal across the production/Tests boundary
+//! - `two_level` — ADR 0099: divider rows, files flush with them, and no
+//!   rows for the directories in between
 //! - `default_collapse` — visual-encoding prototype:
 //!   `Nav::new_collapsing_test_groups`'s initial collapse seeding
 
@@ -30,6 +32,7 @@ mod move_cursor;
 mod retarget_cursor;
 mod search_text;
 mod section_crossing;
+mod two_level;
 
 pub(super) fn symbol_node(path: &str, name: &str) -> TreeNode {
     TreeNode {
@@ -123,8 +126,9 @@ pub(super) fn sample_tree() -> Tree {
 /// leaves — so the cursor can sit on a row nested under two ancestor
 /// directories, matching the depth the CRITICAL 2 regression needs
 /// (collapsing an ancestor several levels above the cursor).
-/// Expanded row order: src(0), src/pkg(1), src/pkg/lib.rs(2), foo(3),
-/// bar(4).
+/// Expanded row order: src(0), src/pkg/lib.rs(1), foo(2), bar(3) —
+/// `src/pkg` sits under the `src` divider, so it gets no row of its own
+/// (ADR 0099 decision 2).
 pub(super) fn deep_tree() -> Tree {
     Tree {
         roots: vec![dir_node(

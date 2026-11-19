@@ -2,7 +2,7 @@ use super::*;
 use rstest::rstest;
 
 #[test]
-fn should_render_plain_text_for_zero_badges_and_no_classification() {
+fn should_render_a_body_only_symbol_as_its_bare_name() {
     let node = symbol_node("lib.rs", plain_symbol("foo"), Badges::default());
     let row = Row {
         node: &node,
@@ -15,54 +15,14 @@ fn should_render_plain_text_for_zero_badges_and_no_classification() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("        fn foo", line_text(&line));
+    assert_eq!("        foo", line_text(&line));
 }
 
 #[test]
-fn should_include_badge_labels_for_nonzero_badges_on_a_dir_row() {
-    // ADR 0013 amendments (2026-07-13): all three badges use text labels
-    // (`chg:` / `api:` / `fan-in:`) instead of glyphs — the first
-    // amendment relabeled changed-symbol/fan-in (as `ref:`, later
-    // relabeled `fan-in:` per ADR 0034), the second (feat/label-contract-
-    // changes-badge) relabeled contract-change from a bare `!` after
-    // user testing showed it read as generic "warning" with no hint of
-    // what changed. `fan_in: 1` here (rather than a higher, still-nonzero
-    // value) deliberately stays below `HIGH_FAN_IN_THRESHOLD` so this
-    // fixture does not also trigger the `!` risk marker tested separately
-    // in `should_prepend_risk_marker_for_a_high_risk_dir_row` — this test's
-    // only concern is the three badges' own label wording.
-    let node = dir_node(
-        "src",
-        Badges {
-            changed_symbols: 2,
-            contract_changes: 1,
-            fan_in: 1,
-            ..Badges::default()
-        },
-        vec![file_node("src/a.rs", Badges::default())],
-    );
-    let row = Row {
-        node: &node,
-        depth: 0,
-        expanded: true,
-    };
-
-    let line = entry_row_line(
-        &row,
-        "src",
-        &HashMap::new(),
-        &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
-    );
-
-    assert_eq!("v src chg:2 api:1 fan-in:1", line_text(&line));
-}
-
-#[test]
-fn should_omit_zero_badges_entirely() {
+fn should_render_a_plain_file_row_as_its_bare_name() {
     let node = file_node("lib.rs", Badges::default());
     let row = Row {
         node: &node,
@@ -75,10 +35,10 @@ fn should_omit_zero_badges_entirely() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  lib.rs ", line_text(&line));
+    assert_eq!("  lib.rs", line_text(&line));
 }
 
 #[test]
@@ -95,10 +55,10 @@ fn should_append_skip_reason_for_a_skipped_file_row() {
         "assets/logo.png",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  assets/logo.png  (skipped: binary)", line_text(&line));
+    assert_eq!("  assets/logo.png (skipped: binary)", line_text(&line));
 }
 
 #[rstest]
@@ -120,7 +80,7 @@ fn should_dim_label_for_a_skipped_file_row_when_the_file_has_no_readable_content
         "assets/logo.png",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(
@@ -146,7 +106,7 @@ fn should_not_dim_label_for_a_skipped_file_row_when_the_language_is_unsupported(
         "deploy/values.yaml",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(None, fg_of_span_with_content(&line, "deploy/values.yaml"));
@@ -176,7 +136,7 @@ fn should_dim_skip_reason_annotation_when_a_file_row_is_skipped_for_any_reason(
         "assets/logo.png",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(
@@ -199,7 +159,7 @@ fn should_not_append_skip_reason_for_an_ordinary_file_row() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert!(!line_text(&line).contains("skipped"));
@@ -224,10 +184,10 @@ fn should_prepend_test_badge_with_plural_symbols_noun_before_a_whole_test_file_l
         "src/lib_test.go",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  [test] (3 symbols) src/lib_test.go ", line_text(&line));
+    assert_eq!("  [test] (3 symbols) src/lib_test.go", line_text(&line));
 }
 
 #[test]
@@ -244,10 +204,10 @@ fn should_prepend_test_badge_with_singular_symbol_noun_when_count_is_one() {
         "src/lib_test.go",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  [test] (1 symbol) src/lib_test.go ", line_text(&line));
+    assert_eq!("  [test] (1 symbol) src/lib_test.go", line_text(&line));
 }
 
 #[test]
@@ -268,21 +228,21 @@ fn should_show_collapse_marker_when_dir_is_not_expanded() {
         "src",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("> src ", line_text(&line));
+    assert_eq!("▸ src", line_text(&line));
 }
 
 // ADR 0035 Phase B: a `NodeKind::Section` row renders like a `Dir` row
 // (expand marker, bold label, aggregated badges) but with its fixed
 // `SectionKind::label()` instead of a path-derived label, and never
-// shows the `(cycle)` marker — `ranks` never carries an entry for a
+// shows the `↻` cycle marker — `ranks` never carries an entry for a
 // section's synthetic path (`crate::order::rank_directories` only ever
 // produces entries for real file-tree directories).
 
 #[test]
-fn should_render_section_row_with_its_fixed_label_and_badges() {
+fn should_render_section_row_with_its_fixed_label_and_no_counts() {
     let node = section_node(
         SectionKind::Tests,
         Badges {
@@ -302,10 +262,10 @@ fn should_render_section_row_with_its_fixed_label_and_badges() {
         "ignored-label",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("v Tests chg:5", line_text(&line));
+    assert_eq!("▾ Tests", line_text(&line));
 }
 
 #[test]
@@ -326,17 +286,17 @@ fn should_show_collapse_marker_for_a_collapsed_section_row() {
         "ignored-label",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("> Tests ", line_text(&line));
+    assert_eq!("▸ Tests", line_text(&line));
 }
 
 #[test]
 fn should_never_show_cycle_marker_on_a_section_row_even_if_ranks_has_a_stray_entry() {
     // Defensive: even if `ranks` somehow carried an entry keyed by the
     // section's synthetic path, a Section row must never render
-    // `(cycle)` — cycle detection is a production-directory concept
+    // `↻` — cycle detection is a production-directory concept
     // ADR 0035 Phase A already excludes test code from.
     let node = section_node(SectionKind::Tests, Badges::default(), vec![]);
     let row = Row {
@@ -358,10 +318,10 @@ fn should_never_show_cycle_marker_on_a_section_row_even_if_ranks_has_a_stray_ent
         "ignored-label",
         &ranks,
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  Tests ", line_text(&line));
+    assert_eq!("  Tests", line_text(&line));
 }
 
 #[test]
@@ -386,10 +346,10 @@ fn should_append_cycle_marker_when_dir_path_is_in_cycle() {
         "src",
         &ranks,
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  src  (cycle)", line_text(&line));
+    assert_eq!("  src ↻", line_text(&line));
 }
 
 #[test]
@@ -414,10 +374,10 @@ fn should_not_append_cycle_marker_when_dir_path_is_not_in_cycle() {
         "src",
         &ranks,
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  src ", line_text(&line));
+    assert_eq!("  src", line_text(&line));
 }
 
 #[test]
@@ -438,14 +398,14 @@ fn should_mark_added_symbol_with_plus() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  + fn new_fn", line_text(&line));
+    assert_eq!("  + new_fn", line_text(&line));
 }
 
 #[test]
-fn should_mark_signature_changed_symbol_with_tilde() {
+fn should_mark_signature_changed_symbol_without_users_with_an_open_circle() {
     let symbol_ref = SymbolRef {
         classification: Some(Classification::SignatureChanged),
         ..plain_symbol("changed_fn")
@@ -462,14 +422,14 @@ fn should_mark_signature_changed_symbol_with_tilde() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  ~ fn changed_fn", line_text(&line));
+    assert_eq!("  ○ changed_fn", line_text(&line));
 }
 
 #[test]
-fn should_mark_removed_symbol_with_x() {
+fn should_mark_removed_symbol_with_the_diffs_minus_sign() {
     let symbol_ref = SymbolRef {
         removed: true,
         ..plain_symbol("gone_fn")
@@ -486,10 +446,10 @@ fn should_mark_removed_symbol_with_x() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("  x fn gone_fn", line_text(&line));
+    assert_eq!("  - gone_fn", line_text(&line));
 }
 
 // Visual-encoding prototype: a test symbol left in the production tree
@@ -517,10 +477,10 @@ fn should_dim_name_and_omit_test_badge_for_a_test_symbol_in_a_mixed_file() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("    fn test_it", line_text(&line));
+    assert_eq!("    test_it", line_text(&line));
     assert_eq!(
         Some(Color::DarkGray),
         fg_of_span_with_content(&line, "test_it")
@@ -541,10 +501,10 @@ fn should_not_append_test_badge_for_an_ordinary_non_test_symbol() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("    fn foo", line_text(&line));
+    assert_eq!("    foo", line_text(&line));
 }
 
 #[test]
@@ -561,7 +521,10 @@ fn should_apply_reversed_modifier_when_row_is_selected() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        true,
+        crate::row_view::RowState {
+            selected: true,
+            ..Default::default()
+        },
     );
 
     assert!(line.style.add_modifier.contains(Modifier::REVERSED));
@@ -581,7 +544,7 @@ fn should_not_apply_reversed_modifier_when_row_is_not_selected() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert!(!line.style.add_modifier.contains(Modifier::REVERSED));
@@ -601,10 +564,10 @@ fn should_indent_by_depth_times_indent_width() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("        lib.rs ", line_text(&line));
+    assert_eq!("        lib.rs", line_text(&line));
 }
 
 // Visual-encoding prototype: a body-only (or unclassified) symbol's name
@@ -629,7 +592,7 @@ fn should_dim_name_for_a_body_only_symbol() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(
@@ -656,7 +619,7 @@ fn should_not_dim_name_for_an_added_symbol() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(None, fg_of_span_with_content(&line, "new_fn"));
@@ -690,10 +653,10 @@ fn should_render_test_group_row_with_plural_count() {
         "ignored-label",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("> 3 tests", line_text(&line));
+    assert_eq!("▸ 3 tests", line_text(&line));
     assert_eq!(
         Some(Color::DarkGray),
         fg_of_span_with_content(&line, "3 tests")
@@ -725,10 +688,10 @@ fn should_render_test_group_row_with_singular_count() {
         "ignored-label",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
+        crate::row_view::RowState::default(),
     );
 
-    assert_eq!("> 1 test", line_text(&line));
+    assert_eq!("▸ 1 test", line_text(&line));
 }
 
 #[test]
@@ -744,9 +707,15 @@ fn should_show_annotation_badge_on_a_symbol_row_with_a_matching_annotation_count
         .symbol_counts
         .insert("lib.rs::foo".to_string(), 2);
 
-    let line = entry_row_line(&row, "", &HashMap::new(), &annotation_markers, false);
+    let line = entry_row_line(
+        &row,
+        "",
+        &HashMap::new(),
+        &annotation_markers,
+        crate::row_view::RowState::default(),
+    );
 
-    assert_eq!("    fn foo ann:2", line_text(&line));
+    assert_eq!("    foo ✎2", line_text(&line));
 }
 
 #[test]
@@ -762,9 +731,15 @@ fn should_omit_annotation_badge_on_a_symbol_row_with_no_matching_annotation_coun
         .symbol_counts
         .insert("lib.rs::bar".to_string(), 1);
 
-    let line = entry_row_line(&row, "", &HashMap::new(), &annotation_markers, false);
+    let line = entry_row_line(
+        &row,
+        "",
+        &HashMap::new(),
+        &annotation_markers,
+        crate::row_view::RowState::default(),
+    );
 
-    assert_eq!("    fn foo", line_text(&line));
+    assert_eq!("    foo", line_text(&line));
 }
 
 #[test]
@@ -780,7 +755,13 @@ fn should_show_annotation_badge_on_a_file_row_with_a_matching_annotation_count()
         .file_counts
         .insert("lib.rs".to_string(), 3);
 
-    let line = entry_row_line(&row, "lib.rs", &HashMap::new(), &annotation_markers, false);
+    let line = entry_row_line(
+        &row,
+        "lib.rs",
+        &HashMap::new(),
+        &annotation_markers,
+        crate::row_view::RowState::default(),
+    );
 
-    assert_eq!("  lib.rs  ann:3", line_text(&line));
+    assert_eq!("  lib.rs ✎3", line_text(&line));
 }

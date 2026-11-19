@@ -252,9 +252,12 @@ mod export_menu_tests {
 
     #[test]
     fn should_open_verdict_menu_when_confirming_github_entry_with_sink_a_available() {
+        // ADR 0099: Clipboard is entry 0 even when sink A is available, so
+        // GitHub is one step down.
         let state = ReviewState::default()
             .open_list()
             .open_export_menu()
+            .list_down()
             .confirm_export(true);
 
         assert_eq!(&ReviewMode::VerdictMenu { cursor: 0 }, state.mode());
@@ -264,8 +267,7 @@ mod export_menu_tests {
     fn should_set_clipboard_pending_export_when_sink_a_is_unavailable_and_first_entry_is_confirmed()
     {
         // With sink A unavailable, the menu's only entry (index 0) is
-        // Clipboard — mirrors the "sink A is absent, not disabled" rule
-        // (ADR 0048): there is no Github entry to skip past.
+        // Clipboard — the "sink A is absent, not disabled" rule (ADR 0048).
         let mut state = ReviewState::default()
             .open_list()
             .open_export_menu()
@@ -276,12 +278,12 @@ mod export_menu_tests {
     }
 
     #[test]
-    fn should_set_clipboard_pending_export_when_sink_a_is_available_and_second_entry_is_confirmed()
-    {
+    fn should_set_clipboard_pending_export_when_sink_a_is_available_and_first_entry_is_confirmed() {
+        // ADR 0099: in `--pr` mode the default export is the clipboard, so
+        // confirming the menu without moving copies instead of posting.
         let mut state = ReviewState::default()
             .open_list()
             .open_export_menu()
-            .list_down()
             .confirm_export(true);
 
         assert_eq!(&ReviewMode::Idle, state.mode());
@@ -322,6 +324,7 @@ mod verdict_menu_tests {
         ReviewState::default()
             .open_list()
             .open_export_menu()
+            .list_down()
             .confirm_export(true)
     }
 

@@ -1,8 +1,8 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
-// `deep_tree()`'s expanded row order: src(0), src/pkg(1), src/pkg/lib.rs(2),
-// foo(3), bar(4) — 5 rows total, used throughout so `CursorPageDown`/
+// `deep_tree()`'s expanded row order: src(0), src/pkg/lib.rs(1), foo(2),
+// bar(3) — 4 rows total, used throughout so `CursorPageDown`/
 // `CursorPageUp`'s clamping has more than one row of headroom to exercise.
 //
 // Every assert compares the whole `Nav` (cursor *and* collapse state): a
@@ -21,7 +21,7 @@ fn should_move_cursor_to_last_row_when_cursor_bottom() {
     let tree = deep_tree();
     let actual = Nav::new().handle(Action::CursorBottom, &tree);
 
-    assert_eq!(nav_at_cursor(4), actual);
+    assert_eq!(nav_at_cursor(3), actual);
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn should_clamp_cursor_to_last_row_when_cursor_page_down_overshoots() {
     let tree = deep_tree();
     let actual = Nav::new().handle(Action::CursorPageDown(100), &tree);
 
-    assert_eq!(nav_at_cursor(4), actual);
+    assert_eq!(nav_at_cursor(3), actual);
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn should_move_cursor_up_by_step_when_cursor_page_up() {
         .handle(Action::CursorBottom, &tree)
         .handle(Action::CursorPageUp(2), &tree);
 
-    assert_eq!(nav_at_cursor(2), actual);
+    assert_eq!(nav_at_cursor(1), actual);
 }
 
 #[test]
@@ -99,5 +99,5 @@ fn should_clamp_cursor_to_last_row_when_cursor_to_index_is_out_of_bounds() {
     let tree = deep_tree();
     let actual = Nav::new().handle(Action::CursorTo(100), &tree);
 
-    assert_eq!(nav_at_cursor(4), actual);
+    assert_eq!(nav_at_cursor(3), actual);
 }

@@ -234,7 +234,7 @@ fn walk(
             if let Some(child_label) = lookup.label(child_id) {
                 lines.push(BlastRadiusLine {
                     depth: depth + 1,
-                    label: format!("! {child_label} — already shown above (cycle)"),
+                    label: format!("{} {child_label} (shown above)", crate::glyph::CYCLE),
                     outside_prefix: false,
                     already_printed: false,
                     is_cycle_warning: true,
@@ -477,7 +477,7 @@ mod tests {
             },
             BlastRadiusLine {
                 depth: 2,
-                label: "! fn foo (src/api/handler.rs) — already shown above (cycle)".to_string(),
+                label: "↻ fn foo (src/api/handler.rs) (shown above)".to_string(),
                 outside_prefix: false,
                 already_printed: false,
                 is_cycle_warning: true,

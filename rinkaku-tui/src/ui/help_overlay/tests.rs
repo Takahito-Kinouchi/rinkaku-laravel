@@ -12,231 +12,83 @@ use rinkaku_core::extract::{ExtractedSymbol, SymbolKind};
 use rinkaku_core::graph::SymbolGraph;
 use rinkaku_core::render::{FileReport, Report};
 
-#[test]
-fn should_render_api_badge_swatch_with_yellow_number_when_building_markers_legend() {
+/// The style of the swatch span reading `swatch` in the legend line that
+/// carries it.
+fn swatch_style(swatch: &str) -> Style {
     let lines = markers_legend_lines(Locale::English);
-
-    let api_line = lines
+    let line = lines
         .iter()
         .find(|line| {
             line.spans
                 .iter()
-                .any(|span| span.content.as_ref() == "api:")
+                .any(|span| span.content.as_ref() == swatch)
         })
-        .expect("api: line present");
-
-    // NOTE: partial assert — a `Line` built from `format!` interpolation
-    // doesn't have one clean expected `Line` value to compare as a
-    // whole (the explanation half is plain, unstyled text pulled
-    // straight from `help::MARKER_LEGEND`), so this only pins the
-    // swatch's number span style, which is the thing this test exists
-    // to guard.
-    let number_span = line_span(api_line, "N");
-    assert_eq!(Style::default().fg(Color::Yellow), number_span.style);
+        .unwrap_or_else(|| panic!("{swatch:?} line present"));
+    line_span(line, swatch).style
 }
 
 #[test]
-fn should_render_fan_in_badge_swatch_with_cyan_number_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
+fn should_style_each_change_mark_swatch_like_the_tree_row_draws_it() {
+    let actual = [
+        swatch_style("+"),
+        swatch_style("○"),
+        swatch_style("●"),
+        swatch_style("-"),
+    ];
 
-    let fan_in_line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "fan-in:")
-        })
-        .expect("fan-in: line present");
-
-    let number_span = line_span(fan_in_line, "N");
-    assert_eq!(Style::default().fg(Color::Cyan), number_span.style);
-}
-
-#[test]
-fn should_render_warn_badge_swatch_with_yellow_number_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let warn_line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "warn:")
-        })
-        .expect("warn: line present");
-
-    let number_span = line_span(warn_line, "N");
-    assert_eq!(Style::default().fg(Color::Yellow), number_span.style);
-}
-
-#[test]
-fn should_render_split_badge_swatch_with_red_number_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let split_line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "split:")
-        })
-        .expect("split: line present");
-
-    let number_span = line_span(split_line, "N");
-    assert_eq!(Style::default().fg(Color::Red), number_span.style);
-}
-
-#[test]
-fn should_render_signature_changed_marker_swatch_with_yellow_tilde_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let changed_line = lines
-        .iter()
-        .find(|line| line.spans.iter().any(|span| span.content.as_ref() == "~"))
-        .expect("~ line present");
-
-    let swatch_span = line_span(changed_line, "~");
-    assert_eq!(Style::default().fg(Color::Yellow), swatch_span.style);
-}
-
-#[test]
-fn should_render_cycle_marker_swatch_bold_yellow_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let cycle_line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "(cycle)")
-        })
-        .expect("(cycle) line present");
-
-    let swatch_span = line_span(cycle_line, "(cycle)");
     assert_eq!(
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
-        swatch_span.style
+        [
+            Style::default().fg(Color::Green),
+            Style::default().fg(Color::Yellow),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red),
+        ],
+        actual
     );
 }
 
 #[test]
-fn should_render_added_marker_swatch_with_green_plus_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let added_line = lines
-        .iter()
-        .find(|line| line.spans.iter().any(|span| span.content.as_ref() == "+"))
-        .expect("+ line present");
-
-    let swatch_span = line_span(added_line, "+");
-    assert_eq!(Style::default().fg(Color::Green), swatch_span.style);
-}
-
-#[test]
-fn should_render_removed_marker_swatch_with_red_x_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let removed_line = lines
-        .iter()
-        .find(|line| line.spans.iter().any(|span| span.content.as_ref() == "x"))
-        .expect("x line present");
-
-    let swatch_span = line_span(removed_line, "x");
-    assert_eq!(Style::default().fg(Color::Red), swatch_span.style);
-}
-
-#[test]
-fn should_render_risk_marker_swatch_bold_red_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let risk_line = lines
-        .iter()
-        .find(|line| line.spans.iter().any(|span| span.content.as_ref() == "!"))
-        .expect("! line present");
-
-    let swatch_span = line_span(risk_line, "!");
+fn should_render_cycle_marker_swatch_as_an_uncolored_bold_mark_when_building_markers_legend() {
     assert_eq!(
-        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        swatch_span.style
+        Style::default().add_modifier(Modifier::BOLD),
+        swatch_style("↻")
     );
+}
+
+#[test]
+fn should_render_the_usage_count_swatch_in_deferred_gray() {
+    assert_eq!(Style::default().fg(Color::DarkGray), swatch_style("N"));
+}
+
+#[test]
+fn should_reuse_row_view_band_style_for_the_oversized_file_swatch() {
+    assert_eq!(
+        crate::row_view::band_style(FileSizeBand::Warn),
+        swatch_style("N lines")
+    );
+}
+
+#[test]
+fn should_render_the_used_by_header_swatch_in_the_selection_color() {
+    assert_eq!(Style::default().fg(Color::Cyan), swatch_style("↑ N:"));
 }
 
 #[test]
 fn should_render_dimmed_and_crossed_out_removed_name_swatch_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "(dimmed + struck-through name)")
-        })
-        .expect("removed-name swatch line present");
-
-    let swatch_span = line_span(line, "(dimmed + struck-through name)");
     assert_eq!(
         Style::default()
             .fg(Color::DarkGray)
             .add_modifier(Modifier::CROSSED_OUT),
-        swatch_span.style
+        swatch_style("(dimmed + struck-through name)")
     );
 }
 
 #[test]
-fn should_reuse_row_view_band_style_for_lines_swatch_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "lines:N")
-        })
-        .expect("lines:N line present");
-
-    let swatch_span = line_span(line, "lines:N");
+fn should_render_test_swatches_in_deferred_gray_when_building_markers_legend() {
     assert_eq!(
-        crate::row_view::band_style(FileSizeBand::Watch),
-        swatch_span.style
+        [Style::default().fg(Color::DarkGray); 2],
+        [swatch_style("[test] (N symbols)"), swatch_style("N tests")]
     );
-}
-
-#[test]
-fn should_render_test_badge_swatch_with_magenta_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "[test] (N symbols)")
-        })
-        .expect("[test] (N symbols) line present");
-
-    let swatch_span = line_span(line, "[test] (N symbols)");
-    assert_eq!(Style::default().fg(Color::Magenta), swatch_span.style);
-}
-
-#[test]
-fn should_render_test_group_swatch_dark_gray_when_building_markers_legend() {
-    let lines = markers_legend_lines(Locale::English);
-
-    let line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "N tests")
-        })
-        .expect("N tests line present");
-
-    let swatch_span = line_span(line, "N tests");
-    assert_eq!(Style::default().fg(Color::DarkGray), swatch_span.style);
 }
 
 fn line_span<'a>(line: &'a ratatui::text::Line<'static>, content: &str) -> &'a Span<'static> {
@@ -327,15 +179,14 @@ fn should_draw_help_overlay_with_keymap_markers_and_glossary_when_help_is_open()
     let report = report_with_one_symbol();
     let app = App::new(&report).handle_key(crate::app::InputKey::ToggleHelp);
     assert_eq!(crate::app::Focus::Tree, app.focus());
-    // A 150x76 terminal (up from 150x74): taller again so the
-    // overlay's 80% x 90% area still fits every keymap group —
-    // now including the `U` update-prompt binding (ADR 0054) in the
-    // "Global" group — the Markers legend, and the trailing Glossary
+    // A 150x80 terminal (up from 150x76 for the `✎N` legend entry, ADR
+    // 0099): taller again so the overlay's 80% x 90% area still fits
+    // every keymap group, the Markers legend, and the trailing Glossary
     // section without the last section being pushed off the bottom.
     // Grown here rather than narrowing the content itself, same
-    // rationale as the 100x40 -> 100x50 -> 150x70 -> 150x74 growths
+    // rationale as the 100x40 -> 100x50 -> 150x70 -> 150x74 -> 150x76 growths
     // this test already went through for earlier keymap additions.
-    let mut terminal = Terminal::new(TestBackend::new(150, 76)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(150, 80)).expect("terminal");
 
     terminal
         .draw(|frame| {
@@ -364,7 +215,7 @@ fn should_draw_help_overlay_with_keymap_markers_and_glossary_when_help_is_open()
         present_group_titles(&text)
     );
     assert!(text.contains("Markers"));
-    assert!(text.contains("fan-in:N"));
+    assert!(text.contains("N lines"));
     assert!(text.contains("Glossary"));
     assert!(text.contains("blast radius"));
 }
@@ -379,7 +230,7 @@ fn should_hide_tree_focus_and_source_view_groups_when_right_focused_on_diff_pane
         .handle_key(crate::app::InputKey::Open)
         .handle_key(crate::app::InputKey::ToggleHelp);
     assert_eq!(crate::app::Focus::Right, app.focus());
-    let mut terminal = Terminal::new(TestBackend::new(150, 76)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(150, 80)).expect("terminal");
 
     terminal
         .draw(|frame| {
@@ -419,7 +270,7 @@ fn should_show_only_source_view_and_global_groups_on_source_screen() {
         .handle_key(crate::app::InputKey::Source)
         .handle_key(crate::app::InputKey::ToggleHelp);
     assert!(matches!(app.screen(), crate::app::Screen::Source { .. }));
-    let mut terminal = Terminal::new(TestBackend::new(150, 76)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(150, 80)).expect("terminal");
 
     terminal
         .draw(|frame| {
@@ -449,7 +300,7 @@ fn should_show_only_source_view_and_global_groups_on_source_screen() {
 fn should_draw_help_overlay_in_japanese_when_locale_is_japanese() {
     let report = report_with_one_symbol();
     let app = App::new(&report).handle_key(crate::app::InputKey::ToggleHelp);
-    let mut terminal = Terminal::new(TestBackend::new(150, 76)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(150, 80)).expect("terminal");
 
     terminal
         .draw(|frame| {
@@ -490,8 +341,8 @@ fn should_draw_help_overlay_in_japanese_when_locale_is_japanese() {
 
     // One key-binding description (move-cursor, "Tree focus" group).
     assert!(text.contains(&widened("カーソルを移動")));
-    // One marker-legend entry (fan-in:N's explanation).
-    assert!(text.contains(&widened("高 fan-in シンボルの used_by 数の合計")));
+    // One marker-legend entry (the usage count's explanation).
+    assert!(text.contains(&widened("これを使っている本番コードのシンボル数")));
     // One glossary entry (blast radius).
     assert!(text.contains(&widened("依存ツリー")));
     // The overlay title and section headings switch too, proving this is

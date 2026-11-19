@@ -54,7 +54,7 @@ pub(crate) fn centered_rect(area: Rect, percent_width: u16, percent_height: u16)
 /// `Paragraph` unscrolled, so a popup with more candidates than the box's
 /// height could select an off-screen candidate with no visual feedback at
 /// all) — the same cursor-follow scroll `draw_tree_pane` uses, plus dim
-/// "… N more above/below" lines inside the box when the window does not
+/// `▲ N more` / `▼ N more` lines inside the box when the window does not
 /// reach an edge of the candidate list.
 ///
 /// Candidate labels are [`truncate_to_width`]-ed to the popup's own inner
@@ -302,7 +302,7 @@ mod tests {
         // The first candidate is far outside the window around index 24, so
         // it must not be rendered, and an overflow indicator must say so.
         assert!(!text.contains("sym0 ("), "sym0 should have scrolled off");
-        assert!(text.contains("more above"));
+        assert!(text.contains("▲"));
     }
 
     #[test]

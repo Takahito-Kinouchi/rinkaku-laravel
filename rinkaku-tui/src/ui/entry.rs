@@ -5,16 +5,19 @@
 use super::blast_radius::draw_blast_radius_pane;
 use super::detail_pane::draw_detail_pane;
 use super::diff_pane::draw_diff_pane;
-use super::scroll::{scroll_indicator, truncate_line_to_width, windowed_rows_with_indicators};
+use super::scroll::{truncate_line_to_width, windowed_rows_with_indicators};
 use super::style::pane_border_style;
 use super::{ENTRY_RIGHT_WIDTH_PERCENT, ENTRY_TREE_WIDTH_PERCENT, RightPaneRender};
 use crate::app::{App, BlastRadiusSelection, Focus, RightPane};
 use crate::highlight::HighlightedFile;
-use crate::row_view::{entry_row_line, relative_labels};
+use crate::row_view::{
+    RowState, entry_row_line, relative_labels, row_uses_count, uses_count_style,
+};
+use crate::tree::NodeKind;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use rinkaku_core::render::Report;
 
@@ -55,7 +58,8 @@ pub(crate) fn draw_entry_screen(
     ])
     .areas(area);
 
-    draw_tree_pane(frame, app, annotation_markers, tree_area);
+    let connections = crate::connections::Connections::of(app.edges(), app.selected_symbol_id());
+    draw_tree_pane(frame, app, annotation_markers, &connections, tree_area);
     match app.right_pane() {
         RightPane::Detail => RightPaneRender {
             clamped_scroll: draw_detail_pane(frame, app, report, right_area),
@@ -84,16 +88,14 @@ pub(crate) fn draw_entry_screen(
 /// bottom of the initial viewport (via repeated `j`, or a `gd`/`gr` jump
 /// landing far from the current scroll position) looked like the keypress
 /// had no effect at all, since the screen kept showing exactly the same
-/// rows. A `(first-last/total)` title suffix mirrors `render_scrollable_pane`'s
-/// own `scroll_indicator` convention, and the windowing also grows a dim
-/// "… N more above/below" line inside the pane itself when the window does
-/// not start/end at the list's own edge — belt and braces with the title
-/// suffix, since the title is easy to miss but the in-pane line sits right
-/// where the reviewer's eye already is.
+/// rows. The windowing grows a dim `▲ N more` / `▼ N more` line inside the
+/// pane itself when the window does not start/end at the list's own edge,
+/// right where the reviewer's eye already is.
 pub(crate) fn draw_tree_pane(
     frame: &mut Frame,
     app: &App,
     annotation_markers: &crate::annotation_markers::AnnotationMarkers,
+    connections: &crate::connections::Connections,
     area: Rect,
 ) {
     let rows = app.nav().rows(app.tree());
@@ -121,7 +123,34 @@ pub(crate) fn draw_tree_pane(
             .enumerate()
             .map(|(offset, (row, label))| {
                 let index = start + offset;
-                let line = entry_row_line(row, label, ranks, annotation_markers, index == cursor);
+                let checked = matches!(
+                    &row.node.kind,
+                    NodeKind::Symbol(symbol_ref) if app.is_checked(&symbol_ref.id)
+                );
+                let line = entry_row_line(
+                    row,
+                    label,
+                    ranks,
+                    annotation_markers,
+                    RowState {
+                        connection: connections.of_row(row),
+                        checked,
+                        selected: index == cursor,
+                    },
+                );
+                let line = if matches!(row.node.kind, NodeKind::Dir | NodeKind::Section(_)) {
+                    divider_rule(&line, viewport_width)
+                } else {
+                    line
+                };
+                let line = match row_uses_count(row, app.edges()) {
+                    Some(count) => flush_right(
+                        &line,
+                        Span::styled(count.to_string(), uses_count_style(row)),
+                        viewport_width,
+                    ),
+                    None => line,
+                };
                 // A confirmed tree search's matches carry the same bg tint
                 // as the Source view's (ADR 0057 amendment) — except on the
                 // cursor row, whose REVERSED style already marks it and
@@ -153,20 +182,59 @@ pub(crate) fn draw_tree_pane(
         .map(|line| truncate_line_to_width(line, viewport_width))
         .collect();
 
-    // `end - start`, not the raw `viewport_height`, is the title
-    // indicator's own "how many rows are actually visible" — the two can
-    // differ once `windowed_rows_with_indicators` has reserved rows for the
-    // in-pane "… N more" lines, and `scroll_indicator` reporting the
-    // unreserved `viewport_height` would overstate the last visible row.
-    let title = match scroll_indicator(rows.len(), end - start, start) {
-        Some(indicator) => format!("{}{indicator} ", " Entry".trim_end()),
-        None => " Entry ".to_string(),
-    };
+    // No `(first-last/total)` title suffix: the in-pane `▲ N more` /
+    // `▼ N more` lines already say what is out of view, and ADR 0099 keeps
+    // one notation per meaning.
+    let (checked, total) = app.review_progress();
     let block = Block::bordered()
-        .title(title)
+        .title(format!(
+            " Entry  {} {checked}/{total} ",
+            crate::glyph::CHECKED
+        ))
         .border_style(pane_border_style(app.focus() == Focus::Tree));
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
+}
+
+/// A divider row (ADR 0099 decision 2) drawn as its label followed by a
+/// dim `───` rule to the pane edge, so it reads as a section break rather
+/// than as one more entry.
+pub(crate) fn divider_rule(line: &Line<'static>, width: usize) -> Line<'static> {
+    let label = truncate_line_to_width(line, width);
+    let rule_width = width.saturating_sub(label.width() + 1);
+    if rule_width == 0 {
+        return label;
+    }
+    let mut spans = label.spans;
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(
+        "─".repeat(rule_width),
+        crate::glyph::deferred(),
+    ));
+    Line::from(spans).style(line.style)
+}
+
+/// `line` truncated to leave room for `right`, padded, then `right` flush
+/// against column `width` — how a symbol row's usage count (ADR 0099
+/// decision 1) lines up in one column however long the name is. `line`'s
+/// own line-level style (the cursor highlight) carries over, so the
+/// padding and the number are highlighted with the rest of the row.
+pub(crate) fn flush_right(
+    line: &Line<'static>,
+    right: Span<'static>,
+    width: usize,
+) -> Line<'static> {
+    let right_width = right.width();
+    if right_width + 1 > width {
+        return truncate_line_to_width(line, width);
+    }
+    let left_budget = width - right_width - 1;
+    let left = truncate_line_to_width(line, left_budget);
+    let padding = width - right_width - left.width();
+    let mut spans = left.spans;
+    spans.push(Span::raw(" ".repeat(padding)));
+    spans.push(right);
+    Line::from(spans).style(line.style)
 }
 
 #[cfg(test)]
@@ -176,7 +244,8 @@ mod tests {
     use crate::ui::draw;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
-    use ratatui::style::{Color, Modifier};
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
     use rinkaku_core::diff::LineRange;
     use rinkaku_core::extract::{ExtractedSymbol, SymbolKind};
     use rinkaku_core::graph::SymbolGraph;
@@ -259,6 +328,65 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn should_put_the_right_span_flush_against_the_pane_edge() {
+        let line = Line::from(vec![Span::raw("  ● "), Span::raw("foo")]);
+
+        let actual = super::flush_right(&line, Span::raw("6"), 12);
+
+        assert_eq!(
+            Line::from(vec![
+                Span::raw("  ● "),
+                Span::raw("foo"),
+                Span::raw("    "),
+                Span::raw("6"),
+            ]),
+            actual
+        );
+    }
+
+    #[test]
+    fn should_truncate_the_name_rather_than_the_number_when_the_row_is_too_long() {
+        let line = Line::from(Span::raw("  ● extract_changed_symbols"));
+
+        let actual = super::flush_right(&line, Span::raw("12"), 16);
+
+        assert_eq!("  ● extract_… 12", line_text(&actual));
+    }
+
+    #[test]
+    fn should_keep_the_lines_own_style_so_the_cursor_highlight_spans_the_padding() {
+        let style = Style::default().add_modifier(Modifier::REVERSED);
+        let line = Line::from(Span::raw("  foo")).style(style);
+
+        let actual = super::flush_right(&line, Span::raw("3"), 10);
+
+        assert_eq!(style, actual.style);
+    }
+
+    #[test]
+    fn should_follow_a_divider_label_with_a_dim_rule_to_the_pane_edge() {
+        let line = Line::from(Span::raw("▾ app"));
+
+        let actual = super::divider_rule(&line, 10);
+
+        assert_eq!(
+            Line::from(vec![
+                Span::raw("▾ app"),
+                Span::raw(" "),
+                Span::styled("────", crate::glyph::deferred()),
+            ]),
+            actual
+        );
+    }
+
+    fn line_text(line: &Line<'_>) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
     }
 
     #[test]
@@ -436,7 +564,7 @@ mod tests {
         // The very first file must have scrolled off given how far down the
         // cursor moved, and an overflow indicator must say so.
         assert!(!text.contains("f0.rs"), "f0.rs should have scrolled off");
-        assert!(text.contains("more above"));
+        assert!(text.contains("▲"));
     }
 
     #[test]

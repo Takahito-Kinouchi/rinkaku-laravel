@@ -433,29 +433,29 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
     let tag = locale.tag();
     vec![
         MarkerLegendEntry {
-            swatch: "v / >",
+            swatch: "▾ / ▸",
             explanation: rust_i18n::t!("help.marker.expand_marker", locale = tag).into_owned(),
-        },
-        MarkerLegendEntry {
-            swatch: "fn struct enum trait class iface type",
-            explanation: rust_i18n::t!("help.marker.symbol_kind_prefix", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
             swatch: "+",
             explanation: rust_i18n::t!("help.marker.added_symbol", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "~",
+            swatch: "○",
             explanation: rust_i18n::t!("help.marker.signature_changed_symbol", locale = tag)
                 .into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "(dimmed name)",
-            explanation: rust_i18n::t!("help.marker.body_only_symbol", locale = tag).into_owned(),
+            swatch: "●",
+            explanation: rust_i18n::t!("help.marker.risk_marker", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "x",
+            swatch: "-",
             explanation: rust_i18n::t!("help.marker.removed_symbol", locale = tag).into_owned(),
+        },
+        MarkerLegendEntry {
+            swatch: "(dimmed name)",
+            explanation: rust_i18n::t!("help.marker.body_only_symbol", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
             swatch: "(dimmed + struck-through name)",
@@ -463,12 +463,24 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
                 .into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "(cycle)",
+            swatch: "N",
+            explanation: rust_i18n::t!("help.marker.uses_count", locale = tag).into_owned(),
+        },
+        MarkerLegendEntry {
+            swatch: "↑ / ↓",
+            explanation: rust_i18n::t!("help.marker.connection", locale = tag).into_owned(),
+        },
+        MarkerLegendEntry {
+            swatch: "↻",
             explanation: rust_i18n::t!("help.marker.dependency_cycle", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "!",
-            explanation: rust_i18n::t!("help.marker.risk_marker", locale = tag).into_owned(),
+            swatch: "✎N",
+            explanation: rust_i18n::t!("help.marker.review_note", locale = tag).into_owned(),
+        },
+        MarkerLegendEntry {
+            swatch: "✓",
+            explanation: rust_i18n::t!("help.marker.checked", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
             swatch: "[test] (N symbols)",
@@ -485,32 +497,12 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
             explanation: rust_i18n::t!("help.marker.skipped_reason", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "chg:N",
-            explanation: rust_i18n::t!("help.marker.changed_count", locale = tag).into_owned(),
-        },
-        MarkerLegendEntry {
-            swatch: "api:N",
-            explanation: rust_i18n::t!("help.marker.api_count", locale = tag).into_owned(),
-        },
-        MarkerLegendEntry {
-            swatch: "fan-in:N",
-            explanation: rust_i18n::t!("help.marker.fan_in_count", locale = tag).into_owned(),
-        },
-        MarkerLegendEntry {
-            swatch: "lines:N",
+            swatch: "N lines",
             explanation: rust_i18n::t!("help.marker.lines_count", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "warn:N",
-            explanation: rust_i18n::t!("help.marker.warn_count", locale = tag).into_owned(),
-        },
-        MarkerLegendEntry {
-            swatch: "split:N",
-            explanation: rust_i18n::t!("help.marker.split_count", locale = tag).into_owned(),
-        },
-        MarkerLegendEntry {
-            swatch: "tests:0",
-            explanation: rust_i18n::t!("help.marker.tests_count", locale = tag).into_owned(),
+            swatch: "↑ N: ...",
+            explanation: rust_i18n::t!("help.marker.used_by_header", locale = tag).into_owned(),
         },
         // ADR 0088: a Diff pane *title* marker rather than a tree-row one,
         // listed here anyway — this legend answers "what is that thing on

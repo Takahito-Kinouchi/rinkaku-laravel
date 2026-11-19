@@ -36,6 +36,7 @@ fn should_build_current_signature_when_classification_is_not_signature_changed()
         callees: vec![],
         callers: vec![],
         depends_on: vec![],
+        test_count: None,
         omitted_dependency_matches: 0,
     };
     let actual = build_detail(&report, "lib.rs::foo");
@@ -366,4 +367,30 @@ fn should_exclude_self_edge_from_callers_callees_and_used_by() {
     assert_eq!(Vec::<SymbolMention>::new(), actual.callees);
     assert_eq!(Vec::<SymbolMention>::new(), actual.callers);
     assert_eq!(Vec::<SymbolMention>::new(), actual.used_by);
+}
+
+#[test]
+fn should_carry_the_symbols_test_reference_count_from_the_reports_coverage() {
+    // ADR 0099: the tree row stopped showing `tests:0`, so the count has to
+    // reach the Detail pane. A partial comparison: every other field is
+    // pinned by the tests above.
+    let report = Report {
+        origin: rinkaku_core::render::ReportOrigin::Diff,
+        files: vec![FileReport {
+            path: "lib.rs".to_string(),
+            symbols: vec![symbol("lib.rs::foo", "foo")],
+        }],
+        test_coverage: vec![rinkaku_core::graph::TestCoverage {
+            id: "lib.rs::foo".to_string(),
+            path: "lib.rs".to_string(),
+            name: "foo".to_string(),
+            covering_tests: vec![],
+            test_count: 0,
+        }],
+        ..empty_report()
+    };
+
+    let actual = build_detail(&report, "lib.rs::foo").map(|detail| detail.test_count);
+
+    assert_eq!(Some(Some(0)), actual);
 }

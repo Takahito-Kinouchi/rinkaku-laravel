@@ -440,12 +440,15 @@ impl ReviewState {
 /// on the menu, in what order" (rather than the render path keeping a
 /// second, hand-written entry list that could disagree with the one
 /// `confirm_export` resolves the cursor against).
+///
+/// Clipboard comes first even when GitHub is available (ADR 0099): the
+/// menu opens with the cursor on entry 0, so the default export is the one
+/// that cannot post anything on the reviewer's behalf.
 pub(crate) fn export_menu_entries(sink_a_available: bool) -> Vec<ExportMenuEntry> {
-    let mut entries = Vec::new();
+    let mut entries = vec![ExportMenuEntry::Clipboard];
     if sink_a_available {
         entries.push(ExportMenuEntry::Github);
     }
-    entries.push(ExportMenuEntry::Clipboard);
     entries
 }
 

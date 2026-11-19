@@ -221,19 +221,19 @@ fn draw_frame(
 
 #[test]
 fn should_report_the_rows_left_below_when_a_symbol_outgrows_the_pane() {
-    // At 80x20 the pane's body holds 14 rows (20 rows, less the status
-    // line, the two borders and the pane's own 2-line pinned header). The
+    // At 80x20 the pane's body holds 16 rows (20 rows, less the status
+    // line, the two borders and the pane's own 1-line pinned header). The
     // first of those is the `@@` hunk header, which carries no line of its
-    // own and is never marked, so 13 of the symbol's 40 changed rows are
-    // on screen and 27 are still below. One screen advances by 13 — the
-    // 14 visible logical rows less a row of overlap.
+    // own and is never marked, so 15 of the symbol's 40 changed rows are
+    // on screen and 25 are still below. One screen advances by 15 — the
+    // 16 visible logical rows less a row of overlap.
     let (outcome, _) = draw_tall_symbol_frame(0, 40);
 
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 27,
-            step: 13,
+            rows_below: 25,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -247,7 +247,7 @@ fn should_render_the_below_counter_in_the_pane_title() {
         .lines()
         .find(|line| line.contains("Diff"))
         .unwrap_or_else(|| panic!("expected a Diff pane title, got:\n{text}"));
-    assert!(title_row.contains("▼27"), "title row was: {title_row}");
+    assert!(title_row.contains("▼25"), "title row was: {title_row}");
     assert!(!title_row.contains('▲'), "title row was: {title_row}");
 }
 
@@ -262,8 +262,8 @@ fn should_report_both_counters_once_the_pane_is_scrolled_into_the_middle_of_the_
     assert_eq!(
         Some(ReadThrough {
             rows_above: 20,
-            rows_below: 7,
-            step: 13,
+            rows_below: 5,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -272,7 +272,7 @@ fn should_report_both_counters_once_the_pane_is_scrolled_into_the_middle_of_the_
         .find(|line| line.contains("Diff"))
         .unwrap_or_else(|| panic!("expected a Diff pane title, got:\n{text}"));
     assert!(title_row.contains("▲20"), "title row was: {title_row}");
-    assert!(title_row.contains("▼7"), "title row was: {title_row}");
+    assert!(title_row.contains("▼5"), "title row was: {title_row}");
 }
 
 #[test]
@@ -303,7 +303,7 @@ fn should_offer_nothing_to_read_through_on_a_file_row_with_symbol_rows_below_it(
         Some(ReadThrough {
             rows_above: 0,
             rows_below: 0,
-            step: 13,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -320,7 +320,7 @@ fn should_offer_nothing_to_read_through_on_a_file_row_with_its_symbol_rows_colla
         Some(ReadThrough {
             rows_above: 0,
             rows_below: 0,
-            step: 13,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -329,15 +329,15 @@ fn should_offer_nothing_to_read_through_on_a_file_row_with_its_symbol_rows_colla
 #[test]
 fn should_offer_the_whole_body_on_a_file_row_without_any_symbol_rows() {
     // The 2026-09-15 amendment: no symbol row will ever page this file, so
-    // its whole body is the file row's own claim — 15 of the 41 rows fit
-    // under the shorter symbol-less header, leaving 26 below.
+    // its whole body is the file row's own claim — 16 of the 41 rows fit
+    // under the 1-line header, leaving 25 below.
     let (outcome, _) = draw_symbol_less_file_frame(0, 40);
 
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 26,
-            step: 14,
+            rows_below: 25,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -350,8 +350,8 @@ fn should_offer_the_whole_file_on_a_file_row_while_the_right_pane_is_focused() {
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 27,
-            step: 13,
+            rows_below: 25,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -359,15 +359,15 @@ fn should_offer_the_whole_file_on_a_file_row_while_the_right_pane_is_focused() {
 
 #[test]
 fn should_offer_the_whole_symbol_less_file_while_the_right_pane_is_focused() {
-    // A symbol-less file's pinned header is one line shorter (no per-symbol
-    // stats line), so 15 of the 41 rows fit and 26 are still below.
+    // The pinned header is one line (no users to name), so 16 of the 41
+    // rows fit and 25 are still below.
     let (outcome, _) = draw_right_focused_symbol_less_file_frame(0, 40);
 
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 26,
-            step: 14,
+            rows_below: 25,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -377,7 +377,7 @@ fn should_offer_the_whole_symbol_less_file_while_the_right_pane_is_focused() {
 fn should_render_the_title_counters_for_a_file_rows_own_claim() {
     // The counters say what this row still owes the reviewer, so a file row
     // that does have rows to page shows them — beside, not instead of, the
-    // file-scoped `(1-15/41)` indicator.
+    // file-scoped `(1-16/41)` indicator.
     let (_, text) = draw_symbol_less_file_frame(0, 40);
 
     let title_row = text
@@ -385,10 +385,10 @@ fn should_render_the_title_counters_for_a_file_rows_own_claim() {
         .find(|line| line.contains("Diff"))
         .unwrap_or_else(|| panic!("expected a Diff pane title, got:\n{text}"));
     assert!(
-        title_row.contains("(1-15/41)"),
+        title_row.contains("(1-16/41)"),
         "title row was: {title_row}"
     );
-    assert!(title_row.contains("▼26"), "title row was: {title_row}");
+    assert!(title_row.contains("▼25"), "title row was: {title_row}");
     assert!(!title_row.contains('▲'), "title row was: {title_row}");
 }
 
@@ -414,8 +414,8 @@ fn should_report_the_rows_left_above_a_scrolled_right_focused_file_selection() {
     assert_eq!(
         Some(ReadThrough {
             rows_above: 20,
-            rows_below: 6,
-            step: 14,
+            rows_below: 5,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -425,15 +425,15 @@ fn should_report_the_rows_left_above_a_scrolled_right_focused_file_selection() {
 fn should_offer_the_rows_above_the_first_symbol_on_a_file_row() {
     // The gap this amendment exists for: lines 1-20 belong to no symbol, so
     // before it nothing in the tree ever paged them. Rows 0-20 (the `@@`
-    // header plus those 20 lines) are the file row's claim now; 14 fit, 7
+    // header plus those 20 lines) are the file row's claim now; 16 fit, 5
     // are left below.
     let (outcome, _) = draw_leading_gap_file_row_frame(0, 40);
 
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 7,
-            step: 13,
+            rows_below: 5,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -449,8 +449,8 @@ fn should_resume_at_the_first_symbol_where_the_file_rows_claim_ended() {
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 6,
-            step: 13,
+            rows_below: 4,
+            step: 15,
         }),
         outcome.diff_read_through
     );
@@ -466,8 +466,8 @@ fn should_offer_the_whole_body_on_a_skipped_files_row() {
     assert_eq!(
         Some(ReadThrough {
             rows_above: 0,
-            rows_below: 26,
-            step: 14,
+            rows_below: 25,
+            step: 15,
         }),
         outcome.diff_read_through
     );
