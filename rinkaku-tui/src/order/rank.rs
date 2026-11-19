@@ -180,7 +180,7 @@ pub fn rank_directories(report: &Report) -> HashMap<String, DirRank> {
 
 /// For every directory that participates in a directory-level cycle, the
 /// sorted list of *other* directories sharing that cycle — so a
-/// directory marked `(cycle)` in the entry view can name its actual
+/// directory marked `↻` in the entry view can name its actual
 /// partners rather than leaving the reviewer to guess. A directory with
 /// no cycle membership is absent from the returned map entirely (not
 /// present with an empty `Vec`).

@@ -134,9 +134,8 @@ pub(crate) fn gap_span(text: &str, bg: Option<Color>) -> Span<'static> {
 /// the placeholder `Block`s so the two states can never drift apart between
 /// panes.
 ///
-/// Focused uses `Color::Cyan` (the crate's existing accent color — the
-/// splash screen's logo/progress gauge and the tree pane's `chg:`/`fan-in:`
-/// badge counts, `crate::row_view::push_badge_spans`, already use it) plus
+/// Focused uses `Color::Cyan` (the selection color, `crate::glyph::selection`
+/// — focus is "where you are", the same meaning, ADR 0099) plus
 /// `Modifier::BOLD` so the focused border reads as "active" rather than just
 /// a different hue. Unfocused is a plain `Color::DarkGray` with no
 /// `Modifier::DIM` stacked on top — a sibling fix (comment-token styling,

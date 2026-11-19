@@ -13,7 +13,7 @@
 //! directory's detail is a badge breakdown plus, when it participates in a
 //! directory-level cycle, an explanation of exactly which directories it
 //! cycles with and which concrete symbol-to-symbol edges form that cycle —
-//! the entry view's `(cycle)` marker on its own only says *that* a
+//! the entry view's `↻` mark on its own only says *that* a
 //! directory cycles, not *with what*.
 
 use crate::order::{CycleEdge, cycle_explanation};

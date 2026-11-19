@@ -8,7 +8,7 @@
 //! transformation, unit-tested here the same way `crate::tree`/`crate::nav`
 //! test their own plain-data outputs. Layout (which rows are visible at
 //! all, where the split between panes falls, and computing each row's
-//! `label` from ancestor context — see [`relative_label`]) is `crate::ui`'s
+//! `label` from ancestor context — see [`relative_labels`]) is `crate::ui`'s
 //! job; this module only decides one row's content and styling given that
 //! label.
 
@@ -28,20 +28,19 @@ const INDENT_WIDTH: usize = 2;
 
 /// Builds the styled [`Line`] for one visible row.
 ///
-/// `label` is this row's display name: for a `Dir`/`File` row, the
-/// segment(s) of `crate::tree::TreeNode::path` not already implied by an
-/// ancestor row on screen (see [`relative_label`], which `crate::ui` uses
-/// to compute it while walking the tree — a pure per-row function like
-/// this one has no ancestor context of its own, since `crate::nav::Row`
-/// only exposes one node). Unused for a `Symbol` row, which always
-/// displays `SymbolRef::name` regardless of `label`.
+/// `label` is this row's display name: for a `Dir`/`File` row, its path as
+/// [`relative_labels`] shortens it below its divider — a pure per-row
+/// function like this one has no context of its own, since
+/// `crate::nav::Row` only exposes one node. Unused for a `Symbol` row,
+/// which always displays `SymbolRef::name` regardless of `label`.
 ///
-/// `ranks` is consulted only for a [`NodeKind::Dir`] row, to show the
-/// `(cycle)` warning marker (ADR 0016 decision 4 / ADR 0008's existing
-/// symbol-level cycle warning) — a directory's own `crate::order::DirRank`
-/// is looked up by its `path`, matching `crate::order`'s own map key.
-/// `selected` styles the row for the cursor (reverse video), independent
-/// of the node's own kind-based styling.
+/// `ranks` is consulted only for a [`NodeKind::Dir`] row, to show the `↻`
+/// cycle mark (ADR 0016 decision 4 / ADR 0008's existing symbol-level
+/// cycle warning) — a directory's own `crate::order::DirRank` is looked up
+/// by its `path`, matching `crate::order`'s own map key. `state` carries
+/// the cursor-relative facts (see [`RowState`]); `selected` styles the row
+/// for the cursor (reverse video), independent of the node's own
+/// kind-based styling.
 pub fn entry_row_line(
     row: &Row<'_>,
     label: &str,
@@ -290,15 +289,11 @@ fn push_oversized_file_span(spans: &mut Vec<Span<'static>>, badges: &Badges) {
 
 /// Appends a `✎N` badge (ADR 0048, ADR 0058, glyph per ADR 0099) — "this
 /// row has N review annotations attached" — a no-op when `count` is `None`
-/// or `0`. Kept as its
-/// own function rather than folded into [`push_badge_spans`]: that
-/// function's `Badges` input is baked once at tree-build time
+/// or `0`. Read from `crate::annotation_markers` rather than the row's
+/// `Badges`: those are baked once at tree-build time
 /// (`crate::tree::build_tree`'s own doc comment), while annotation counts
 /// change during the session (`crate::annotation_markers`'s own module doc
-/// comment) — a genuinely different data source, not just a different
-/// badge label. `ann:` rather than `n:` (ADR 0058) — `n` no longer names
-/// this feature's key binding, so keeping it as the badge abbreviation
-/// would be a stale mnemonic.
+/// comment).
 fn push_annotation_badge_span(spans: &mut Vec<Span<'static>>, count: Option<usize>) {
     let Some(count) = count.filter(|&count| count > 0) else {
         return;

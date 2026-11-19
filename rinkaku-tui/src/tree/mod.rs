@@ -152,9 +152,9 @@ impl SectionKind {
 ///   directory has no single band of its own, only the aggregates below.
 /// - `file_size_warn_count`/`file_size_split_count`: bottom-up count of
 ///   file nodes in this subtree at [`FileSizeBand::Warn`]/`Split`
-///   respectively, rendered as `warn:N`/`split:N` on directory rows.
-///   `Normal`/`Watch` files contribute to neither — those two bands are
-///   shown per-file only, not aggregated, since they are not
+///   respectively. No tree row renders them since ADR 0099 (the status
+///   line carries the repository-wide count, the file row its own size);
+///   `Normal`/`Watch` files contribute to neither, since they are not
 ///   "attention-worthy" the way `Warn`/`Split` are.
 /// - `test_count`: (ADR 0059) a leaf symbol's `Report.test_coverage` entry
 ///   count, see `symbol_badges`. Deliberately **not** aggregated upward the
