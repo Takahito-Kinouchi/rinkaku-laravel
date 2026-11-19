@@ -96,6 +96,10 @@ pub struct DetailView {
     /// `report` currently has, the same "no session state, just report
     /// data" discipline every other `DetailView` field already follows.
     pub depends_on: Vec<rinkaku_core::deps::ResolvedSymbol>,
+    /// How many test symbols reference this one (ADR 0059's
+    /// `report.test_coverage`), `None` when coverage does not apply. The tree
+    /// row stopped showing `tests:0` (ADR 0099), so this is where it lives.
+    pub test_count: Option<usize>,
     /// Mirrors
     /// [`rinkaku_core::extract::ExtractedSymbol::omitted_dependency_matches`]
     /// — see [`Self::depends_on`]'s own doc comment for why this can be
@@ -156,6 +160,11 @@ pub fn build_detail(report: &Report, id: &str) -> Option<DetailView> {
         callees,
         callers,
         depends_on: symbol.dependencies.clone(),
+        test_count: report
+            .test_coverage
+            .iter()
+            .find(|coverage| coverage.id == id)
+            .map(|coverage| coverage.test_count),
         omitted_dependency_matches: symbol.omitted_dependency_matches,
     })
 }

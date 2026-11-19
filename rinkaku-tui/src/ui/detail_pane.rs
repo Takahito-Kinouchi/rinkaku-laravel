@@ -205,16 +205,19 @@ pub(crate) fn file_detail_lines(detail: &FileDetail) -> Vec<Line<'static>> {
             } else {
                 match symbol.classification {
                     Some(Classification::Added) => crate::glyph::ADDED,
+                    Some(Classification::SignatureChanged)
+                        if symbol.fan_in >= rinkaku_core::graph::HIGH_FAN_IN_THRESHOLD =>
+                    {
+                        crate::glyph::MAY_BREAK
+                    }
                     Some(Classification::SignatureChanged) => crate::glyph::SIGNATURE_CHANGED,
                     Some(Classification::BodyOnly) | None => " ",
                 }
             };
-            // ADR 0013 amendment (2026-07-13, relabeled by ADR 0034): the
-            // compact fan-in badge matches `row_view::push_badge_spans`'
-            // `fan-in:N` labeling so the two panes agree on the badge
-            // legend.
+            // The same usage count the tree row shows flush right
+            // (ADR 0099), as `↑N` here since this list has no right column.
             let fan_in = if symbol.fan_in > 0 {
-                format!(" fan-in:{}", symbol.fan_in)
+                format!(" {}{}", crate::glyph::USED_BY, symbol.fan_in)
             } else {
                 String::new()
             };
@@ -321,6 +324,9 @@ pub(crate) fn detail_lines(
 
     if let Some(classification) = &detail.classification {
         lines.push(Line::raw(format!("classification: {classification:?}")));
+    }
+    if let Some(test_count) = detail.test_count {
+        lines.push(Line::raw(format!("tests referencing it: {test_count}")));
     }
 
     lines.push(Line::raw(""));

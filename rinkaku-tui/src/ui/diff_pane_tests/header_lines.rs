@@ -1,156 +1,94 @@
 use super::*;
-use crate::row_view::{BadgeContext, push_badge_spans};
 use pretty_assertions::assert_eq;
 
-fn bold(text: &str) -> Line<'static> {
-    Line::styled(
+fn bold(text: &str) -> Span<'static> {
+    Span::styled(
         text.to_string(),
         Style::default().add_modifier(Modifier::BOLD),
     )
 }
 
-fn tree_badge_line(badges: &Badges) -> Line<'static> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    push_badge_spans(&mut spans, badges, BadgeContext::File);
-    Line::from(spans)
+fn users_line(count: usize, names: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("↑ {count}: "), crate::glyph::selection()),
+        Span::raw(names.to_string()),
+    ])
 }
 
-fn range_line(text: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::raw("range: "),
-        Span::styled(
-            text.to_string(),
-            Style::default().add_modifier(Modifier::DIM),
-        ),
-    ])
+fn names(list: &[&str]) -> Vec<String> {
+    list.iter().map(|name| name.to_string()).collect()
 }
 
 #[test]
 fn should_join_symbol_name_and_path_on_first_header_line_when_selection_name_is_present() {
-    let badges = Badges::default();
+    let actual = diff_pane_header_lines(None, Some("foo"), "src/lib.rs", &[], 80);
 
-    let actual = diff_pane_header_lines(Some("foo"), "src/lib.rs", &badges, &[], 80);
-
-    assert_eq!(vec![bold("foo · src/lib.rs")], actual);
+    assert_eq!(vec![Line::from(bold("foo · src/lib.rs"))], actual);
 }
 
 #[test]
 fn should_show_bare_path_on_first_header_line_when_no_selection_name() {
-    let badges = Badges::default();
+    let actual = diff_pane_header_lines(None, None, "src/lib.rs", &[], 80);
 
-    let actual = diff_pane_header_lines(None, "src/lib.rs", &badges, &[], 80);
-
-    assert_eq!(vec![bold("src/lib.rs")], actual);
+    assert_eq!(vec![Line::from(bold("src/lib.rs"))], actual);
 }
 
 #[test]
-fn should_render_line_2_span_for_span_from_the_same_badges_the_tree_row_would_render() {
-    // Single-source-of-truth check: the diff pane's line 2 must be
-    // exactly what `push_badge_spans(..., BadgeContext::File)` produces
-    // for the same badges — no drift between the tree row and the header.
-    let badges = Badges {
-        changed_symbols: 1,
-        contract_changes: 1,
-        fan_in: 4,
-        test_count: None,
-        own_file_size_band: None,
-        own_file_line_count: None,
-        file_size_warn_count: 0,
-        file_size_split_count: 0,
-    };
+fn should_lead_the_first_header_line_with_the_rows_own_tree_mark() {
+    let mark = Span::styled("●", crate::glyph::danger());
 
-    let actual = diff_pane_header_lines(Some("foo"), "src/lib.rs", &badges, &[], 80);
+    let actual = diff_pane_header_lines(Some(mark.clone()), Some("foo"), "src/lib.rs", &[], 80);
 
     assert_eq!(
-        vec![bold("foo · src/lib.rs"), tree_badge_line(&badges)],
+        vec![Line::from(vec![
+            mark,
+            Span::raw(" "),
+            bold("foo · src/lib.rs")
+        ])],
         actual
     );
 }
 
 #[test]
-fn should_omit_line_2_when_badges_are_all_zero() {
-    let badges = Badges::default();
+fn should_leave_out_a_blank_mark_when_the_symbol_is_body_only() {
+    let actual = diff_pane_header_lines(Some(Span::raw(" ")), Some("foo"), "src/lib.rs", &[], 80);
 
-    let actual = diff_pane_header_lines(Some("foo"), "src/lib.rs", &badges, &[], 80);
-
-    assert_eq!(vec![bold("foo · src/lib.rs")], actual);
+    assert_eq!(vec![Line::from(bold("foo · src/lib.rs"))], actual);
 }
 
 #[test]
-fn should_append_range_line_when_ranges_is_non_empty() {
-    let badges = Badges::default();
-    let ranges = [(23, 41), (57, 60)];
+fn should_name_the_symbols_that_use_this_one_on_the_second_line() {
+    let used_by = names(&["build_symbol", "kind_word"]);
 
-    let actual = diff_pane_header_lines(Some("foo"), "src/lib.rs", &badges, &ranges, 80);
+    let actual = diff_pane_header_lines(None, Some("foo"), "src/lib.rs", &used_by, 80);
 
     assert_eq!(
-        vec![bold("foo · src/lib.rs"), range_line("23-41, 57-60")],
-        actual
-    );
-}
-
-#[test]
-fn should_render_single_line_range_without_a_dash() {
-    let badges = Badges::default();
-    let ranges = [(5, 5)];
-
-    let actual = diff_pane_header_lines(Some("foo"), "src/lib.rs", &badges, &ranges, 80);
-
-    assert_eq!(vec![bold("foo · src/lib.rs"), range_line("5")], actual);
-}
-
-#[test]
-fn should_omit_range_line_entirely_when_ranges_is_empty() {
-    let badges = Badges {
-        changed_symbols: 1,
-        ..Badges::default()
-    };
-
-    let actual = diff_pane_header_lines(Some("foo"), "src/lib.rs", &badges, &[], 80);
-
-    assert_eq!(
-        vec![bold("foo · src/lib.rs"), tree_badge_line(&badges)],
+        vec![
+            Line::from(bold("foo · src/lib.rs")),
+            users_line(2, "build_symbol · kind_word")
+        ],
         actual
     );
 }
 
 #[test]
 fn should_truncate_first_header_line_keeping_the_tail_when_it_overflows_width() {
-    let badges = Badges::default();
-
     let actual = diff_pane_header_lines(
+        None,
         Some("very_long_symbol_name_here"),
         "src/very/deeply/nested/module/lib.rs",
-        &badges,
         &[],
         20,
     );
 
-    assert_eq!(vec![bold("…ested/module/lib.rs")], actual);
+    assert_eq!(vec![Line::from(bold("…ested/module/lib.rs"))], actual);
 }
 
 #[test]
-fn should_truncate_range_list_from_the_head_when_the_joined_list_overflows_width() {
-    let badges = Badges::default();
-    let ranges = [(1, 5), (10, 20), (100, 200), (300, 400)];
+fn should_count_each_user_once_and_name_a_repeated_name_once_with_its_multiplicity() {
+    let used_by = names(&["build_symbol", "kind_abbrev", "kind_abbrev", "kind_word"]);
 
-    let actual = diff_pane_header_lines(None, "lib.rs", &badges, &ranges, 20);
+    let actual = users_summary(&used_by);
 
-    // The `"range: "` label stays fixed and the *range list itself* is
-    // head-truncated (`…` at the start), keeping the later line numbers
-    // — the ones the reviewer scrolled to see — visible at the tail.
-    assert_eq!(vec![bold("lib.rs"), range_line("…200, 300-400")], actual);
-}
-
-#[test]
-fn should_omit_range_line_when_width_cannot_fit_the_range_prefix() {
-    let badges = Badges::default();
-    let ranges = [(1, 5)];
-
-    // Width narrower than `"range: "` (7 chars) — dropping the whole
-    // line avoids rendering a bare `range: ` prefix that overflows the
-    // requested width and reads as if the range list itself were empty.
-    let actual = diff_pane_header_lines(None, "lib.rs", &badges, &ranges, 5);
-
-    assert_eq!(vec![bold("…b.rs")], actual);
+    assert_eq!("build_symbol · kind_abbrev ×2 · kind_word", actual);
 }

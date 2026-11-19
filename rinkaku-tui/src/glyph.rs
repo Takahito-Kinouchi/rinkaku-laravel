@@ -14,9 +14,13 @@ use ratatui::style::{Color, Modifier, Style};
 
 pub(crate) const ADDED: &str = "+";
 pub(crate) const REMOVED: &str = "-";
-pub(crate) const SIGNATURE_CHANGED: &str = "~";
-pub(crate) const RISK: &str = "!";
+/// Signature changed, few or no users.
+pub(crate) const SIGNATURE_CHANGED: &str = "○";
+/// Signature changed and other symbols use it: it may break them.
+pub(crate) const MAY_BREAK: &str = "●";
 pub(crate) const CYCLE: &str = "↻";
+/// "Uses the symbol under the cursor" (ADR 0099 decision 3).
+pub(crate) const USED_BY: &str = "↑";
 /// A Blast-radius entry: "the pivot reaches this".
 pub(crate) const REACHES: &str = "↓";
 pub(crate) const NOTE: &str = "✎";

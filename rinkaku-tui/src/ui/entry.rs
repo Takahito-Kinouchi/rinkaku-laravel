@@ -10,11 +10,11 @@ use super::style::pane_border_style;
 use super::{ENTRY_RIGHT_WIDTH_PERCENT, ENTRY_TREE_WIDTH_PERCENT, RightPaneRender};
 use crate::app::{App, BlastRadiusSelection, Focus, RightPane};
 use crate::highlight::HighlightedFile;
-use crate::row_view::{entry_row_line, relative_labels};
+use crate::row_view::{entry_row_line, relative_labels, row_uses_count, uses_count_style};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use rinkaku_core::render::Report;
 
@@ -119,6 +119,14 @@ pub(crate) fn draw_tree_pane(
             .map(|(offset, (row, label))| {
                 let index = start + offset;
                 let line = entry_row_line(row, label, ranks, annotation_markers, index == cursor);
+                let line = match row_uses_count(row) {
+                    Some(count) => flush_right(
+                        &line,
+                        Span::styled(count.to_string(), uses_count_style(row)),
+                        viewport_width,
+                    ),
+                    None => line,
+                };
                 // A confirmed tree search's matches carry the same bg tint
                 // as the Source view's (ADR 0057 amendment) — except on the
                 // cursor row, whose REVERSED style already marks it and
@@ -160,6 +168,29 @@ pub(crate) fn draw_tree_pane(
     frame.render_widget(paragraph, area);
 }
 
+/// `line` truncated to leave room for `right`, padded, then `right` flush
+/// against column `width` — how a symbol row's usage count (ADR 0099
+/// decision 1) lines up in one column however long the name is. `line`'s
+/// own line-level style (the cursor highlight) carries over, so the
+/// padding and the number are highlighted with the rest of the row.
+pub(crate) fn flush_right(
+    line: &Line<'static>,
+    right: Span<'static>,
+    width: usize,
+) -> Line<'static> {
+    let right_width = right.width();
+    if right_width + 1 > width {
+        return truncate_line_to_width(line, width);
+    }
+    let left_budget = width - right_width - 1;
+    let left = truncate_line_to_width(line, left_budget);
+    let padding = width - right_width - left.width();
+    let mut spans = left.spans;
+    spans.push(Span::raw(" ".repeat(padding)));
+    spans.push(right);
+    Line::from(spans).style(line.style)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::app::{App, BlastRadiusSelection};
@@ -167,7 +198,8 @@ mod tests {
     use crate::ui::draw;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
-    use ratatui::style::{Color, Modifier};
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
     use rinkaku_core::diff::LineRange;
     use rinkaku_core::extract::{ExtractedSymbol, SymbolKind};
     use rinkaku_core::graph::SymbolGraph;
@@ -250,6 +282,49 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn should_put_the_right_span_flush_against_the_pane_edge() {
+        let line = Line::from(vec![Span::raw("  ● "), Span::raw("foo")]);
+
+        let actual = super::flush_right(&line, Span::raw("6"), 12);
+
+        assert_eq!(
+            Line::from(vec![
+                Span::raw("  ● "),
+                Span::raw("foo"),
+                Span::raw("    "),
+                Span::raw("6"),
+            ]),
+            actual
+        );
+    }
+
+    #[test]
+    fn should_truncate_the_name_rather_than_the_number_when_the_row_is_too_long() {
+        let line = Line::from(Span::raw("  ● extract_changed_symbols"));
+
+        let actual = super::flush_right(&line, Span::raw("12"), 16);
+
+        assert_eq!("  ● extract_… 12", line_text(&actual));
+    }
+
+    #[test]
+    fn should_keep_the_lines_own_style_so_the_cursor_highlight_spans_the_padding() {
+        let style = Style::default().add_modifier(Modifier::REVERSED);
+        let line = Line::from(Span::raw("  foo")).style(style);
+
+        let actual = super::flush_right(&line, Span::raw("3"), 10);
+
+        assert_eq!(style, actual.style);
+    }
+
+    fn line_text(line: &Line<'_>) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
     }
 
     #[test]

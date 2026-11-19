@@ -83,62 +83,31 @@ fn should_have_no_empty_keymap_group() {
 }
 
 #[test]
-fn should_order_marker_legend_added_changed_removed_then_aggregates() {
+fn should_order_marker_legend_from_the_row_marks_to_the_pane_markers() {
     let content = help_content(Locale::English);
     let swatches: Vec<&str> = content.markers.iter().map(|entry| entry.swatch).collect();
 
     assert_eq!(
         vec![
             "▾ / ▸",
-            "fn struct enum trait class iface type",
             "+",
-            "~",
-            "(dimmed name)",
+            "○",
+            "●",
             "-",
+            "(dimmed name)",
             "(dimmed + struck-through name)",
+            "N",
             "↻",
-            "!",
             "✎N",
             "[test] (N symbols)",
             "N tests",
             "(skipped: ...)",
-            "chg:N",
-            "api:N",
-            "fan-in:N",
-            "lines:N",
-            "warn:N",
-            "split:N",
-            "tests:0",
+            "N lines",
+            "↑ N: ...",
             "▲N / ▼N",
         ],
         swatches
     );
-}
-
-#[test]
-fn should_describe_api_badge_as_signature_changed_plus_removed_symbols() {
-    let content = help_content(Locale::English);
-    let entry = content
-        .markers
-        .iter()
-        .find(|entry| entry.swatch == "api:N")
-        .expect("api:N entry present");
-
-    assert!(entry.explanation.contains("removed"));
-    assert!(entry.explanation.contains("signature-changed"));
-}
-
-#[test]
-fn should_describe_fan_in_badge_as_a_sum_over_high_fan_in_symbols() {
-    let content = help_content(Locale::English);
-    let entry = content
-        .markers
-        .iter()
-        .find(|entry| entry.swatch == "fan-in:N")
-        .expect("fan-in:N entry present");
-
-    assert!(entry.explanation.contains("Sum"));
-    assert!(entry.explanation.contains("high-fan-in"));
 }
 
 #[test]

@@ -2,7 +2,7 @@ use super::*;
 use rstest::rstest;
 
 #[test]
-fn should_render_plain_text_for_zero_badges_and_no_classification() {
+fn should_render_a_body_only_symbol_as_its_bare_name() {
     let node = symbol_node("lib.rs", plain_symbol("foo"), Badges::default());
     let row = Row {
         node: &node,
@@ -18,51 +18,11 @@ fn should_render_plain_text_for_zero_badges_and_no_classification() {
         false,
     );
 
-    assert_eq!("        fn foo", line_text(&line));
+    assert_eq!("        foo", line_text(&line));
 }
 
 #[test]
-fn should_include_badge_labels_for_nonzero_badges_on_a_dir_row() {
-    // ADR 0013 amendments (2026-07-13): all three badges use text labels
-    // (`chg:` / `api:` / `fan-in:`) instead of glyphs — the first
-    // amendment relabeled changed-symbol/fan-in (as `ref:`, later
-    // relabeled `fan-in:` per ADR 0034), the second (feat/label-contract-
-    // changes-badge) relabeled contract-change from a bare `!` after
-    // user testing showed it read as generic "warning" with no hint of
-    // what changed. `fan_in: 1` here (rather than a higher, still-nonzero
-    // value) deliberately stays below `HIGH_FAN_IN_THRESHOLD` so this
-    // fixture does not also trigger the `!` risk marker tested separately
-    // in `should_prepend_risk_marker_for_a_high_risk_dir_row` — this test's
-    // only concern is the three badges' own label wording.
-    let node = dir_node(
-        "src",
-        Badges {
-            changed_symbols: 2,
-            contract_changes: 1,
-            fan_in: 1,
-            ..Badges::default()
-        },
-        vec![file_node("src/a.rs", Badges::default())],
-    );
-    let row = Row {
-        node: &node,
-        depth: 0,
-        expanded: true,
-    };
-
-    let line = entry_row_line(
-        &row,
-        "src",
-        &HashMap::new(),
-        &crate::annotation_markers::AnnotationMarkers::default(),
-        false,
-    );
-
-    assert_eq!("▾ src chg:2 api:1 fan-in:1", line_text(&line));
-}
-
-#[test]
-fn should_omit_zero_badges_entirely() {
+fn should_render_a_plain_file_row_as_its_bare_name() {
     let node = file_node("lib.rs", Badges::default());
     let row = Row {
         node: &node,
@@ -78,7 +38,7 @@ fn should_omit_zero_badges_entirely() {
         false,
     );
 
-    assert_eq!("  lib.rs ", line_text(&line));
+    assert_eq!("  lib.rs", line_text(&line));
 }
 
 #[test]
@@ -98,7 +58,7 @@ fn should_append_skip_reason_for_a_skipped_file_row() {
         false,
     );
 
-    assert_eq!("  assets/logo.png  (skipped: binary)", line_text(&line));
+    assert_eq!("  assets/logo.png (skipped: binary)", line_text(&line));
 }
 
 #[rstest]
@@ -227,7 +187,7 @@ fn should_prepend_test_badge_with_plural_symbols_noun_before_a_whole_test_file_l
         false,
     );
 
-    assert_eq!("  [test] (3 symbols) src/lib_test.go ", line_text(&line));
+    assert_eq!("  [test] (3 symbols) src/lib_test.go", line_text(&line));
 }
 
 #[test]
@@ -247,7 +207,7 @@ fn should_prepend_test_badge_with_singular_symbol_noun_when_count_is_one() {
         false,
     );
 
-    assert_eq!("  [test] (1 symbol) src/lib_test.go ", line_text(&line));
+    assert_eq!("  [test] (1 symbol) src/lib_test.go", line_text(&line));
 }
 
 #[test]
@@ -271,7 +231,7 @@ fn should_show_collapse_marker_when_dir_is_not_expanded() {
         false,
     );
 
-    assert_eq!("▸ src ", line_text(&line));
+    assert_eq!("▸ src", line_text(&line));
 }
 
 // ADR 0035 Phase B: a `NodeKind::Section` row renders like a `Dir` row
@@ -282,7 +242,7 @@ fn should_show_collapse_marker_when_dir_is_not_expanded() {
 // produces entries for real file-tree directories).
 
 #[test]
-fn should_render_section_row_with_its_fixed_label_and_badges() {
+fn should_render_section_row_with_its_fixed_label_and_no_counts() {
     let node = section_node(
         SectionKind::Tests,
         Badges {
@@ -305,7 +265,7 @@ fn should_render_section_row_with_its_fixed_label_and_badges() {
         false,
     );
 
-    assert_eq!("▾ Tests chg:5", line_text(&line));
+    assert_eq!("▾ Tests", line_text(&line));
 }
 
 #[test]
@@ -329,7 +289,7 @@ fn should_show_collapse_marker_for_a_collapsed_section_row() {
         false,
     );
 
-    assert_eq!("▸ Tests ", line_text(&line));
+    assert_eq!("▸ Tests", line_text(&line));
 }
 
 #[test]
@@ -361,7 +321,7 @@ fn should_never_show_cycle_marker_on_a_section_row_even_if_ranks_has_a_stray_ent
         false,
     );
 
-    assert_eq!("  Tests ", line_text(&line));
+    assert_eq!("  Tests", line_text(&line));
 }
 
 #[test]
@@ -389,7 +349,7 @@ fn should_append_cycle_marker_when_dir_path_is_in_cycle() {
         false,
     );
 
-    assert_eq!("  src  ↻", line_text(&line));
+    assert_eq!("  src ↻", line_text(&line));
 }
 
 #[test]
@@ -417,7 +377,7 @@ fn should_not_append_cycle_marker_when_dir_path_is_not_in_cycle() {
         false,
     );
 
-    assert_eq!("  src ", line_text(&line));
+    assert_eq!("  src", line_text(&line));
 }
 
 #[test]
@@ -441,11 +401,11 @@ fn should_mark_added_symbol_with_plus() {
         false,
     );
 
-    assert_eq!("  + fn new_fn", line_text(&line));
+    assert_eq!("  + new_fn", line_text(&line));
 }
 
 #[test]
-fn should_mark_signature_changed_symbol_with_tilde() {
+fn should_mark_signature_changed_symbol_without_users_with_an_open_circle() {
     let symbol_ref = SymbolRef {
         classification: Some(Classification::SignatureChanged),
         ..plain_symbol("changed_fn")
@@ -465,7 +425,7 @@ fn should_mark_signature_changed_symbol_with_tilde() {
         false,
     );
 
-    assert_eq!("  ~ fn changed_fn", line_text(&line));
+    assert_eq!("  ○ changed_fn", line_text(&line));
 }
 
 #[test]
@@ -489,7 +449,7 @@ fn should_mark_removed_symbol_with_the_diffs_minus_sign() {
         false,
     );
 
-    assert_eq!("  - fn gone_fn", line_text(&line));
+    assert_eq!("  - gone_fn", line_text(&line));
 }
 
 // Visual-encoding prototype: a test symbol left in the production tree
@@ -520,7 +480,7 @@ fn should_dim_name_and_omit_test_badge_for_a_test_symbol_in_a_mixed_file() {
         false,
     );
 
-    assert_eq!("    fn test_it", line_text(&line));
+    assert_eq!("    test_it", line_text(&line));
     assert_eq!(
         Some(Color::DarkGray),
         fg_of_span_with_content(&line, "test_it")
@@ -544,7 +504,7 @@ fn should_not_append_test_badge_for_an_ordinary_non_test_symbol() {
         false,
     );
 
-    assert_eq!("    fn foo", line_text(&line));
+    assert_eq!("    foo", line_text(&line));
 }
 
 #[test]
@@ -604,7 +564,7 @@ fn should_indent_by_depth_times_indent_width() {
         false,
     );
 
-    assert_eq!("        lib.rs ", line_text(&line));
+    assert_eq!("        lib.rs", line_text(&line));
 }
 
 // Visual-encoding prototype: a body-only (or unclassified) symbol's name
@@ -746,7 +706,7 @@ fn should_show_annotation_badge_on_a_symbol_row_with_a_matching_annotation_count
 
     let line = entry_row_line(&row, "", &HashMap::new(), &annotation_markers, false);
 
-    assert_eq!("    fn foo ✎2", line_text(&line));
+    assert_eq!("    foo ✎2", line_text(&line));
 }
 
 #[test]
@@ -764,7 +724,7 @@ fn should_omit_annotation_badge_on_a_symbol_row_with_no_matching_annotation_coun
 
     let line = entry_row_line(&row, "", &HashMap::new(), &annotation_markers, false);
 
-    assert_eq!("    fn foo", line_text(&line));
+    assert_eq!("    foo", line_text(&line));
 }
 
 #[test]
@@ -782,5 +742,5 @@ fn should_show_annotation_badge_on_a_file_row_with_a_matching_annotation_count()
 
     let line = entry_row_line(&row, "lib.rs", &HashMap::new(), &annotation_markers, false);
 
-    assert_eq!("  lib.rs  ✎3", line_text(&line));
+    assert_eq!("  lib.rs ✎3", line_text(&line));
 }

@@ -143,41 +143,34 @@ to what is actually pressable on the current screen.
 
 ### Tree pane (entry view)
 
+Each symbol row carries one mark and at most one number
+([ADR 0099](docs/adr/0099-tui-review-flow-redesign.md)):
+
 | Marker | Color | Meaning |
 | --- | --- | --- |
 | `▾` / `▸` | — | Expanded / collapsed; blank means a leaf with nothing to expand |
-| `fn` `struct` `enum` `trait` `class` `iface` `type` `block` `section` | — | Symbol kind prefix, abbreviating each language's keyword |
 | `+` | green | Added symbol |
-| `~` | yellow | Symbol whose signature changed |
+| `○` | yellow | Signature changed, few or no users |
+| `●` | red, bold | Signature changed and other symbols use it: it may break them. On a collapsed directory/file row: one such symbol is inside |
 | `-` | red | Removed symbol (the same mark as a removed diff line) |
 | (no marker, one blank column) | grey | Body-only change, unclassified, or a test symbol — the name is grey too: present, but low review priority |
 | Grey struck-through name | grey | The name of a removed symbol |
-| `!` | red, bold | Risk marker: a contract change and a high fan-in symbol coexist in this subtree |
+| `N` at the right edge | grey (red on a `●` row) | How many other production symbols use it; tests don't count |
 | `↻` | bold | The directory contains a dependency cycle |
+| `✎N` | bold | Review annotations attached to this row |
+| `N lines` | red (bold past 1500) | The file is over 1000 lines; smaller files show no count |
 | `[test] (N symbols)` | grey | The whole file is tests |
 | `N tests` | grey | Collapsed group of the file's test symbols |
 | `(skipped: ...)` | grey | Why the file was not analyzed (unsupported language, binary, generated, deleted, outside the repository) |
 
-### Count badges
-
-| Badge | Color | Meaning |
-| --- | --- | --- |
-| `chg:N` | cyan | Changed (non-removed) symbols in this subtree |
-| `api:N` | yellow | Contract changes in this subtree: signature-changed plus removed symbols |
-| `fan-in:N` | cyan | Total `used_by` count of the high fan-in symbols in this subtree |
-| `lines:N` | band color | This file's own line count, colored by file-size band (normal: default / watch: yellow / warn: red / split: red bold) |
-| `warn:N` | yellow | Directory row: Warn-band files in this subtree |
-| `split:N` | red | Directory row: Split-band files in this subtree |
-| `tests:0` | yellow | Symbol row: no test symbol references this symbol |
-| `✎N` | bold | Review annotations attached to this row |
-
-`api:`, `warn:`, `split:` and `tests:0` are yellow or red because they mean
-"look at this"; cyan badges are information, not a warning.
+How many tests reference a symbol is in its Detail pane.
 
 ### Diff and Detail panes
 
 | Marker | Color | Meaning |
 | --- | --- | --- |
+| First header line | — | The row's own tree mark, then `name · path` |
+| `↑ N: a · b ×2` | cyan | The symbols that use the selected one (the same set behind the tree row's count) |
 | `+` / `-` | green / red | Added / removed line (also in the Detail pane's signature diff) |
 | `@@ ...` | grey | Hunk header |
 | `✎` at line start | bold | This line carries a review annotation (new side only, in both unified and split views) |
@@ -442,41 +435,34 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 
 ### ツリーペイン（エントリービュー）
 
+シンボルの行には印が1つ、数は最大1つ
+（[ADR 0099](docs/adr/0099-tui-review-flow-redesign.md)）:
+
 | 記号 | 色 | 意味 |
 | --- | --- | --- |
 | `▾` / `▸` | — | 展開 / 折りたたみ。空欄は展開対象のないリーフ |
-| `fn` `struct` `enum` `trait` `class` `iface` `type` `block` | — | シンボル行の種別プレフィックス（各言語のキーワードの略記） |
 | `+` | 緑 | 追加されたシンボル |
-| `~` | 黄 | シグネチャが変更されたシンボル |
+| `○` | 黄 | シグネチャが変わった（使う側が少ない） |
+| `●` | 赤（太字） | シグネチャが変わり、他のシンボルが使っている: 壊れるかも。折りたたんだディレクトリ / ファイルの行では、中にある |
 | `-` | 赤 | 削除されたシンボル（差分の削除行と同じ記号） |
 | （マーカー無し・空白 1 桁） | 灰 | body のみの変更、未分類、またはテストのシンボル。名前も灰色で、存在はするがレビュー優先度は低いことを示す |
 | 灰色＋取り消し線の名前 | 灰 | 削除されたシンボルの名前 |
-| `!` | 赤（太字） | リスクマーカー: 同じサブツリー内に契約変更と高 fan-in シンボルが共存 |
+| 右端の `N` | 灰（`●` の行は赤） | これを使っている本番コードのシンボル数（テストは数えない） |
 | `↻` | 太字 | ディレクトリ内に依存の循環がある |
+| `✎N` | 太字 | この行に紐づくレビューアノテーションの件数 |
+| `N lines` | 赤（1500行超えは太字） | 1000行を超えるファイル。それ以下のファイルには行数を出さない |
 | `[test] (N symbols)` | 灰 | ファイル全体がテスト |
 | `N tests` | 灰 | ファイル内のテストシンボルの折りたたみグループ |
 | `(skipped: ...)` | 灰 | 解析されなかった理由（未対応言語、バイナリ、生成物、削除済み、リポジトリ外） |
 
-### バッジ（件数）
-
-| バッジ | 色 | 意味 |
-| --- | --- | --- |
-| `chg:N` | シアン | このサブツリー内の変更済み（削除以外）シンボル数 |
-| `api:N` | 黄 | このサブツリー内の契約変更: シグネチャ変更シンボルと削除シンボルの合計 |
-| `fan-in:N` | シアン | このサブツリー内の高 fan-in シンボルの `used_by` 合計 |
-| `lines:N` | band 色 | このファイル自体の行数。file-size band で色分け（normal: 既定色 / watch: 黄 / warn: 赤 / split: 赤・太字） |
-| `warn:N` | 黄 | ディレクトリ行: このサブツリー内の Warn band ファイル数 |
-| `split:N` | 赤 | ディレクトリ行: このサブツリー内の Split band ファイル数 |
-| `tests:0` | 黄 | シンボル行: このシンボルを参照するテストシンボルが 0 件 |
-| `✎N` | 太字 | この行に紐づくレビューアノテーションの件数 |
-
-`api:` と `warn:` / `split:` / `tests:0` が黄・赤なのは「確認が必要」を示すため、
-シアンのバッジは単なる情報量です。
+シンボルを参照しているテストの数は Detail ペインに出ます。
 
 ### Diff ペイン / Detail ペイン
 
 | 記号 | 色 | 意味 |
 | --- | --- | --- |
+| 見出しの1行目 | — | ツリーと同じ印、続けて `名前 · パス` |
+| `↑ N: a · b ×2` | シアン | 選んだシンボルを使っているシンボル（ツリーの行の数と同じ集合） |
 | `+` / `-` | 緑 / 赤 | 追加行 / 削除行（Detail ペインのシグネチャ差分も同じ） |
 | `@@ ...` | 灰 | hunk ヘッダ |
 | 行頭の `✎` | 太字 | その行にレビューアノテーションが付いている（unified / split とも新側のみ） |

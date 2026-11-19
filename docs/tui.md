@@ -27,24 +27,18 @@ only becomes load-bearing when the output would otherwise not be TUI
   from syntactic tree-sitter resolution, not a type checker, so a
   reference can occasionally be missed.
 
-  Rows carry badges: `chg:N` changed symbols, `api:N` contract changes
-  (added / removed / signature-changed), `fan-in:N` other *production*
-  symbols referencing this one — tests exercising it don't count, so
-  the number reflects blast radius among changed code, not test
-  coverage. `chg:`/`fan-in:` numbers are cyan (informational);
-  `api:` is yellow, the same warning color as the file-size `warn:`
-  badge, flagging it as the one badge worth a second look. A row whose
-  badges show both a contract change and a high-fan-in symbol in its
-  subtree gets a leading `!` (red, bold) — the combination that makes a
-  change both hard to miss and wide-reaching; a signature-changed
-  symbol with high fan-in of its own gets the same marker. Directories
-  in a dependency cycle are marked `↻`.
-
-  Symbol rows show a kind abbreviation (`fn`, `struct`, ...) and a
-  classification marker: `+` added, `~` signature-changed, `-` removed,
-  or blank for body-only/unclassified — a blank-marker symbol's name
-  also dims to DarkGray, since its signature didn't change and it
-  carries less review weight. Files rinkaku couldn't analyze appear
+  Each symbol row carries one mark and at most one number
+  ([ADR 0099](adr/0099-tui-review-flow-redesign.md)): `+` added, `○`
+  signature-changed, `●` signature-changed *and* used by other
+  production symbols (it may break them), `-` removed, or blank for
+  body-only/unclassified — a blank-marker symbol's name also dims to
+  DarkGray, since its signature didn't change and it carries less review
+  weight. The number flush right is how many other *production* symbols
+  use it (tests exercising it don't count). Directory and file rows
+  carry no counts; a collapsed one shows `●` when it hides a `●` symbol,
+  and a file over 1000 lines shows `N lines` in red. Directories in a
+  dependency cycle are marked `↻`. How many tests reference a symbol is
+  in its Detail pane. Files rinkaku couldn't analyze appear
   dimmed as `(skipped: <reason>)`; whole-test files as
   `[test] (N symbols)`. A *mixed* file's test symbols (real code
   alongside `#[cfg(test)]`-style tests in the same file) fold into a
@@ -62,7 +56,10 @@ only becomes load-bearing when the output would otherwise not be TUI
   easier to scan than interleaved `-`/`+` lines. Press `v`/`V` to switch
   to unified rendering for the same hunks. Split view needs a reasonably
   wide pane; on a narrow terminal it falls back to unified regardless of
-  the toggle, and the pane header notes why.
+  the toggle, and the pane header notes why. The pinned header names the
+  row (with the same mark as its tree row) and, for a symbol, the
+  symbols that use it — `↑ 6: build_symbol · kind_abbrev ×2 · ...` —
+  the one thing the hunks below cannot show.
 - **Detail pane (right)** — what the cursor is on: classification,
   signature (with an old/new diff on contract change), used-by, callees,
   and — when `--deps` finds anything — depends-on (the repository-wide
@@ -121,9 +118,9 @@ Press `?` in the TUI for the always-up-to-date table.
 | `q` / `ctrl-c` | Quit (from the entry view); `esc`/`q` also returns from the source view |
 
 Each mark has one meaning across every pane
-([ADR 0099](adr/0099-tui-review-flow-redesign.md)): `+` added, `~`
-signature-changed, `-` removed, blank for body-only, `!` for the risk
-marker, `↻` for a dependency cycle, `✎` for a review note, `▾`/`▸` for
+([ADR 0099](adr/0099-tui-review-flow-redesign.md)): `+` added, `○`
+signature-changed, `●` may break its users, `-` removed, blank for
+body-only, `↻` for a dependency cycle, `✎` for a review note, `▾`/`▸` for
 expand state, `▲`/`▼` for rows out of view, and `↓` for what a Blast
 radius pivot reaches.
 

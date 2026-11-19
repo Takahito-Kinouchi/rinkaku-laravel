@@ -23,6 +23,7 @@ fn detail_view(signature: SignatureView) -> DetailView {
         callees: vec![],
         callers: vec![],
         depends_on: vec![],
+        test_count: None,
         omitted_dependency_matches: 0,
     }
 }
@@ -96,4 +97,19 @@ fn should_push_one_line_per_source_line_for_each_side_of_a_changed_multiline_sig
         "Callees (0)".to_string(),
     ];
     assert_eq!(expected, actual);
+}
+
+#[test]
+fn should_state_how_many_tests_reference_the_symbol_when_coverage_applies() {
+    let detail = DetailView {
+        test_count: Some(0),
+        ..detail_view(SignatureView::Current("struct Point".to_string()))
+    };
+
+    let actual = rendered_text(&detail);
+
+    assert!(
+        actual.contains(&"tests referencing it: 0".to_string()),
+        "{actual:?}"
+    );
 }

@@ -2,27 +2,21 @@
 //! grouped by which pub function / row-render concern each block pins:
 //!
 //! - `entry_row_line` — general `entry_row_line` behavior: indent,
-//!   badges, skip-reason, test-file badge, per-symbol `test` badge (ADR
-//!   0035), cycle marker, classification markers, selection modifier
-//! - `risk_marker` — the `!` risk co-occurrence marker on dir, file and
-//!   symbol rows
-//! - `test_coverage_badge` — ADR 0059's `tests:0` symbol-row badge
+//!   skip-reason, test-file badge, per-symbol `test` badge (ADR 0035),
+//!   cycle marker, classification marks, selection modifier
+//! - `change_mark` — ADR 0099's one mark per row (`●`/`○`/`+`/`-`), the
+//!   collapsed-row `●`, and the flush-right usage count
+//! - `oversized_file` — the line count on Warn/Split-band file rows
 //! - `relative_labels` — `relative_labels`' ancestor-prefix stripping
-//! - `file_size_badges` — ADR 0028 file-size warning badges on file and
-//!   dir rows (`lines:N`, `warn:N split:N`)
-//! - `label_badges` — ADR 0013 amendments (2026-07-13,
-//!   feat/label-contract-changes-badge; feat/rename-hotspots-to-fan-in)
-//!   split-span coloring for `chg:N` / `api:N` / `fan-in:N` badges
 
 use super::*;
 use crate::tree::{NodeKind, SectionKind, TreeNode};
+use rinkaku_core::extract::SymbolKind;
 
+mod change_mark;
 mod entry_row_line;
-mod file_size_badges;
-mod label_badges;
+mod oversized_file;
 mod relative_labels;
-mod risk_marker;
-mod test_coverage_badge;
 
 pub(super) fn dir_node(path: &str, badges: Badges, children: Vec<TreeNode>) -> TreeNode {
     TreeNode {

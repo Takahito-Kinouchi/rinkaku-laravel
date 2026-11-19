@@ -23,6 +23,7 @@ fn detail_view() -> DetailView {
         callees: vec![],
         callers: vec![],
         depends_on: vec![],
+        test_count: None,
         omitted_dependency_matches: 0,
     }
 }
