@@ -30,7 +30,7 @@ fn should_prepend_risk_marker_for_a_high_risk_dir_row() {
         false,
     );
 
-    assert_eq!("v ! src api:1 fan-in:2", line_text(&line));
+    assert_eq!("▾ ! src api:1 fan-in:2", line_text(&line));
     assert_eq!(Some(Color::Red), fg_of_span_with_content(&line, "!"));
 }
 
@@ -59,7 +59,7 @@ fn should_omit_risk_marker_when_contract_changes_is_zero() {
         false,
     );
 
-    assert_eq!("v src fan-in:5", line_text(&line));
+    assert_eq!("▾ src fan-in:5", line_text(&line));
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn should_omit_risk_marker_when_fan_in_is_below_threshold() {
         false,
     );
 
-    assert_eq!("v src api:1 fan-in:1", line_text(&line));
+    assert_eq!("▾ src api:1 fan-in:1", line_text(&line));
 }
 
 #[test]

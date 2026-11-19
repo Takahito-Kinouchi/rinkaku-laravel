@@ -71,7 +71,7 @@ fn should_lose_to_an_existing_annotation_marker_on_the_same_row() {
     mark_range_bar_lines(&mut lines, &[0]);
 
     let actual: Vec<String> = lines.iter().map(line_text).collect();
-    assert_eq!(vec!["*+fn foo() {}".to_string()], actual);
+    assert_eq!(vec!["✎+fn foo() {}".to_string()], actual);
 }
 
 #[test]

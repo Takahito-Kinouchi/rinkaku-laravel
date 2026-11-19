@@ -433,7 +433,7 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
     let tag = locale.tag();
     vec![
         MarkerLegendEntry {
-            swatch: "v / >",
+            swatch: "▾ / ▸",
             explanation: rust_i18n::t!("help.marker.expand_marker", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
@@ -454,7 +454,7 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
             explanation: rust_i18n::t!("help.marker.body_only_symbol", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "x",
+            swatch: "-",
             explanation: rust_i18n::t!("help.marker.removed_symbol", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
@@ -463,12 +463,16 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
                 .into_owned(),
         },
         MarkerLegendEntry {
-            swatch: "(cycle)",
+            swatch: "↻",
             explanation: rust_i18n::t!("help.marker.dependency_cycle", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
             swatch: "!",
             explanation: rust_i18n::t!("help.marker.risk_marker", locale = tag).into_owned(),
+        },
+        MarkerLegendEntry {
+            swatch: "✎N",
+            explanation: rust_i18n::t!("help.marker.review_note", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
             swatch: "[test] (N symbols)",

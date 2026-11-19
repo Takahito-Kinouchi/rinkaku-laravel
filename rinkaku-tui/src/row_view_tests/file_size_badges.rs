@@ -160,7 +160,7 @@ fn should_render_warn_and_split_labels_side_by_side_on_dir_row() {
         false,
     );
 
-    assert_eq!("v src warn:2 split:1", line_text(&line));
+    assert_eq!("▾ src warn:2 split:1", line_text(&line));
     assert_eq!(Some(Color::Yellow), fg_of_span_with_content(&line, "2"));
     assert_eq!(Some(Color::Red), fg_of_span_with_content(&line, "1"));
     assert_eq!(None, fg_of_span_with_content(&line, "warn:"));
@@ -215,5 +215,5 @@ fn should_render_only_warn_label_on_dir_row_when_no_split_files() {
         false,
     );
 
-    assert_eq!("v src warn:3", line_text(&line));
+    assert_eq!("▾ src warn:3", line_text(&line));
 }

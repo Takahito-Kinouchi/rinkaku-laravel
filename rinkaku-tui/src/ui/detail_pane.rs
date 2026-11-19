@@ -201,11 +201,11 @@ pub(crate) fn file_detail_lines(detail: &FileDetail) -> Vec<Line<'static>> {
         ));
         for symbol in &detail.symbols {
             let marker = if symbol.removed {
-                "x"
+                crate::glyph::REMOVED
             } else {
                 match symbol.classification {
-                    Some(Classification::Added) => "+",
-                    Some(Classification::SignatureChanged) => "~",
+                    Some(Classification::Added) => crate::glyph::ADDED,
+                    Some(Classification::SignatureChanged) => crate::glyph::SIGNATURE_CHANGED,
                     Some(Classification::BodyOnly) | None => " ",
                 }
             };

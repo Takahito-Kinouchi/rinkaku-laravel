@@ -47,6 +47,7 @@ pub mod detail;
 pub mod diff_shape;
 pub mod diff_view;
 mod event_loop;
+mod glyph;
 pub mod help;
 pub mod highlight;
 mod input_translate;

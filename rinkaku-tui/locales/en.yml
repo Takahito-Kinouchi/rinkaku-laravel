@@ -60,6 +60,7 @@ help:
     removed_symbol_name: "Removed symbol's name"
     dependency_cycle: "Directory contains a dependency cycle"
     risk_marker: "Risk marker: a contract change combined with a high-fan-in symbol in the same subtree"
+    review_note: "Has review notes: their count on a tree row, the mark alone on a diff line"
     whole_test_file_badge: "Whole-test-file badge"
     collapsed_test_group: "Collapsed group of a file's test symbols"
     skipped_reason: "Reason a file was not analyzed (parse failure, unsupported language, ...)"

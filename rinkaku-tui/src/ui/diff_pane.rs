@@ -515,13 +515,14 @@ fn new_side_line_numbers(hunk: &crate::diff_view::Hunk) -> Vec<Option<usize>> {
 }
 
 /// Prepends a 1-character annotation-marker column (ADR 0048) to `line`: a
-/// cyan `*` when `has_annotation`, a space otherwise — every diff-pane row
+/// `✎` (ADR 0099, the same mark as the tree's `✎N` badge) when
+/// `has_annotation`, a space otherwise — every diff-pane row
 /// gets this column regardless, so the marker's presence/absence never
 /// shifts the rest of the line's own columns out of alignment with its
 /// neighbors.
 fn prefix_annotation_marker(line: Line<'static>, has_annotation: bool) -> Line<'static> {
     let marker = if has_annotation {
-        Span::styled("*", Style::default().fg(Color::Cyan))
+        Span::styled(crate::glyph::NOTE, crate::glyph::uncolored_mark())
     } else {
         Span::raw(" ")
     };
@@ -536,17 +537,16 @@ fn prefix_annotation_marker(line: Line<'static>, has_annotation: bool) -> Line<'
     Line::from(spans).style(line.style)
 }
 
-/// The range bar's own span: a bold yellow `┃`, painted into the gutter
+/// The range bar's own span: a bold cyan `┃` (cyan = the current selection,
+/// ADR 0099), painted into the gutter
 /// column [`prefix_annotation_marker`] already reserves on every hunk body
 /// row (ADR 0048) — the range bar never touches a hunk header or separator
 /// row, both of which carry no such column ([`crate::diff_shape::marked_body_rows`]'s
 /// own doc comment on why it excludes them).
 fn range_bar_span() -> Span<'static> {
     Span::styled(
-        "┃",
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
+        crate::glyph::RANGE_BAR,
+        crate::glyph::selection().add_modifier(Modifier::BOLD),
     )
 }
 
@@ -556,7 +556,7 @@ fn range_bar_span() -> Span<'static> {
 /// this feature's whole point: auto-scroll alone gives no feedback once the
 /// whole diff already fits on screen and no scroll ever happens.
 ///
-/// The annotation marker (ADR 0048's cyan `*`) wins on a row that carries
+/// The annotation marker (ADR 0048's `✎`, ADR 0099) wins on a row that carries
 /// both: an annotation is a reviewer's own persistent note, so it stays
 /// visible even where the range bar would otherwise paint over it — the
 /// reverse priority of the two glyphs' shared gutter column.
@@ -574,7 +574,7 @@ fn mark_range_bar_lines(lines: &mut [Line<'static>], marked_rows: &[usize]) {
         let Some(gutter) = line.spans.first_mut() else {
             continue;
         };
-        if gutter.content.as_ref() == "*" {
+        if gutter.content.as_ref() == crate::glyph::NOTE {
             continue;
         }
         *gutter = range_bar_span();

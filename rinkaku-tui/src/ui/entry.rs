@@ -5,7 +5,7 @@
 use super::blast_radius::draw_blast_radius_pane;
 use super::detail_pane::draw_detail_pane;
 use super::diff_pane::draw_diff_pane;
-use super::scroll::{scroll_indicator, truncate_line_to_width, windowed_rows_with_indicators};
+use super::scroll::{truncate_line_to_width, windowed_rows_with_indicators};
 use super::style::pane_border_style;
 use super::{ENTRY_RIGHT_WIDTH_PERCENT, ENTRY_TREE_WIDTH_PERCENT, RightPaneRender};
 use crate::app::{App, BlastRadiusSelection, Focus, RightPane};
@@ -84,12 +84,9 @@ pub(crate) fn draw_entry_screen(
 /// bottom of the initial viewport (via repeated `j`, or a `gd`/`gr` jump
 /// landing far from the current scroll position) looked like the keypress
 /// had no effect at all, since the screen kept showing exactly the same
-/// rows. A `(first-last/total)` title suffix mirrors `render_scrollable_pane`'s
-/// own `scroll_indicator` convention, and the windowing also grows a dim
-/// "… N more above/below" line inside the pane itself when the window does
-/// not start/end at the list's own edge — belt and braces with the title
-/// suffix, since the title is easy to miss but the in-pane line sits right
-/// where the reviewer's eye already is.
+/// rows. The windowing grows a dim `▲ N more` / `▼ N more` line inside the
+/// pane itself when the window does not start/end at the list's own edge,
+/// right where the reviewer's eye already is.
 pub(crate) fn draw_tree_pane(
     frame: &mut Frame,
     app: &App,
@@ -153,17 +150,11 @@ pub(crate) fn draw_tree_pane(
         .map(|line| truncate_line_to_width(line, viewport_width))
         .collect();
 
-    // `end - start`, not the raw `viewport_height`, is the title
-    // indicator's own "how many rows are actually visible" — the two can
-    // differ once `windowed_rows_with_indicators` has reserved rows for the
-    // in-pane "… N more" lines, and `scroll_indicator` reporting the
-    // unreserved `viewport_height` would overstate the last visible row.
-    let title = match scroll_indicator(rows.len(), end - start, start) {
-        Some(indicator) => format!("{}{indicator} ", " Entry".trim_end()),
-        None => " Entry ".to_string(),
-    };
+    // No `(first-last/total)` title suffix: the in-pane `▲ N more` /
+    // `▼ N more` lines already say what is out of view, and ADR 0099 keeps
+    // one notation per meaning.
     let block = Block::bordered()
-        .title(title)
+        .title(" Entry ")
         .border_style(pane_border_style(app.focus() == Focus::Tree));
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
@@ -436,7 +427,7 @@ mod tests {
         // The very first file must have scrolled off given how far down the
         // cursor moved, and an overflow indicator must say so.
         assert!(!text.contains("f0.rs"), "f0.rs should have scrolled off");
-        assert!(text.contains("more above"));
+        assert!(text.contains("▲"));
     }
 
     #[test]

@@ -38,10 +38,10 @@ only becomes load-bearing when the output would otherwise not be TUI
   subtree gets a leading `!` (red, bold) — the combination that makes a
   change both hard to miss and wide-reaching; a signature-changed
   symbol with high fan-in of its own gets the same marker. Directories
-  in a dependency cycle are marked `(cycle)`.
+  in a dependency cycle are marked `↻`.
 
   Symbol rows show a kind abbreviation (`fn`, `struct`, ...) and a
-  classification marker: `+` added, `~` signature-changed, `x` removed,
+  classification marker: `+` added, `~` signature-changed, `-` removed,
   or blank for body-only/unclassified — a blank-marker symbol's name
   also dims to DarkGray, since its signature didn't change and it
   carries less review weight. Files rinkaku couldn't analyze appear
@@ -120,8 +120,12 @@ Press `?` in the TUI for the always-up-to-date table.
 | `?` | Toggle the help overlay |
 | `q` / `ctrl-c` | Quit (from the entry view); `esc`/`q` also returns from the source view |
 
-Glyphs are plain ASCII: `+` added, `~` signature-changed, `x` removed,
-blank for body-only, `!` for the risk marker, `v`/`>` for expand state.
+Each mark has one meaning across every pane
+([ADR 0099](adr/0099-tui-review-flow-redesign.md)): `+` added, `~`
+signature-changed, `-` removed, blank for body-only, `!` for the risk
+marker, `↻` for a dependency cycle, `✎` for a review note, `▾`/`▸` for
+expand state, `▲`/`▼` for rows out of view, and `↓` for what a Blast
+radius pivot reaches.
 
 ## Jump navigation (`gd` / `gr`)
 

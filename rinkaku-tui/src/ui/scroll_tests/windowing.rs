@@ -73,10 +73,7 @@ fn should_return_above_indicator_only_when_window_starts_past_the_top() {
     let actual = window_overflow_indicators(100, 10, 20);
 
     assert_eq!(
-        (
-            Some("… 10 more above".to_string()),
-            Some("… 80 more below".to_string())
-        ),
+        (Some("▲ 10 more".to_string()), Some("▼ 80 more".to_string())),
         actual
     );
 }
@@ -85,14 +82,14 @@ fn should_return_above_indicator_only_when_window_starts_past_the_top() {
 fn should_return_no_above_indicator_when_window_starts_at_the_top() {
     let actual = window_overflow_indicators(100, 0, 20);
 
-    assert_eq!((None, Some("… 80 more below".to_string())), actual);
+    assert_eq!((None, Some("▼ 80 more".to_string())), actual);
 }
 
 #[test]
 fn should_return_no_below_indicator_when_window_reaches_the_end() {
     let actual = window_overflow_indicators(100, 80, 100);
 
-    assert_eq!((Some("… 80 more above".to_string()), None), actual);
+    assert_eq!((Some("▲ 80 more".to_string()), None), actual);
 }
 
 // --- windowed_rows_with_indicators (pure helper) ---
@@ -122,7 +119,7 @@ fn should_reserve_a_row_for_the_below_indicator_when_cursor_is_near_the_top() {
 
     assert_eq!((0, 9), (start, end));
     assert_eq!(None, above);
-    assert_eq!(Some("… 91 more below".to_string()), below);
+    assert_eq!(Some("▼ 91 more".to_string()), below);
     // The rendered row count (indicator + content) must never exceed
     // the viewport.
     let below_rows = below.is_some() as usize;
@@ -134,7 +131,7 @@ fn should_reserve_a_row_for_the_above_indicator_when_cursor_is_near_the_bottom()
     let (start, end, above, below) = windowed_rows_with_indicators(100, 99, 10);
 
     assert_eq!((91, 100), (start, end));
-    assert_eq!(Some("… 91 more above".to_string()), above);
+    assert_eq!(Some("▲ 91 more".to_string()), above);
     assert_eq!(None, below);
     let above_rows = above.is_some() as usize;
     assert!(end - start + above_rows <= 10);

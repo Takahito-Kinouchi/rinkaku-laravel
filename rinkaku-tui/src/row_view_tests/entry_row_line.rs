@@ -58,7 +58,7 @@ fn should_include_badge_labels_for_nonzero_badges_on_a_dir_row() {
         false,
     );
 
-    assert_eq!("v src chg:2 api:1 fan-in:1", line_text(&line));
+    assert_eq!("▾ src chg:2 api:1 fan-in:1", line_text(&line));
 }
 
 #[test]
@@ -271,13 +271,13 @@ fn should_show_collapse_marker_when_dir_is_not_expanded() {
         false,
     );
 
-    assert_eq!("> src ", line_text(&line));
+    assert_eq!("▸ src ", line_text(&line));
 }
 
 // ADR 0035 Phase B: a `NodeKind::Section` row renders like a `Dir` row
 // (expand marker, bold label, aggregated badges) but with its fixed
 // `SectionKind::label()` instead of a path-derived label, and never
-// shows the `(cycle)` marker — `ranks` never carries an entry for a
+// shows the `↻` cycle marker — `ranks` never carries an entry for a
 // section's synthetic path (`crate::order::rank_directories` only ever
 // produces entries for real file-tree directories).
 
@@ -305,7 +305,7 @@ fn should_render_section_row_with_its_fixed_label_and_badges() {
         false,
     );
 
-    assert_eq!("v Tests chg:5", line_text(&line));
+    assert_eq!("▾ Tests chg:5", line_text(&line));
 }
 
 #[test]
@@ -329,14 +329,14 @@ fn should_show_collapse_marker_for_a_collapsed_section_row() {
         false,
     );
 
-    assert_eq!("> Tests ", line_text(&line));
+    assert_eq!("▸ Tests ", line_text(&line));
 }
 
 #[test]
 fn should_never_show_cycle_marker_on_a_section_row_even_if_ranks_has_a_stray_entry() {
     // Defensive: even if `ranks` somehow carried an entry keyed by the
     // section's synthetic path, a Section row must never render
-    // `(cycle)` — cycle detection is a production-directory concept
+    // `↻` — cycle detection is a production-directory concept
     // ADR 0035 Phase A already excludes test code from.
     let node = section_node(SectionKind::Tests, Badges::default(), vec![]);
     let row = Row {
@@ -389,7 +389,7 @@ fn should_append_cycle_marker_when_dir_path_is_in_cycle() {
         false,
     );
 
-    assert_eq!("  src  (cycle)", line_text(&line));
+    assert_eq!("  src  ↻", line_text(&line));
 }
 
 #[test]
@@ -469,7 +469,7 @@ fn should_mark_signature_changed_symbol_with_tilde() {
 }
 
 #[test]
-fn should_mark_removed_symbol_with_x() {
+fn should_mark_removed_symbol_with_the_diffs_minus_sign() {
     let symbol_ref = SymbolRef {
         removed: true,
         ..plain_symbol("gone_fn")
@@ -489,7 +489,7 @@ fn should_mark_removed_symbol_with_x() {
         false,
     );
 
-    assert_eq!("  x fn gone_fn", line_text(&line));
+    assert_eq!("  - fn gone_fn", line_text(&line));
 }
 
 // Visual-encoding prototype: a test symbol left in the production tree
@@ -693,7 +693,7 @@ fn should_render_test_group_row_with_plural_count() {
         false,
     );
 
-    assert_eq!("> 3 tests", line_text(&line));
+    assert_eq!("▸ 3 tests", line_text(&line));
     assert_eq!(
         Some(Color::DarkGray),
         fg_of_span_with_content(&line, "3 tests")
@@ -728,7 +728,7 @@ fn should_render_test_group_row_with_singular_count() {
         false,
     );
 
-    assert_eq!("> 1 test", line_text(&line));
+    assert_eq!("▸ 1 test", line_text(&line));
 }
 
 #[test]
@@ -746,7 +746,7 @@ fn should_show_annotation_badge_on_a_symbol_row_with_a_matching_annotation_count
 
     let line = entry_row_line(&row, "", &HashMap::new(), &annotation_markers, false);
 
-    assert_eq!("    fn foo ann:2", line_text(&line));
+    assert_eq!("    fn foo ✎2", line_text(&line));
 }
 
 #[test]
@@ -782,5 +782,5 @@ fn should_show_annotation_badge_on_a_file_row_with_a_matching_annotation_count()
 
     let line = entry_row_line(&row, "lib.rs", &HashMap::new(), &annotation_markers, false);
 
-    assert_eq!("  lib.rs  ann:3", line_text(&line));
+    assert_eq!("  lib.rs  ✎3", line_text(&line));
 }

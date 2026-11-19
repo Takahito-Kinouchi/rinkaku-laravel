@@ -105,7 +105,9 @@ fn markers_legend_lines(locale: Locale) -> Vec<Line<'static>> {
         .iter()
         .map(|entry| {
             let swatch = marker_swatch_spans(entry.swatch);
-            let swatch_width: usize = swatch.iter().map(|span| span.content.len()).sum();
+            // Display width, not byte length: `▾`/`↻`/`✎` are three bytes
+            // but one column.
+            let swatch_width: usize = swatch.iter().map(|span| span.width()).sum();
             let padding = MARKER_SWATCH_COLUMN_WIDTH
                 .saturating_sub(swatch_width)
                 .max(1);
@@ -136,7 +138,7 @@ fn marker_swatch_spans(swatch: &'static str) -> Vec<Span<'static>> {
             false,
             false,
         ))],
-        "x" => vec![symbol_marker_span(&legend_symbol(None, true, false))],
+        "-" => vec![symbol_marker_span(&legend_symbol(None, true, false))],
         "(dimmed name)" => vec![Span::styled(
             swatch,
             symbol_name_style(&legend_symbol(Some(Classification::BodyOnly), false, false)),
@@ -145,12 +147,8 @@ fn marker_swatch_spans(swatch: &'static str) -> Vec<Span<'static>> {
             swatch,
             symbol_name_style(&legend_symbol(None, true, false)),
         )],
-        "(cycle)" => vec![Span::styled(
-            swatch,
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )],
+        "↻" => vec![crate::row_view::cycle_marker_span()],
+        "✎N" => vec![Span::styled(swatch, crate::glyph::uncolored_mark())],
         "!" => vec![Span::styled(swatch, risk_marker_style())],
         "lines:N" => vec![Span::styled(swatch, band_style(FileSizeBand::Watch))],
         "chg:N" => badge_swatch_spans("chg:", cyan_badge_style()),

@@ -12,6 +12,7 @@
 //! job; this module only decides one row's content and styling given that
 //! label.
 
+use crate::glyph;
 use crate::nav::Row;
 use crate::order::DirRank;
 use crate::tree::{Badges, NodeKind, SymbolRef};
@@ -63,12 +64,7 @@ pub fn entry_row_line(
             push_badge_spans(&mut spans, &row.node.badges, BadgeContext::Dir);
             if in_cycle {
                 spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    "(cycle)",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ));
+                spans.push(cycle_marker_span());
             }
         }
         NodeKind::Section(section_kind) => {
@@ -156,16 +152,23 @@ pub fn entry_row_line(
 }
 
 /// The expand/collapse indicator for a `Dir`/`File` row: `" "` (blank) for
-/// a childless node (nothing to expand), `"v"` when its children are
-/// currently shown, `">"` when collapsed.
+/// a childless node (nothing to expand), [`glyph::EXPANDED`] when its
+/// children are currently shown, [`glyph::COLLAPSED`] when collapsed.
 fn expand_marker(row: &Row<'_>) -> &'static str {
     if row.node.children.is_empty() {
         " "
     } else if row.expanded {
-        "v"
+        glyph::EXPANDED
     } else {
-        ">"
+        glyph::COLLAPSED
     }
+}
+
+/// The dependency-cycle mark (ADR 0099: `↻` everywhere a cycle is shown).
+///
+/// `pub(crate)`: also reused by `crate::ui::help_overlay`'s Markers legend.
+pub(crate) fn cycle_marker_span() -> Span<'static> {
+    Span::styled(glyph::CYCLE, glyph::uncolored_mark())
 }
 
 /// Computes the display label for every row in `rows` (as returned by
@@ -360,10 +363,9 @@ pub(crate) fn cyan_badge_style() -> Style {
     Style::default().fg(Color::Cyan)
 }
 
-/// Appends an `ann:N` badge (ADR 0048, ADR 0058) — "this row has N review
-/// annotations attached" — in the same cyan-number style
-/// [`cyan_badge_style`] already uses for informational counts
-/// (`chg:`/`fan-in:`), a no-op when `count` is `None` or `0`. Kept as its
+/// Appends a `✎N` badge (ADR 0048, ADR 0058, glyph per ADR 0099) — "this
+/// row has N review annotations attached" — a no-op when `count` is `None`
+/// or `0`. Kept as its
 /// own function rather than folded into [`push_badge_spans`]: that
 /// function's `Badges` input is baked once at tree-build time
 /// (`crate::tree::build_tree`'s own doc comment), while annotation counts
@@ -377,8 +379,10 @@ fn push_annotation_badge_span(spans: &mut Vec<Span<'static>>, count: Option<usiz
         return;
     };
     spans.push(Span::raw(" "));
-    spans.push(Span::raw("ann:"));
-    spans.push(Span::styled(count.to_string(), cyan_badge_style()));
+    spans.push(Span::styled(
+        format!("{}{count}", glyph::NOTE),
+        glyph::uncolored_mark(),
+    ));
 }
 
 /// Appends a `tests:0` badge (ADR 0059) to a symbol row — the inverse of
@@ -487,28 +491,29 @@ fn test_badge_span(symbol_count: usize) -> Span<'static> {
     )
 }
 
-/// Style for the `[test] (N symbols)` whole-test-file badge (magenta).
+/// Style for the `[test] (N symbols)` whole-test-file badge: test code is
+/// "can wait" gray everywhere (ADR 0099), the same as a `N tests` group.
 ///
 /// `pub(crate)`: also reused by `crate::ui::overlay`'s Markers legend.
 pub(crate) fn test_badge_style() -> Style {
-    Style::default().fg(Color::Magenta)
+    glyph::deferred()
 }
 
 /// A symbol row's leading classification marker: `+` added, `~`
 /// signature-changed, ` ` (blank, one column) body-only or unclassified,
-/// `x` removed. Kept as its own single-character span (rather than folded
+/// `-` removed (the same mark the diff uses for a removed line, ADR 0099). Kept as its own single-character span (rather than folded
 /// into `symbol_name_style`) so it reads as a consistent left-aligned
 /// column across rows regardless of name length.
 ///
 /// `pub(crate)`: also reused by `crate::ui::overlay`'s Markers legend.
 pub(crate) fn symbol_marker_span(symbol_ref: &SymbolRef) -> Span<'static> {
     if symbol_ref.removed {
-        return Span::styled("x", Style::default().fg(Color::Red));
+        return Span::styled(glyph::REMOVED, glyph::danger());
     }
     match symbol_ref.classification {
-        Some(Classification::Added) => Span::styled("+", Style::default().fg(Color::Green)),
+        Some(Classification::Added) => Span::styled(glyph::ADDED, glyph::added()),
         Some(Classification::SignatureChanged) => {
-            Span::styled("~", Style::default().fg(Color::Yellow))
+            Span::styled(glyph::SIGNATURE_CHANGED, glyph::contract())
         }
         Some(Classification::BodyOnly) | None => Span::raw(" "),
     }
@@ -577,7 +582,7 @@ fn is_high_risk_symbol(symbol_ref: &SymbolRef, badges: &Badges) -> bool {
 /// layout is untouched (no reserved gutter column).
 fn push_risk_marker_span(spans: &mut Vec<Span<'static>>, is_risky: bool) {
     if is_risky {
-        spans.push(Span::styled("!", risk_marker_style()));
+        spans.push(Span::styled(glyph::RISK, risk_marker_style()));
         spans.push(Span::raw(" "));
     }
 }

@@ -17,7 +17,7 @@
 use super::style::pane_border_style;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use unicode_width::UnicodeWidthChar;
@@ -281,19 +281,23 @@ fn claim_scoped_counters(
 /// its count is zero (so a pane with no marks, or a symbol that fits on
 /// screen, renders exactly the title it did before this feature existed).
 ///
-/// Bold yellow, matching `crate::ui::diff_pane::range_bar_span` — see
+/// Bold cyan, matching `crate::ui::diff_pane::range_bar_span` — see
 /// [`render_marked_scrollable_pane`]'s doc comment on why the color is
 /// load-bearing here rather than decorative.
 fn marked_title_line(title: String, outside: MarkedRowsOutsideViewport) -> Line<'static> {
     let mut spans = vec![Span::raw(title)];
-    let counter_style = Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD);
+    let counter_style = crate::glyph::selection().add_modifier(Modifier::BOLD);
     if outside.above > 0 {
-        spans.push(Span::styled(format!("▲{} ", outside.above), counter_style));
+        spans.push(Span::styled(
+            format!("{}{} ", crate::glyph::MORE_ABOVE, outside.above),
+            counter_style,
+        ));
     }
     if outside.below > 0 {
-        spans.push(Span::styled(format!("▼{} ", outside.below), counter_style));
+        spans.push(Span::styled(
+            format!("{}{} ", crate::glyph::MORE_BELOW, outside.below),
+            counter_style,
+        ));
     }
     Line::from(spans)
 }
@@ -854,7 +858,8 @@ pub(crate) fn visible_index_window(
     (start, end)
 }
 
-/// Builds a `"…N more above"`/`"…N more below"` pair of indicator lines for
+/// Builds a `"▲ N more"`/`"▼ N more"` pair of indicator lines (ADR 0099:
+/// the same `▲`/`▼` the Diff pane title uses for rows out of view) for
 /// content windowed by [`visible_index_window`] — `above`/`below` are the
 /// counts of items hidden on each side (`start`/`total_items - end`
 /// respectively), formatted only when nonzero so a window that already
@@ -871,8 +876,8 @@ pub(crate) fn window_overflow_indicators(
     let above = window_start;
     let below = total_items.saturating_sub(window_end);
     (
-        (above > 0).then(|| format!("… {above} more above")),
-        (below > 0).then(|| format!("… {below} more below")),
+        (above > 0).then(|| format!("{} {above} more", crate::glyph::MORE_ABOVE)),
+        (below > 0).then(|| format!("{} {below} more", crate::glyph::MORE_BELOW)),
     )
 }
 

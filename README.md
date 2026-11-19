@@ -145,16 +145,16 @@ to what is actually pressable on the current screen.
 
 | Marker | Color | Meaning |
 | --- | --- | --- |
-| `v` / `>` | — | Expanded / collapsed; blank means a leaf with nothing to expand |
+| `▾` / `▸` | — | Expanded / collapsed; blank means a leaf with nothing to expand |
 | `fn` `struct` `enum` `trait` `class` `iface` `type` `block` `section` | — | Symbol kind prefix, abbreviating each language's keyword |
 | `+` | green | Added symbol |
 | `~` | yellow | Symbol whose signature changed |
-| `x` | red | Removed symbol |
+| `-` | red | Removed symbol (the same mark as a removed diff line) |
 | (no marker, one blank column) | grey | Body-only change, unclassified, or a test symbol — the name is grey too: present, but low review priority |
 | Grey struck-through name | grey | The name of a removed symbol |
 | `!` | red, bold | Risk marker: a contract change and a high fan-in symbol coexist in this subtree |
-| `(cycle)` | yellow | The directory contains a dependency cycle |
-| `[test] (N symbols)` | magenta | The whole file is tests |
+| `↻` | bold | The directory contains a dependency cycle |
+| `[test] (N symbols)` | grey | The whole file is tests |
 | `N tests` | grey | Collapsed group of the file's test symbols |
 | `(skipped: ...)` | grey | Why the file was not analyzed (unsupported language, binary, generated, deleted, outside the repository) |
 
@@ -169,7 +169,7 @@ to what is actually pressable on the current screen.
 | `warn:N` | yellow | Directory row: Warn-band files in this subtree |
 | `split:N` | red | Directory row: Split-band files in this subtree |
 | `tests:0` | yellow | Symbol row: no test symbol references this symbol |
-| `ann:N` | cyan | Review annotations attached to this row |
+| `✎N` | bold | Review annotations attached to this row |
 
 `api:`, `warn:`, `split:` and `tests:0` are yellow or red because they mean
 "look at this"; cyan badges are information, not a warning.
@@ -180,14 +180,16 @@ to what is actually pressable on the current screen.
 | --- | --- | --- |
 | `+` / `-` | green / red | Added / removed line (also in the Detail pane's signature diff) |
 | `@@ ...` | grey | Hunk header |
-| `*` at line start | cyan | This line carries a review annotation (new side only, in both unified and split views) |
-| `▲N` / `▼N` in the title | yellow, bold | Rows the selected tree row still owes you, above / below the viewport; `ctrl-f` / `ctrl-b` (or `↓` / `↑` with tree focus) reads through them. The title's `(12-41/210)` is file-scoped, this is row-scoped |
+| `✎` at line start | bold | This line carries a review annotation (new side only, in both unified and split views) |
+| `▲N` / `▼N` in the title | cyan, bold | Rows the selected tree row still owes you, above / below the viewport; `ctrl-f` / `ctrl-b` (or `↓` / `↑` with tree focus) reads through them. The title's `(12-41/210)` is file-scoped, this is row-scoped |
 
 ### Blast radius pane
 
 | Marker | Meaning |
 | --- | --- |
-| `! ... — already shown above (cycle)` | The tree stopped here because of a dependency cycle; the node was already shown |
+| `↓ ...` | Something the pivot reaches |
+| `... (shown above)` | Already listed above; not expanded again |
+| `↻ ... (shown above)` | The tree stopped here because of a dependency cycle; the node was already shown |
 
 </details>
 
@@ -442,16 +444,16 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 
 | 記号 | 色 | 意味 |
 | --- | --- | --- |
-| `v` / `>` | — | 展開 / 折りたたみ。空欄は展開対象のないリーフ |
+| `▾` / `▸` | — | 展開 / 折りたたみ。空欄は展開対象のないリーフ |
 | `fn` `struct` `enum` `trait` `class` `iface` `type` `block` | — | シンボル行の種別プレフィックス（各言語のキーワードの略記） |
 | `+` | 緑 | 追加されたシンボル |
 | `~` | 黄 | シグネチャが変更されたシンボル |
-| `x` | 赤 | 削除されたシンボル |
+| `-` | 赤 | 削除されたシンボル（差分の削除行と同じ記号） |
 | （マーカー無し・空白 1 桁） | 灰 | body のみの変更、未分類、またはテストのシンボル。名前も灰色で、存在はするがレビュー優先度は低いことを示す |
 | 灰色＋取り消し線の名前 | 灰 | 削除されたシンボルの名前 |
 | `!` | 赤（太字） | リスクマーカー: 同じサブツリー内に契約変更と高 fan-in シンボルが共存 |
-| `(cycle)` | 黄 | ディレクトリ内に依存の循環がある |
-| `[test] (N symbols)` | マゼンタ | ファイル全体がテスト |
+| `↻` | 太字 | ディレクトリ内に依存の循環がある |
+| `[test] (N symbols)` | 灰 | ファイル全体がテスト |
 | `N tests` | 灰 | ファイル内のテストシンボルの折りたたみグループ |
 | `(skipped: ...)` | 灰 | 解析されなかった理由（未対応言語、バイナリ、生成物、削除済み、リポジトリ外） |
 
@@ -466,7 +468,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | `warn:N` | 黄 | ディレクトリ行: このサブツリー内の Warn band ファイル数 |
 | `split:N` | 赤 | ディレクトリ行: このサブツリー内の Split band ファイル数 |
 | `tests:0` | 黄 | シンボル行: このシンボルを参照するテストシンボルが 0 件 |
-| `ann:N` | シアン | この行に紐づくレビューアノテーションの件数 |
+| `✎N` | 太字 | この行に紐づくレビューアノテーションの件数 |
 
 `api:` と `warn:` / `split:` / `tests:0` が黄・赤なのは「確認が必要」を示すため、
 シアンのバッジは単なる情報量です。
@@ -477,14 +479,16 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | --- | --- | --- |
 | `+` / `-` | 緑 / 赤 | 追加行 / 削除行（Detail ペインのシグネチャ差分も同じ） |
 | `@@ ...` | 灰 | hunk ヘッダ |
-| 行頭の `*` | シアン | その行にレビューアノテーションが付いている（unified / split とも新側のみ） |
-| タイトルの `▲N` / `▼N` | 黄（太字） | 選択行がまだ見せていない行数（画面の上 / 下）。`ctrl-f` / `ctrl-b`（ツリーフォーカス時は `↓` / `↑` でも）で読み進められる（タイトルの `(12-41/210)` はファイル全体、こちらは選択行の担当範囲） |
+| 行頭の `✎` | 太字 | その行にレビューアノテーションが付いている（unified / split とも新側のみ） |
+| タイトルの `▲N` / `▼N` | シアン（太字） | 選択行がまだ見せていない行数（画面の上 / 下）。`ctrl-f` / `ctrl-b`（ツリーフォーカス時は `↓` / `↑` でも）で読み進められる（タイトルの `(12-41/210)` はファイル全体、こちらは選択行の担当範囲） |
 
 ### Blast radius ペイン
 
 | 記号 | 意味 |
 | --- | --- |
-| `! ... — already shown above (cycle)` | 依存の循環でツリーを打ち切った位置（既出のノードを指している） |
+| `↓ ...` | 起点から届く先 |
+| `... (shown above)` | 上に既出のため展開しない |
+| `↻ ... (shown above)` | 依存の循環でツリーを打ち切った位置（既出のノードを指している） |
 
 </details>
 

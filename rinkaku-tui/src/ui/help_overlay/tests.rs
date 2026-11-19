@@ -100,23 +100,17 @@ fn should_render_signature_changed_marker_swatch_with_yellow_tilde_when_building
 }
 
 #[test]
-fn should_render_cycle_marker_swatch_bold_yellow_when_building_markers_legend() {
+fn should_render_cycle_marker_swatch_as_an_uncolored_bold_mark_when_building_markers_legend() {
     let lines = markers_legend_lines(Locale::English);
 
     let cycle_line = lines
         .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref() == "(cycle)")
-        })
-        .expect("(cycle) line present");
+        .find(|line| line.spans.iter().any(|span| span.content.as_ref() == "↻"))
+        .expect("↻ line present");
 
-    let swatch_span = line_span(cycle_line, "(cycle)");
+    let swatch_span = line_span(cycle_line, "↻");
     assert_eq!(
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
+        Style::default().add_modifier(Modifier::BOLD),
         swatch_span.style
     );
 }
@@ -135,15 +129,15 @@ fn should_render_added_marker_swatch_with_green_plus_when_building_markers_legen
 }
 
 #[test]
-fn should_render_removed_marker_swatch_with_red_x_when_building_markers_legend() {
+fn should_render_removed_marker_swatch_with_red_minus_when_building_markers_legend() {
     let lines = markers_legend_lines(Locale::English);
 
     let removed_line = lines
         .iter()
-        .find(|line| line.spans.iter().any(|span| span.content.as_ref() == "x"))
-        .expect("x line present");
+        .find(|line| line.spans.iter().any(|span| span.content.as_ref() == "-"))
+        .expect("- line present");
 
-    let swatch_span = line_span(removed_line, "x");
+    let swatch_span = line_span(removed_line, "-");
     assert_eq!(Style::default().fg(Color::Red), swatch_span.style);
 }
 
@@ -206,7 +200,7 @@ fn should_reuse_row_view_band_style_for_lines_swatch_when_building_markers_legen
 }
 
 #[test]
-fn should_render_test_badge_swatch_with_magenta_when_building_markers_legend() {
+fn should_render_test_badge_swatch_in_deferred_gray_when_building_markers_legend() {
     let lines = markers_legend_lines(Locale::English);
 
     let line = lines
@@ -219,7 +213,7 @@ fn should_render_test_badge_swatch_with_magenta_when_building_markers_legend() {
         .expect("[test] (N symbols) line present");
 
     let swatch_span = line_span(line, "[test] (N symbols)");
-    assert_eq!(Style::default().fg(Color::Magenta), swatch_span.style);
+    assert_eq!(Style::default().fg(Color::DarkGray), swatch_span.style);
 }
 
 #[test]
@@ -327,15 +321,14 @@ fn should_draw_help_overlay_with_keymap_markers_and_glossary_when_help_is_open()
     let report = report_with_one_symbol();
     let app = App::new(&report).handle_key(crate::app::InputKey::ToggleHelp);
     assert_eq!(crate::app::Focus::Tree, app.focus());
-    // A 150x76 terminal (up from 150x74): taller again so the
-    // overlay's 80% x 90% area still fits every keymap group —
-    // now including the `U` update-prompt binding (ADR 0054) in the
-    // "Global" group — the Markers legend, and the trailing Glossary
+    // A 150x80 terminal (up from 150x76 for the `✎N` legend entry, ADR
+    // 0099): taller again so the overlay's 80% x 90% area still fits
+    // every keymap group, the Markers legend, and the trailing Glossary
     // section without the last section being pushed off the bottom.
     // Grown here rather than narrowing the content itself, same
-    // rationale as the 100x40 -> 100x50 -> 150x70 -> 150x74 growths
+    // rationale as the 100x40 -> 100x50 -> 150x70 -> 150x74 -> 150x76 growths
     // this test already went through for earlier keymap additions.
-    let mut terminal = Terminal::new(TestBackend::new(150, 76)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(150, 80)).expect("terminal");
 
     terminal
         .draw(|frame| {
@@ -379,7 +372,7 @@ fn should_hide_tree_focus_and_source_view_groups_when_right_focused_on_diff_pane
         .handle_key(crate::app::InputKey::Open)
         .handle_key(crate::app::InputKey::ToggleHelp);
     assert_eq!(crate::app::Focus::Right, app.focus());
-    let mut terminal = Terminal::new(TestBackend::new(150, 76)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(150, 80)).expect("terminal");
 
     terminal
         .draw(|frame| {
@@ -419,7 +412,7 @@ fn should_show_only_source_view_and_global_groups_on_source_screen() {
         .handle_key(crate::app::InputKey::Source)
         .handle_key(crate::app::InputKey::ToggleHelp);
     assert!(matches!(app.screen(), crate::app::Screen::Source { .. }));
-    let mut terminal = Terminal::new(TestBackend::new(150, 76)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(150, 80)).expect("terminal");
 
     terminal
         .draw(|frame| {
@@ -449,7 +442,7 @@ fn should_show_only_source_view_and_global_groups_on_source_screen() {
 fn should_draw_help_overlay_in_japanese_when_locale_is_japanese() {
     let report = report_with_one_symbol();
     let app = App::new(&report).handle_key(crate::app::InputKey::ToggleHelp);
-    let mut terminal = Terminal::new(TestBackend::new(150, 76)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(150, 80)).expect("terminal");
 
     terminal
         .draw(|frame| {

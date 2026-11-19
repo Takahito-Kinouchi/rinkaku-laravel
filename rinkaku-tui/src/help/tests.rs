@@ -89,15 +89,16 @@ fn should_order_marker_legend_added_changed_removed_then_aggregates() {
 
     assert_eq!(
         vec![
-            "v / >",
+            "▾ / ▸",
             "fn struct enum trait class iface type",
             "+",
             "~",
             "(dimmed name)",
-            "x",
+            "-",
             "(dimmed + struck-through name)",
-            "(cycle)",
+            "↻",
             "!",
+            "✎N",
             "[test] (N symbols)",
             "N tests",
             "(skipped: ...)",
