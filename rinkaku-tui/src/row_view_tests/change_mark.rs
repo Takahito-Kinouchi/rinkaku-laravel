@@ -11,6 +11,7 @@ fn render(row: &Row<'_>, label: &str) -> Line<'static> {
         label,
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
+        crate::connections::Connection::Neutral,
         false,
     )
 }
@@ -175,4 +176,54 @@ fn should_color_the_usage_count_red_only_when_the_symbol_may_break() {
             uses_count_style(&row(&added, false))
         )
     );
+}
+
+fn render_with(row: &Row<'_>, connection: crate::connections::Connection) -> Line<'static> {
+    entry_row_line(
+        row,
+        "",
+        &HashMap::new(),
+        &crate::annotation_markers::AnnotationMarkers::default(),
+        connection,
+        false,
+    )
+}
+
+#[test]
+fn should_put_an_up_arrow_on_a_symbol_that_uses_the_cursors_symbol() {
+    let node = symbol_node("lib.rs", plain_symbol("caller"), Badges::default());
+
+    let actual = render_with(
+        &row(&node, false),
+        crate::connections::Connection::UsesCursor,
+    );
+
+    assert_eq!(
+        Some(&Span::styled("↑ ", crate::glyph::selection())),
+        actual.spans.get(1)
+    );
+}
+
+#[test]
+fn should_put_a_down_arrow_on_a_symbol_the_cursors_symbol_uses() {
+    let node = symbol_node("lib.rs", plain_symbol("callee"), Badges::default());
+
+    let actual = render_with(
+        &row(&node, false),
+        crate::connections::Connection::UsedByCursor,
+    );
+
+    assert_eq!("↓   callee", line_text(&actual));
+}
+
+#[test]
+fn should_fade_a_symbol_unrelated_to_the_cursors_symbol() {
+    let node = symbol_node("lib.rs", plain_symbol("bystander"), Badges::default());
+
+    let actual = render_with(
+        &row(&node, false),
+        crate::connections::Connection::Unrelated,
+    );
+
+    assert_eq!(Style::default().add_modifier(Modifier::DIM), actual.style);
 }

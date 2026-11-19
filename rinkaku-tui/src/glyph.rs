@@ -21,6 +21,8 @@ pub(crate) const MAY_BREAK: &str = "●";
 pub(crate) const CYCLE: &str = "↻";
 /// "Uses the symbol under the cursor" (ADR 0099 decision 3).
 pub(crate) const USED_BY: &str = "↑";
+/// "Used by the symbol under the cursor" (ADR 0099 decision 3).
+pub(crate) const USES: &str = "↓";
 /// A Blast-radius entry: "the pivot reaches this".
 pub(crate) const REACHES: &str = "↓";
 pub(crate) const NOTE: &str = "✎";

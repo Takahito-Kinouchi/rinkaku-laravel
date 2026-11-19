@@ -12,6 +12,7 @@
 //! job; this module only decides one row's content and styling given that
 //! label.
 
+use crate::connections::Connection;
 use crate::glyph;
 use crate::nav::Row;
 use crate::order::DirRank;
@@ -46,6 +47,7 @@ pub fn entry_row_line(
     label: &str,
     ranks: &HashMap<String, DirRank>,
     annotation_markers: &crate::annotation_markers::AnnotationMarkers,
+    connection: Connection,
     selected: bool,
 ) -> Line<'static> {
     let indent = " ".repeat(row.depth * INDENT_WIDTH);
@@ -116,7 +118,7 @@ pub fn entry_row_line(
             }
         }
         NodeKind::Symbol(symbol_ref) => {
-            spans.push(Span::raw("  "));
+            spans.push(connection_span(connection));
             spans.push(symbol_marker_span(symbol_ref, &row.node.badges));
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
@@ -134,6 +136,9 @@ pub fn entry_row_line(
     }
 
     let mut line = Line::from(spans);
+    if connection == Connection::Unrelated && !selected {
+        line = line.style(Style::default().add_modifier(Modifier::DIM));
+    }
     if selected {
         line = line.style(Style::default().add_modifier(Modifier::REVERSED));
     }
@@ -150,6 +155,17 @@ fn expand_marker(row: &Row<'_>) -> &'static str {
         glyph::EXPANDED
     } else {
         glyph::COLLAPSED
+    }
+}
+
+/// The two columns in front of a symbol row's mark: `↑` when it uses the
+/// symbol under the cursor, `↓` when that symbol uses it (ADR 0099
+/// decision 3), blank otherwise.
+fn connection_span(connection: Connection) -> Span<'static> {
+    match connection {
+        Connection::UsesCursor => Span::styled(format!("{} ", glyph::USED_BY), glyph::selection()),
+        Connection::UsedByCursor => Span::styled(format!("{} ", glyph::USES), glyph::selection()),
+        Connection::Neutral | Connection::Unrelated => Span::raw("  "),
     }
 }
 

@@ -44,7 +44,12 @@ only becomes load-bearing when the output would otherwise not be TUI
   carry no counts; a collapsed one shows `●` when it hides a `●` symbol,
   and a file over 1000 lines shows `N lines` in red. Directories in a
   dependency cycle are marked `↻`. How many tests reference a symbol is
-  in its Detail pane. Files rinkaku couldn't analyze appear
+  in its Detail pane.
+
+  With the cursor on a symbol, the rows connected to it light up in
+  place: `↑` on every production symbol that uses it, `↓` on every one
+  it uses, and the other symbol rows fade — where a change reaches,
+  without a jump or a pane switch. Files rinkaku couldn't analyze appear
   dimmed as `(skipped: <reason>)`; whole-test files as
   `[test] (N symbols)`. A *mixed* file's test symbols (real code
   alongside `#[cfg(test)]`-style tests in the same file) fold into a

@@ -97,6 +97,7 @@ fn should_order_marker_legend_from_the_row_marks_to_the_pane_markers() {
             "(dimmed name)",
             "(dimmed + struck-through name)",
             "N",
+            "↑ / ↓",
             "↻",
             "✎N",
             "[test] (N symbols)",

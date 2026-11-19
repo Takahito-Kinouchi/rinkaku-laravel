@@ -57,6 +57,7 @@ help:
     body_only_symbol: "Body-only, unclassified, or test symbol — exists, but carries less review weight"
     removed_symbol: "Removed symbol"
     removed_symbol_name: "Removed symbol's name"
+    connection: "Uses / is used by the symbol under the cursor; unrelated symbol rows fade"
     dependency_cycle: "Directory contains a dependency cycle"
     risk_marker: "Signature changed and used by other symbols: it may break them (on a collapsed row: one is inside)"
     review_note: "Has review notes: their count on a tree row, the mark alone on a diff line"

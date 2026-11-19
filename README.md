@@ -156,6 +156,7 @@ Each symbol row carries one mark and at most one number
 | (no marker, one blank column) | grey | Body-only change, unclassified, or a test symbol — the name is grey too: present, but low review priority |
 | Grey struck-through name | grey | The name of a removed symbol |
 | `N` at the right edge | grey (red on a `●` row) | How many other production symbols use it; tests don't count |
+| `↑` / `↓` before the mark | cyan | Uses / is used by the symbol under the cursor; unrelated symbol rows fade |
 | `↻` | bold | The directory contains a dependency cycle |
 | `✎N` | bold | Review annotations attached to this row |
 | `N lines` | red (bold past 1500) | The file is over 1000 lines; smaller files show no count |
@@ -448,6 +449,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | （マーカー無し・空白 1 桁） | 灰 | body のみの変更、未分類、またはテストのシンボル。名前も灰色で、存在はするがレビュー優先度は低いことを示す |
 | 灰色＋取り消し線の名前 | 灰 | 削除されたシンボルの名前 |
 | 右端の `N` | 灰（`●` の行は赤） | これを使っている本番コードのシンボル数（テストは数えない） |
+| 印の前の `↑` / `↓` | シアン | カーソルのシンボルを使っている / それに使われている。関係ないシンボルの行は薄くなる |
 | `↻` | 太字 | ディレクトリ内に依存の循環がある |
 | `✎N` | 太字 | この行に紐づくレビューアノテーションの件数 |
 | `N lines` | 赤（1500行超えは太字） | 1000行を超えるファイル。それ以下のファイルには行数を出さない |

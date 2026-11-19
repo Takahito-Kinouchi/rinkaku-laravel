@@ -150,6 +150,7 @@ fn marker_swatch_spans(swatch: &'static str) -> Vec<Span<'static>> {
             symbol_name_style(&legend_symbol(None, true, false)),
         )],
         "N" => vec![Span::styled(swatch, crate::glyph::deferred())],
+        "↑ / ↓" => vec![Span::styled(swatch, crate::glyph::selection())],
         "↻" => vec![crate::row_view::cycle_marker_span()],
         "✎N" => vec![Span::styled(swatch, crate::glyph::uncolored_mark())],
         "N lines" => vec![Span::styled(swatch, band_style(FileSizeBand::Warn))],

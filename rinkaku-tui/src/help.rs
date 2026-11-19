@@ -467,6 +467,10 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
             explanation: rust_i18n::t!("help.marker.uses_count", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
+            swatch: "↑ / ↓",
+            explanation: rust_i18n::t!("help.marker.connection", locale = tag).into_owned(),
+        },
+        MarkerLegendEntry {
             swatch: "↻",
             explanation: rust_i18n::t!("help.marker.dependency_cycle", locale = tag).into_owned(),
         },

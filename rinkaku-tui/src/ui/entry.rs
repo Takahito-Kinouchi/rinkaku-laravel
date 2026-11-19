@@ -56,7 +56,8 @@ pub(crate) fn draw_entry_screen(
     ])
     .areas(area);
 
-    draw_tree_pane(frame, app, annotation_markers, tree_area);
+    let connections = crate::connections::Connections::of(report, app.selected_symbol_id());
+    draw_tree_pane(frame, app, annotation_markers, &connections, tree_area);
     match app.right_pane() {
         RightPane::Detail => RightPaneRender {
             clamped_scroll: draw_detail_pane(frame, app, report, right_area),
@@ -92,6 +93,7 @@ pub(crate) fn draw_tree_pane(
     frame: &mut Frame,
     app: &App,
     annotation_markers: &crate::annotation_markers::AnnotationMarkers,
+    connections: &crate::connections::Connections,
     area: Rect,
 ) {
     let rows = app.nav().rows(app.tree());
@@ -119,7 +121,14 @@ pub(crate) fn draw_tree_pane(
             .enumerate()
             .map(|(offset, (row, label))| {
                 let index = start + offset;
-                let line = entry_row_line(row, label, ranks, annotation_markers, index == cursor);
+                let line = entry_row_line(
+                    row,
+                    label,
+                    ranks,
+                    annotation_markers,
+                    connections.of_row(row),
+                    index == cursor,
+                );
                 let line = if matches!(row.node.kind, NodeKind::Dir | NodeKind::Section(_)) {
                     divider_rule(&line, viewport_width)
                 } else {

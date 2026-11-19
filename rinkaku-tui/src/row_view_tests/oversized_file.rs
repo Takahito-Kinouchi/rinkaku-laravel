@@ -28,6 +28,7 @@ fn render(node: &TreeNode) -> Line<'static> {
         "f.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
+        crate::connections::Connection::Neutral,
         false,
     )
 }
