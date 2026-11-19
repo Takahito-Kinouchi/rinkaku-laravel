@@ -161,61 +161,39 @@ pub(crate) fn cycle_marker_span() -> Span<'static> {
 }
 
 /// Computes the display label for every row in `rows` (as returned by
-/// `crate::nav::Nav::rows`), stripping each `Dir`/`File` node's ancestor
-/// directory path already shown by a preceding row on screen — e.g. a
-/// `"src/foo"` directory nested under a `"src"` row displays as `"foo"`,
-/// not the repeated `"src/foo"` its `TreeNode::path` carries in full (per
-/// `crate::tree::TreeNode::path`'s own doc comment).
+/// `crate::nav::Nav::rows`): a divider row (a top-level directory) shows
+/// its full path, and a file row under it shows its path relative to that
+/// divider — `render/markdown.rs` under `rinkaku-core/src` — since the
+/// directories between the two get no row of their own (ADR 0099 decision
+/// 2). A file with no divider above it (a top-level file, or one under the
+/// synthetic Tests section, whose path is no prefix of anything) shows its
+/// full path.
 ///
-/// This only works correctly because `rows` is a pre-order flattening
-/// (`Nav::rows`'s own doc comment): a directory's ancestor rows always
-/// appear earlier in the slice, at a strictly smaller `depth`, so tracking
-/// "the most recent path seen at each depth" while scanning forward once
-/// is enough to compute every row's relative label in a single pass — no
-/// need to reconstruct the tree's own recursive shape here. A `Symbol`
-/// row's label is never consulted by `entry_row_line` (it always shows
-/// `SymbolRef::name` instead), so this function returns an empty string
-/// for those rows rather than computing a meaningless one.
+/// `rows` is a pre-order flattening (`Nav::rows`' own doc comment), so the
+/// most recent divider seen while scanning forward is the one a file sits
+/// under, and a later top-level file is never mistaken for one: a
+/// top-level file is a sibling of the divider, not under it, so the
+/// divider's path is no prefix of its path. A `Symbol` row's label is never
+/// consulted by `entry_row_line` (it always shows `SymbolRef::name`), so
+/// this returns an empty string for those rows.
 pub fn relative_labels(rows: &[Row<'_>]) -> Vec<String> {
-    // `ancestor_path_at[d]` is the full `TreeNode::path` of the most
-    // recent `Dir`/`File` row seen at depth `d` — the nearest enclosing
-    // ancestor for any later row at depth `d + 1`.
-    let mut ancestor_path_at: Vec<Option<String>> = Vec::new();
-
+    let mut divider_path: Option<&str> = None;
     rows.iter()
-        .map(|row| {
-            if matches!(row.node.kind, NodeKind::Symbol(_)) {
-                return String::new();
+        .map(|row| match &row.node.kind {
+            NodeKind::Dir => {
+                divider_path = Some(row.node.path.as_str());
+                row.node.path.clone()
             }
-
-            let parent_path = row.depth.checked_sub(1).and_then(|parent_depth| {
-                ancestor_path_at
-                    .get(parent_depth)
-                    .and_then(|p| p.as_deref())
-            });
-            let label = match parent_path {
-                Some(parent) => row
-                    .node
-                    .path
-                    .strip_prefix(parent)
-                    .and_then(|rest| rest.strip_prefix('/'))
-                    .unwrap_or(&row.node.path)
-                    .to_string(),
-                None => row.node.path.clone(),
-            };
-
-            if ancestor_path_at.len() <= row.depth {
-                ancestor_path_at.resize(row.depth + 1, None);
+            NodeKind::Section(_) => {
+                divider_path = Some(row.node.path.as_str());
+                String::new()
             }
-            ancestor_path_at[row.depth] = Some(row.node.path.clone());
-            // Truncate any deeper stale entries from a sibling subtree
-            // this row's own depth just returned to (a pre-order walk can
-            // go from a deep leaf back up to a shallower sibling), so a
-            // later row never mistakes a previous, now-unrelated branch's
-            // path for its actual parent.
-            ancestor_path_at.truncate(row.depth + 1);
-
-            label
+            NodeKind::File => divider_path
+                .and_then(|divider| row.node.path.strip_prefix(divider))
+                .and_then(|rest| rest.strip_prefix('/'))
+                .unwrap_or(&row.node.path)
+                .to_string(),
+            NodeKind::Symbol(_) | NodeKind::TestGroup { .. } => String::new(),
         })
         .collect()
 }

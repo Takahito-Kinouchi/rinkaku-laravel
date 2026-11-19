@@ -16,8 +16,14 @@ only becomes load-bearing when the output would otherwise not be TUI
 
 ## Layout
 
-- **Tree pane (left)** — a directory tree of *changed files*, mirroring
-  your repository layout. Sibling directories order topologically over
+- **Tree pane (left)** — the *changed files* in two levels
+  ([ADR 0099](adr/0099-tui-review-flow-redesign.md)): each top-level
+  directory is a divider row (`▾ app ─────`), the files under it follow
+  as rows labeled by their path below that directory
+  (`Http/Controllers/UserController.php`), and their symbols sit one
+  level in. Directories between the divider and the file get no row of
+  their own, so `--entry` with such a directory finds no row to land on.
+  The order is the directory tree's own: sibling directories order topologically over
   the change graph: entry-point directories (nothing else depends on
   them) sort first, heavily-depended-upon foundations sort last. Files
   within a directory are alphabetical; symbols keep source order. When

@@ -105,13 +105,7 @@ fn should_expand_multiple_collapsed_ancestors_when_jumping_to_a_deeply_hidden_sy
     assert!(actual);
     let rows = nav.rows(&tree);
     assert_eq!(
-        vec![
-            "src",
-            "src/pkg",
-            "src/pkg/lib.rs",
-            "src/pkg/lib.rs",
-            "src/pkg/lib.rs"
-        ],
+        vec!["src", "src/pkg/lib.rs", "src/pkg/lib.rs", "src/pkg/lib.rs"],
         row_paths(&rows)
     );
     assert_eq!("bar", symbol_name(&rows[nav.cursor()]));

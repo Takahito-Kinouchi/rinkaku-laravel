@@ -161,7 +161,11 @@ the frame, so these add no new width risk. Emoji stay out (ADR 0028).
 - `space` changes meaning (expand/collapse → check and advance). Anyone
   with the old habit gets a checked mark instead of a fold; `enter`
   still folds.
-- `tests:0` and the per-file line count are only visible in the Detail
-  pane.
+- `tests:0` is only visible in the Detail pane, and a file's line count
+  only on files past the warn threshold.
+- A directory below a top-level divider has no row, so it cannot be
+  collapsed on its own, its Detail/Blast-radius view is out of reach
+  from the tree, and `--entry <that directory>` opens with the "no row
+  matches" note. Its files are still there, labeled with its path.
 - ADR 0059's test-coverage signal and ADR 0028's file-size data are
   unchanged in the Markdown/JSON output; only the TUI rows change.

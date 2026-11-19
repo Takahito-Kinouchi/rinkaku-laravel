@@ -133,10 +133,19 @@ impl Nav {
     /// philosophy the rest of the TUI stack follows (ADR 0016 decision 1)
     /// — the tree itself is already cheap to rebuild from a `Report`, and
     /// this flattening is cheaper still.
+    ///
+    /// The tree is drawn in two levels (ADR 0099 decision 2): a top-level
+    /// directory or section is a divider row, and everything under it —
+    /// however deeply nested — is a file row at the divider's own depth,
+    /// then its symbols one level in. A directory under a divider gets no
+    /// row of its own (its path shows in its files' labels instead,
+    /// `crate::row_view::relative_labels`), so it is never collapsed
+    /// either. The walk is still pre-order over the ordered tree, which is
+    /// what keeps the topological file order intact.
     pub fn rows<'a>(&self, tree: &'a Tree) -> Vec<Row<'a>> {
         let mut rows = Vec::new();
         for root in &tree.roots {
-            self.push_rows(root, 0, &mut rows);
+            self.push_rows(root, 0, false, &mut rows);
         }
         rows
     }
@@ -215,7 +224,19 @@ impl Nav {
         true
     }
 
-    fn push_rows<'a>(&self, node: &'a TreeNode, depth: usize, rows: &mut Vec<Row<'a>>) {
+    fn push_rows<'a>(
+        &self,
+        node: &'a TreeNode,
+        depth: usize,
+        under_divider: bool,
+        rows: &mut Vec<Row<'a>>,
+    ) {
+        if under_divider && matches!(node.kind, NodeKind::Dir) {
+            for child in &node.children {
+                self.push_rows(child, depth, true, rows);
+            }
+            return;
+        }
         let has_children = !node.children.is_empty();
         let expanded = has_children && !self.collapsed.contains(&node.path);
         rows.push(Row {
@@ -224,8 +245,9 @@ impl Nav {
             expanded,
         });
         if expanded {
+            let (child_depth, child_under_divider) = child_placement(node, depth, under_divider);
             for child in &node.children {
-                self.push_rows(child, depth + 1, rows);
+                self.push_rows(child, child_depth, child_under_divider, rows);
             }
         }
     }
@@ -335,7 +357,7 @@ impl Nav {
     fn cursor_path_chain(&self, tree: &Tree) -> Vec<String> {
         let mut chain = Vec::new();
         for root in &tree.roots {
-            if self.collect_path_chain(root, self.cursor, &mut 0, &mut chain) {
+            if self.collect_path_chain(root, false, self.cursor, &mut 0, &mut chain) {
                 break;
             }
         }
@@ -350,21 +372,34 @@ impl Nav {
     fn collect_path_chain(
         &self,
         node: &TreeNode,
+        under_divider: bool,
         target_cursor: usize,
         visited: &mut usize,
         chain: &mut Vec<String>,
     ) -> bool {
-        if *visited == target_cursor {
-            chain.push(node.path.clone());
-            return true;
+        // A directory under a divider has no row of its own (`push_rows`):
+        // it takes no row index, but it is still an ancestor in the chain.
+        let has_row = !(under_divider && matches!(node.kind, NodeKind::Dir));
+        if has_row {
+            if *visited == target_cursor {
+                chain.push(node.path.clone());
+                return true;
+            }
+            *visited += 1;
         }
-        *visited += 1;
 
-        let has_children = !node.children.is_empty();
-        let expanded = has_children && !self.collapsed.contains(&node.path);
+        let expanded =
+            !has_row || (!node.children.is_empty() && !self.collapsed.contains(&node.path));
         if expanded {
+            let (_, child_under_divider) = child_placement(node, 0, under_divider);
             for child in &node.children {
-                if self.collect_path_chain(child, target_cursor, visited, chain) {
+                if self.collect_path_chain(
+                    child,
+                    child_under_divider,
+                    target_cursor,
+                    visited,
+                    chain,
+                ) {
                     chain.push(node.path.clone());
                     return true;
                 }
@@ -392,6 +427,19 @@ impl Nav {
         }
 
         self.cursor = rows.len().saturating_sub(1);
+    }
+}
+
+/// Where `node`'s children go in the two-level row list (ADR 0099
+/// decision 2): a divider (a directory or section with no divider above
+/// it) keeps its children at its own depth, so files sit flush with it;
+/// anything else nests its children one level in.
+fn child_placement(node: &TreeNode, depth: usize, under_divider: bool) -> (usize, bool) {
+    let is_divider = matches!(node.kind, NodeKind::Dir | NodeKind::Section(_));
+    if is_divider {
+        (depth, true)
+    } else {
+        (depth + 1, under_divider)
     }
 }
 

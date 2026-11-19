@@ -11,6 +11,7 @@ use super::{ENTRY_RIGHT_WIDTH_PERCENT, ENTRY_TREE_WIDTH_PERCENT, RightPaneRender
 use crate::app::{App, BlastRadiusSelection, Focus, RightPane};
 use crate::highlight::HighlightedFile;
 use crate::row_view::{entry_row_line, relative_labels, row_uses_count, uses_count_style};
+use crate::tree::NodeKind;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -119,6 +120,11 @@ pub(crate) fn draw_tree_pane(
             .map(|(offset, (row, label))| {
                 let index = start + offset;
                 let line = entry_row_line(row, label, ranks, annotation_markers, index == cursor);
+                let line = if matches!(row.node.kind, NodeKind::Dir | NodeKind::Section(_)) {
+                    divider_rule(&line, viewport_width)
+                } else {
+                    line
+                };
                 let line = match row_uses_count(row) {
                     Some(count) => flush_right(
                         &line,
@@ -166,6 +172,24 @@ pub(crate) fn draw_tree_pane(
         .border_style(pane_border_style(app.focus() == Focus::Tree));
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
+}
+
+/// A divider row (ADR 0099 decision 2) drawn as its label followed by a
+/// dim `───` rule to the pane edge, so it reads as a section break rather
+/// than as one more entry.
+pub(crate) fn divider_rule(line: &Line<'static>, width: usize) -> Line<'static> {
+    let label = truncate_line_to_width(line, width);
+    let rule_width = width.saturating_sub(label.width() + 1);
+    if rule_width == 0 {
+        return label;
+    }
+    let mut spans = label.spans;
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(
+        "─".repeat(rule_width),
+        crate::glyph::deferred(),
+    ));
+    Line::from(spans).style(line.style)
 }
 
 /// `line` truncated to leave room for `right`, padded, then `right` flush
@@ -318,6 +342,22 @@ mod tests {
         let actual = super::flush_right(&line, Span::raw("3"), 10);
 
         assert_eq!(style, actual.style);
+    }
+
+    #[test]
+    fn should_follow_a_divider_label_with_a_dim_rule_to_the_pane_edge() {
+        let line = Line::from(Span::raw("▾ app"));
+
+        let actual = super::divider_rule(&line, 10);
+
+        assert_eq!(
+            Line::from(vec![
+                Span::raw("▾ app"),
+                Span::raw(" "),
+                Span::styled("────", crate::glyph::deferred()),
+            ]),
+            actual
+        );
     }
 
     fn line_text(line: &Line<'_>) -> String {
