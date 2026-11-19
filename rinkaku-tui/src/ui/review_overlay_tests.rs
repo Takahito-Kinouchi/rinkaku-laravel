@@ -230,6 +230,8 @@ fn should_draw_both_export_menu_entries_when_sink_a_is_available() {
     assert!(text.contains("Export to"));
     assert!(text.contains("GitHub PR review"));
     assert!(text.contains("Clipboard"));
+    // ADR 0099: the clipboard is listed first, the default under the cursor.
+    assert!(text.find("Clipboard") < text.find("GitHub PR review"));
 }
 
 #[test]
@@ -291,6 +293,7 @@ fn should_draw_verdict_menu_overlay_entries() {
         .confirm_compose()
         .open_list()
         .open_export_menu()
+        .list_down()
         .confirm_export(true);
     let app = App::new(&report).with_review(review);
 

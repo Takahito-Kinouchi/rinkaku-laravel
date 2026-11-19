@@ -243,7 +243,7 @@ to what is actually pressable on the current screen.
 | --- | --- |
 | `a` | Annotate the line under the cursor |
 | `A` | Open the annotation list |
-| In the list: `j` / `k`, `Enter`, `d`, `Esc` | Move, export menu, delete the selected one, close |
+| In the list: `j` / `k`, `Enter`, `d`, `Esc` | Move, export menu (clipboard first; in `--pr` mode GitHub PR review is the next entry), delete the selected one, close |
 
 ### Global
 
