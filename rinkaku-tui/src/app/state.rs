@@ -138,6 +138,13 @@ pub struct App {
     /// needs it and `App` is the only layer that both dispatches keys and
     /// is told this flag at startup.
     pub(super) review_sink_a_available: bool,
+    /// The change graph's production edges, indexed once (ADR 0099) — what
+    /// the tree's arrows and counts, the Diff header and `space`'s next
+    /// target all read.
+    pub(super) edges: crate::connections::ProductionEdges,
+    /// Symbol ids the reviewer marked checked with `space` (ADR 0099
+    /// decision 4). Session-only: nothing persists it.
+    pub(super) checked: std::collections::HashSet<String>,
     /// `--tui` mode's background dependency-resolution job status (ADR
     /// 0081) — see [`DependencyStatus`]'s own doc comment. Defaults to
     /// [`DependencyStatus::Ready`] (every existing test, and every
@@ -188,6 +195,8 @@ impl App {
             review: ReviewState::default(),
             search: SearchState::default(),
             review_sink_a_available: false,
+            edges: crate::connections::ProductionEdges::from_report(report),
+            checked: std::collections::HashSet::new(),
             dependency_status: DependencyStatus::default(),
         }
     }
@@ -321,6 +330,21 @@ impl App {
     /// unclamped request rather than an authoritative display position.
     pub fn right_pane_scroll(&self) -> usize {
         self.right_pane_scroll
+    }
+
+    /// The change graph's production edges (ADR 0099).
+    pub fn edges(&self) -> &crate::connections::ProductionEdges {
+        &self.edges
+    }
+
+    /// Whether the reviewer has marked symbol `id` checked this session.
+    pub fn is_checked(&self, id: &str) -> bool {
+        self.checked.contains(id)
+    }
+
+    /// Checked and total reviewable symbols, for the tree pane's title.
+    pub fn review_progress(&self) -> (usize, usize) {
+        crate::checklist::progress(&self.tree, &self.checked)
     }
 
     pub fn status(&self) -> Option<&str> {

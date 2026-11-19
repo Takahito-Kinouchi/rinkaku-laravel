@@ -464,7 +464,13 @@ impl App {
             // rows was rejected: it would silently relocate the reviewer's
             // current match to a row they never chose.
             (Screen::Entry, Focus::Tree, InputKey::Select) => {
-                self.nav = self.nav.handle(Action::ToggleExpand, &self.tree);
+                // ADR 0099 decision 4: on a symbol row, space checks it off
+                // and moves on; on any other row it still folds, since a
+                // file row's Enter opens the diff instead.
+                match self.symbol_id_under_cursor() {
+                    Some(id) => self = self.toggle_checked_and_advance(id),
+                    None => self.nav = self.nav.handle(Action::ToggleExpand, &self.tree),
+                }
                 self.search = self.search.clone().cancel();
             }
             // Gated on `Focus::Tree`, matching `InputKey::Open`'s own focus

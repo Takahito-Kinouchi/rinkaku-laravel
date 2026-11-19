@@ -49,7 +49,13 @@ only becomes load-bearing when the output would otherwise not be TUI
   With the cursor on a symbol, the rows connected to it light up in
   place: `↑` on every production symbol that uses it, `↓` on every one
   it uses, and the other symbol rows fade — where a change reaches,
-  without a jump or a pane switch. Files rinkaku couldn't analyze appear
+  without a jump or a pane switch.
+
+  `space` on a symbol row checks it off (`✓`, gray) and follows the
+  change to the next unchecked symbol that uses it, so reading top to
+  bottom becomes reading along the change. The pane title counts the
+  checked symbols (`Entry  ✓ 12/168`); checks last for the session only.
+  `ctrl-o` returns to the symbol you just checked. Files rinkaku couldn't analyze appear
   dimmed as `(skipped: <reason>)`; whole-test files as
   `[test] (N symbols)`. A *mixed* file's test symbols (real code
   alongside `#[cfg(test)]`-style tests in the same file) fold into a
@@ -98,7 +104,7 @@ Press `?` in the TUI for the always-up-to-date table.
 | --- | --- |
 | `j` / `k` / `↓` / `↑` | Move the cursor |
 | `enter` | Expand/collapse a directory, or open a file/symbol row (moves focus right) |
-| `space` | Expand or collapse (never moves focus) |
+| `space` | On a symbol row: mark it checked (`✓`) and move to an unchecked symbol that uses it — else the next `●`, else the next unchecked symbol; again to uncheck. On any other row: expand or collapse (never moves focus) |
 | `e` / `E` | Expand every row |
 | `c` / `C` | Collapse every row |
 

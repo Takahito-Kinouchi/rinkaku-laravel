@@ -11,8 +11,7 @@ fn render(row: &Row<'_>, label: &str) -> Line<'static> {
         label,
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     )
 }
 
@@ -136,25 +135,72 @@ fn should_mark_a_collapsed_file_hiding_a_symbol_that_may_break() {
     assert_eq!("▸ ● a.rs", line_text(&render(&row(&node, false), "a.rs")));
 }
 
+/// Edges where `users` production symbols each use `id`.
+fn edges_with_users(id: &str, users: usize) -> crate::connections::ProductionEdges {
+    use rinkaku_core::graph::{Edge, Node, SymbolGraph};
+    let node = |node_id: String| Node {
+        id: node_id.clone(),
+        path: "lib.rs".to_string(),
+        name: node_id,
+        container: None,
+        is_test: false,
+    };
+    let user_ids: Vec<String> = (0..users).map(|n| format!("lib.rs::user{n}")).collect();
+    let report = rinkaku_core::render::Report {
+        origin: rinkaku_core::render::ReportOrigin::Diff,
+        files: vec![],
+        skipped: vec![],
+        graph: SymbolGraph {
+            nodes: std::iter::once(id.to_string())
+                .chain(user_ids.iter().cloned())
+                .map(node)
+                .collect(),
+            edges: user_ids
+                .iter()
+                .map(|user| Edge {
+                    from: user.clone(),
+                    to: id.to_string(),
+                    is_cycle: false,
+                })
+                .collect(),
+            roots: vec![],
+        },
+        tests: vec![],
+        fan_ins: vec![],
+        test_coverage: vec![],
+        file_size_warnings: vec![],
+        file_size_bands: vec![],
+        removed: vec![],
+        non_symbol_changes: vec![],
+    };
+    crate::connections::ProductionEdges::from_report(&report)
+}
+
 #[test]
 fn should_report_how_many_symbols_use_a_symbol_row() {
-    let node = symbol_node("lib.rs", signature_changed("foo"), used_by(6));
+    let node = symbol_node("lib.rs", plain_symbol("foo"), Badges::default());
 
-    assert_eq!(Some(6), row_uses_count(&row(&node, false)));
+    let actual = row_uses_count(&row(&node, false), &edges_with_users("lib.rs::foo", 6));
+
+    assert_eq!(Some(6), actual);
 }
 
 #[test]
 fn should_report_no_usage_count_when_nothing_uses_the_symbol() {
-    let node = symbol_node("lib.rs", signature_changed("foo"), used_by(0));
+    let node = symbol_node("lib.rs", plain_symbol("foo"), Badges::default());
 
-    assert_eq!(None, row_uses_count(&row(&node, false)));
+    let actual = row_uses_count(&row(&node, false), &edges_with_users("lib.rs::foo", 0));
+
+    assert_eq!(None, actual);
 }
 
 #[test]
-fn should_report_no_usage_count_on_a_file_row_even_with_aggregated_fan_in() {
+fn should_report_no_usage_count_on_a_file_row() {
     let node = file_node("lib.rs", used_by(6));
 
-    assert_eq!(None, row_uses_count(&row(&node, false)));
+    let actual = row_uses_count(&row(&node, false), &edges_with_users("lib.rs", 6));
+
+    assert_eq!(None, actual);
 }
 
 #[test]
@@ -184,8 +230,10 @@ fn render_with(row: &Row<'_>, connection: crate::connections::Connection) -> Lin
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        connection,
-        false,
+        crate::row_view::RowState {
+            connection,
+            ..Default::default()
+        },
     )
 }
 
@@ -226,4 +274,29 @@ fn should_fade_a_symbol_unrelated_to_the_cursors_symbol() {
     );
 
     assert_eq!(Style::default().add_modifier(Modifier::DIM), actual.style);
+}
+
+#[test]
+fn should_trade_the_mark_for_a_gray_check_and_dim_the_name_once_checked() {
+    let node = symbol_node("lib.rs", signature_changed("foo"), used_by(2));
+
+    let actual = entry_row_line(
+        &row(&node, false),
+        "",
+        &HashMap::new(),
+        &crate::annotation_markers::AnnotationMarkers::default(),
+        crate::row_view::RowState {
+            checked: true,
+            ..Default::default()
+        },
+    );
+
+    let expected = Line::from(vec![
+        Span::raw(""),
+        Span::raw("  "),
+        Span::styled("✓", crate::glyph::deferred()),
+        Span::raw(" "),
+        Span::styled("foo", crate::glyph::deferred()),
+    ]);
+    assert_eq!(expected, actual);
 }

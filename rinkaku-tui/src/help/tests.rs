@@ -100,6 +100,7 @@ fn should_order_marker_legend_from_the_row_marks_to_the_pane_markers() {
             "↑ / ↓",
             "↻",
             "✎N",
+            "✓",
             "[test] (N symbols)",
             "N tests",
             "(skipped: ...)",

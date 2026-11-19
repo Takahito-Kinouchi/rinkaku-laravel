@@ -15,8 +15,7 @@ fn should_render_a_body_only_symbol_as_its_bare_name() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("        foo", line_text(&line));
@@ -36,8 +35,7 @@ fn should_render_a_plain_file_row_as_its_bare_name() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  lib.rs", line_text(&line));
@@ -57,8 +55,7 @@ fn should_append_skip_reason_for_a_skipped_file_row() {
         "assets/logo.png",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  assets/logo.png (skipped: binary)", line_text(&line));
@@ -83,8 +80,7 @@ fn should_dim_label_for_a_skipped_file_row_when_the_file_has_no_readable_content
         "assets/logo.png",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(
@@ -110,8 +106,7 @@ fn should_not_dim_label_for_a_skipped_file_row_when_the_language_is_unsupported(
         "deploy/values.yaml",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(None, fg_of_span_with_content(&line, "deploy/values.yaml"));
@@ -141,8 +136,7 @@ fn should_dim_skip_reason_annotation_when_a_file_row_is_skipped_for_any_reason(
         "assets/logo.png",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(
@@ -165,8 +159,7 @@ fn should_not_append_skip_reason_for_an_ordinary_file_row() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert!(!line_text(&line).contains("skipped"));
@@ -191,8 +184,7 @@ fn should_prepend_test_badge_with_plural_symbols_noun_before_a_whole_test_file_l
         "src/lib_test.go",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  [test] (3 symbols) src/lib_test.go", line_text(&line));
@@ -212,8 +204,7 @@ fn should_prepend_test_badge_with_singular_symbol_noun_when_count_is_one() {
         "src/lib_test.go",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  [test] (1 symbol) src/lib_test.go", line_text(&line));
@@ -237,8 +228,7 @@ fn should_show_collapse_marker_when_dir_is_not_expanded() {
         "src",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("▸ src", line_text(&line));
@@ -272,8 +262,7 @@ fn should_render_section_row_with_its_fixed_label_and_no_counts() {
         "ignored-label",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("▾ Tests", line_text(&line));
@@ -297,8 +286,7 @@ fn should_show_collapse_marker_for_a_collapsed_section_row() {
         "ignored-label",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("▸ Tests", line_text(&line));
@@ -330,8 +318,7 @@ fn should_never_show_cycle_marker_on_a_section_row_even_if_ranks_has_a_stray_ent
         "ignored-label",
         &ranks,
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  Tests", line_text(&line));
@@ -359,8 +346,7 @@ fn should_append_cycle_marker_when_dir_path_is_in_cycle() {
         "src",
         &ranks,
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  src ↻", line_text(&line));
@@ -388,8 +374,7 @@ fn should_not_append_cycle_marker_when_dir_path_is_not_in_cycle() {
         "src",
         &ranks,
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  src", line_text(&line));
@@ -413,8 +398,7 @@ fn should_mark_added_symbol_with_plus() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  + new_fn", line_text(&line));
@@ -438,8 +422,7 @@ fn should_mark_signature_changed_symbol_without_users_with_an_open_circle() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  ○ changed_fn", line_text(&line));
@@ -463,8 +446,7 @@ fn should_mark_removed_symbol_with_the_diffs_minus_sign() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  - gone_fn", line_text(&line));
@@ -495,8 +477,7 @@ fn should_dim_name_and_omit_test_badge_for_a_test_symbol_in_a_mixed_file() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("    test_it", line_text(&line));
@@ -520,8 +501,7 @@ fn should_not_append_test_badge_for_an_ordinary_non_test_symbol() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("    foo", line_text(&line));
@@ -541,8 +521,10 @@ fn should_apply_reversed_modifier_when_row_is_selected() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        true,
+        crate::row_view::RowState {
+            selected: true,
+            ..Default::default()
+        },
     );
 
     assert!(line.style.add_modifier.contains(Modifier::REVERSED));
@@ -562,8 +544,7 @@ fn should_not_apply_reversed_modifier_when_row_is_not_selected() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert!(!line.style.add_modifier.contains(Modifier::REVERSED));
@@ -583,8 +564,7 @@ fn should_indent_by_depth_times_indent_width() {
         "lib.rs",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("        lib.rs", line_text(&line));
@@ -612,8 +592,7 @@ fn should_dim_name_for_a_body_only_symbol() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(
@@ -640,8 +619,7 @@ fn should_not_dim_name_for_an_added_symbol() {
         "",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!(None, fg_of_span_with_content(&line, "new_fn"));
@@ -675,8 +653,7 @@ fn should_render_test_group_row_with_plural_count() {
         "ignored-label",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("▸ 3 tests", line_text(&line));
@@ -711,8 +688,7 @@ fn should_render_test_group_row_with_singular_count() {
         "ignored-label",
         &HashMap::new(),
         &crate::annotation_markers::AnnotationMarkers::default(),
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("▸ 1 test", line_text(&line));
@@ -736,8 +712,7 @@ fn should_show_annotation_badge_on_a_symbol_row_with_a_matching_annotation_count
         "",
         &HashMap::new(),
         &annotation_markers,
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("    foo ✎2", line_text(&line));
@@ -761,8 +736,7 @@ fn should_omit_annotation_badge_on_a_symbol_row_with_no_matching_annotation_coun
         "",
         &HashMap::new(),
         &annotation_markers,
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("    foo", line_text(&line));
@@ -786,8 +760,7 @@ fn should_show_annotation_badge_on_a_file_row_with_a_matching_annotation_count()
         "lib.rs",
         &HashMap::new(),
         &annotation_markers,
-        crate::connections::Connection::Neutral,
-        false,
+        crate::row_view::RowState::default(),
     );
 
     assert_eq!("  lib.rs ✎3", line_text(&line));

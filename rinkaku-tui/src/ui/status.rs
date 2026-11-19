@@ -84,7 +84,7 @@ pub(crate) fn status_line_text(app: &App, report: &Report) -> String {
                 crate::order::OrderMode::AlphaNumeric => "alphabetical",
             };
             let keys = match app.focus() {
-                crate::app::Focus::Tree => "j/k: move  /: search  enter: open  ?: help  q: quit",
+                crate::app::Focus::Tree => "j/k: move  space: check  enter: open  ?: help  q: quit",
                 crate::app::Focus::Right if app.right_pane() == crate::app::RightPane::Diff => {
                     "j/k: scroll  h/esc: back  ]/[: hunk  ?: help  q: quit"
                 }
@@ -289,7 +289,7 @@ mod tests {
         let actual = status_line_text(&app, &report);
 
         assert_eq!(
-            "order: topological  |  j/k: move  /: search  enter: open  ?: help  q: quit"
+            "order: topological  |  j/k: move  space: check  enter: open  ?: help  q: quit"
                 .to_string(),
             actual
         );

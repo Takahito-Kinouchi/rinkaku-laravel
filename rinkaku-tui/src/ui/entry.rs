@@ -10,7 +10,9 @@ use super::style::pane_border_style;
 use super::{ENTRY_RIGHT_WIDTH_PERCENT, ENTRY_TREE_WIDTH_PERCENT, RightPaneRender};
 use crate::app::{App, BlastRadiusSelection, Focus, RightPane};
 use crate::highlight::HighlightedFile;
-use crate::row_view::{entry_row_line, relative_labels, row_uses_count, uses_count_style};
+use crate::row_view::{
+    RowState, entry_row_line, relative_labels, row_uses_count, uses_count_style,
+};
 use crate::tree::NodeKind;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -56,7 +58,7 @@ pub(crate) fn draw_entry_screen(
     ])
     .areas(area);
 
-    let connections = crate::connections::Connections::of(report, app.selected_symbol_id());
+    let connections = crate::connections::Connections::of(app.edges(), app.selected_symbol_id());
     draw_tree_pane(frame, app, annotation_markers, &connections, tree_area);
     match app.right_pane() {
         RightPane::Detail => RightPaneRender {
@@ -121,20 +123,27 @@ pub(crate) fn draw_tree_pane(
             .enumerate()
             .map(|(offset, (row, label))| {
                 let index = start + offset;
+                let checked = matches!(
+                    &row.node.kind,
+                    NodeKind::Symbol(symbol_ref) if app.is_checked(&symbol_ref.id)
+                );
                 let line = entry_row_line(
                     row,
                     label,
                     ranks,
                     annotation_markers,
-                    connections.of_row(row),
-                    index == cursor,
+                    RowState {
+                        connection: connections.of_row(row),
+                        checked,
+                        selected: index == cursor,
+                    },
                 );
                 let line = if matches!(row.node.kind, NodeKind::Dir | NodeKind::Section(_)) {
                     divider_rule(&line, viewport_width)
                 } else {
                     line
                 };
-                let line = match row_uses_count(row) {
+                let line = match row_uses_count(row, app.edges()) {
                     Some(count) => flush_right(
                         &line,
                         Span::styled(count.to_string(), uses_count_style(row)),
@@ -176,8 +185,12 @@ pub(crate) fn draw_tree_pane(
     // No `(first-last/total)` title suffix: the in-pane `▲ N more` /
     // `▼ N more` lines already say what is out of view, and ADR 0099 keeps
     // one notation per meaning.
+    let (checked, total) = app.review_progress();
     let block = Block::bordered()
-        .title(" Entry ")
+        .title(format!(
+            " Entry  {} {checked}/{total} ",
+            crate::glyph::CHECKED
+        ))
         .border_style(pane_border_style(app.focus() == Focus::Tree));
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);

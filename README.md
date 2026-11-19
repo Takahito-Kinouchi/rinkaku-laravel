@@ -157,6 +157,7 @@ Each symbol row carries one mark and at most one number
 | Grey struck-through name | grey | The name of a removed symbol |
 | `N` at the right edge | grey (red on a `●` row) | How many other production symbols use it; tests don't count |
 | `↑` / `↓` before the mark | cyan | Uses / is used by the symbol under the cursor; unrelated symbol rows fade |
+| `✓` | grey | Checked off with `space` this session; the pane title counts them |
 | `↻` | bold | The directory contains a dependency cycle |
 | `✎N` | bold | Review annotations attached to this row |
 | `N lines` | red (bold past 1500) | The file is over 1000 lines; smaller files show no count |
@@ -201,7 +202,7 @@ How many tests reference a symbol is in its Detail pane.
 | `/` | Start a search |
 | `n` / `N` | Jump to the next / previous match |
 | `enter` | Toggle a directory row, or open a file / symbol row (focus moves right) |
-| `space` | Toggle a directory / file row without moving focus |
+| `space` | Symbol row: mark it checked (`✓`) and move to an unchecked symbol that uses it (again to uncheck). Directory / file row: toggle it without moving focus |
 | `e` / `c` | Expand / collapse everything |
 
 ### Right pane focus (Detail / Diff / blast radius)
@@ -450,6 +451,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | 灰色＋取り消し線の名前 | 灰 | 削除されたシンボルの名前 |
 | 右端の `N` | 灰（`●` の行は赤） | これを使っている本番コードのシンボル数（テストは数えない） |
 | 印の前の `↑` / `↓` | シアン | カーソルのシンボルを使っている / それに使われている。関係ないシンボルの行は薄くなる |
+| `✓` | 灰 | このセッションで `space` で確認済みにした。タイトルに件数 |
 | `↻` | 太字 | ディレクトリ内に依存の循環がある |
 | `✎N` | 太字 | この行に紐づくレビューアノテーションの件数 |
 | `N lines` | 赤（1500行超えは太字） | 1000行を超えるファイル。それ以下のファイルには行数を出さない |
@@ -494,7 +496,7 @@ TUI 実行中に `?` を押すと、同じキーマップ・マーカー凡例�
 | `/` | 検索を開始 |
 | `n` / `N` | 次 / 前の検索結果へジャンプ |
 | `enter` | ディレクトリ行を開閉、またはファイル / シンボル行を開く（フォーカスが右へ移動） |
-| `space` | ディレクトリ / ファイル行を開閉（フォーカスは移動しない） |
+| `space` | シンボル行: 確認済み（`✓`）にして、それを使っている未確認のシンボルへ移動（もう一度で解除）。ディレクトリ / ファイル行: 開閉（フォーカスは移動しない） |
 | `e` / `c` | 全行を展開 / 折りたたむ |
 
 ### 右ペインフォーカス（Detail / Diff / blast radius）

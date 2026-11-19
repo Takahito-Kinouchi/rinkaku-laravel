@@ -83,7 +83,7 @@ fn connection_of(connections: &Connections, id: &str) -> Connection {
 
 #[test]
 fn should_relate_every_symbol_row_to_the_selected_symbol() {
-    let connections = Connections::of(&report(), Some("selected"));
+    let connections = Connections::of(&ProductionEdges::from_report(&report()), Some("selected"));
 
     let actual = ["caller", "callee", "bystander", "test_caller", "selected"]
         .map(|id| connection_of(&connections, id));
@@ -102,21 +102,21 @@ fn should_relate_every_symbol_row_to_the_selected_symbol() {
 
 #[test]
 fn should_highlight_nothing_when_the_selected_symbol_has_no_production_connection() {
-    let connections = Connections::of(&report(), Some("bystander"));
+    let connections = Connections::of(&ProductionEdges::from_report(&report()), Some("bystander"));
 
     assert_eq!(Connection::Neutral, connection_of(&connections, "caller"));
 }
 
 #[test]
 fn should_highlight_nothing_when_the_cursor_is_not_on_a_symbol() {
-    let connections = Connections::of(&report(), None);
+    let connections = Connections::of(&ProductionEdges::from_report(&report()), None);
 
     assert_eq!(Connections::default(), connections);
 }
 
 #[test]
 fn should_leave_non_symbol_rows_neutral_while_highlighting_is_active() {
-    let connections = Connections::of(&report(), Some("selected"));
+    let connections = Connections::of(&ProductionEdges::from_report(&report()), Some("selected"));
     let file = TreeNode {
         kind: NodeKind::File,
         ..symbol_tree_node("lib.rs")
@@ -129,4 +129,24 @@ fn should_leave_non_symbol_rows_neutral_while_highlighting_is_active() {
     });
 
     assert_eq!(Connection::Neutral, actual);
+}
+
+#[test]
+fn should_index_production_edges_both_ways_and_drop_test_referrers() {
+    let edges = ProductionEdges::from_report(&report());
+
+    let actual = (
+        edges.users_of("selected").to_vec(),
+        edges.used_by("selected").to_vec(),
+        edges.users_of("bystander").to_vec(),
+    );
+
+    assert_eq!(
+        (
+            vec!["caller".to_string()],
+            vec!["callee".to_string()],
+            Vec::<String>::new()
+        ),
+        actual
+    );
 }

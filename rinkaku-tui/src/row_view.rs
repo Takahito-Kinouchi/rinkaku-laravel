@@ -12,7 +12,7 @@
 //! job; this module only decides one row's content and styling given that
 //! label.
 
-use crate::connections::Connection;
+use crate::connections::{Connection, ProductionEdges};
 use crate::glyph;
 use crate::nav::Row;
 use crate::order::DirRank;
@@ -47,9 +47,13 @@ pub fn entry_row_line(
     label: &str,
     ranks: &HashMap<String, DirRank>,
     annotation_markers: &crate::annotation_markers::AnnotationMarkers,
-    connection: Connection,
-    selected: bool,
+    state: RowState,
 ) -> Line<'static> {
+    let RowState {
+        connection,
+        checked,
+        selected,
+    } = state;
     let indent = " ".repeat(row.depth * INDENT_WIDTH);
     let mut spans = vec![Span::raw(indent)];
 
@@ -119,12 +123,18 @@ pub fn entry_row_line(
         }
         NodeKind::Symbol(symbol_ref) => {
             spans.push(connection_span(connection));
-            spans.push(symbol_marker_span(symbol_ref, &row.node.badges));
+            if checked {
+                spans.push(Span::styled(glyph::CHECKED, glyph::deferred()));
+            } else {
+                spans.push(symbol_marker_span(symbol_ref, &row.node.badges));
+            }
             spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                symbol_ref.name.clone(),
-                symbol_name_style(symbol_ref),
-            ));
+            let name_style = if checked {
+                glyph::deferred()
+            } else {
+                symbol_name_style(symbol_ref)
+            };
+            spans.push(Span::styled(symbol_ref.name.clone(), name_style));
             push_annotation_badge_span(
                 &mut spans,
                 annotation_markers
@@ -155,6 +165,29 @@ fn expand_marker(row: &Row<'_>) -> &'static str {
         glyph::EXPANDED
     } else {
         glyph::COLLAPSED
+    }
+}
+
+/// What `crate::ui::entry` knows about a row beyond the tree itself: how
+/// it relates to the cursor's symbol (ADR 0099 decision 3), whether the
+/// reviewer has checked it off (decision 4), and whether the cursor is on
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowState {
+    pub connection: Connection,
+    /// A checked symbol row trades its mark for a gray `✓` and dims its
+    /// name: read, so it can wait.
+    pub checked: bool,
+    pub selected: bool,
+}
+
+impl Default for RowState {
+    fn default() -> Self {
+        Self {
+            connection: Connection::Neutral,
+            checked: false,
+            selected: false,
+        }
     }
 }
 
@@ -216,12 +249,13 @@ pub fn relative_labels(rows: &[Row<'_>]) -> Vec<String> {
 
 /// How many other production symbols use this row's symbol (ADR 0099
 /// decision 1), for `crate::ui::entry` to draw flush right: `Some` only on
-/// a symbol row with users. `Badges::fan_in` already excludes test
-/// referrers and anything below the fan-in threshold, so a symbol that
-/// nothing (or one test) uses gets no number at all.
-pub(crate) fn row_uses_count(row: &Row<'_>) -> Option<usize> {
-    match row.node.kind {
-        NodeKind::Symbol(_) => Some(row.node.badges.fan_in).filter(|&count| count > 0),
+/// a symbol row with users. Read from the same edge index as the `↑`
+/// arrows and the Diff header's user list, so the three always agree.
+pub(crate) fn row_uses_count(row: &Row<'_>, edges: &ProductionEdges) -> Option<usize> {
+    match &row.node.kind {
+        NodeKind::Symbol(symbol_ref) => {
+            Some(edges.users_of(&symbol_ref.id).len()).filter(|&count| count > 0)
+        }
         _ => None,
     }
 }
@@ -428,7 +462,7 @@ pub(crate) fn symbol_name_style(symbol_ref: &SymbolRef) -> Style {
 /// ADR 0059's test-coverage signal deliberately does **not** escalate to
 /// this mark: it fires on most changed symbols in practice, and the mark
 /// only earns attention by staying rare (ADR 0043).
-fn is_high_risk_symbol(symbol_ref: &SymbolRef, badges: &Badges) -> bool {
+pub(crate) fn is_high_risk_symbol(symbol_ref: &SymbolRef, badges: &Badges) -> bool {
     symbol_ref.classification == Some(Classification::SignatureChanged)
         && badges.fan_in >= rinkaku_core::graph::HIGH_FAN_IN_THRESHOLD
 }

@@ -92,9 +92,15 @@ pane switch is needed to see where a change reaches.
 
 `space` marks the symbol under the cursor checked (`✓`) and moves to an
 unchecked symbol **that uses it** — down the path the change travels —
-or, when there is none, to the next `●`. A progress count of checked
-symbols sits in the tree pane's title. Expand/collapse moves to `enter`
-alone. Checked state is per session: closing the TUI forgets it.
+or, when there is none, to the next `●`, or failing that the next
+unchecked symbol. Pressing it on a checked symbol unchecks it. The move
+goes through the jumplist, so `ctrl-o` returns. A progress count of
+checked symbols sits in the tree pane's title. Checked state is per
+session: closing the TUI forgets it.
+
+On a directory or file row `space` still expands/collapses: a file row's
+`enter` opens its diff, so moving folding to `enter` alone (the mock's
+first plan) would have left files with no fold key.
 
 Checking is per *symbol*, not per file: a file is not the unit rinkaku
 reasons in.
@@ -158,9 +164,9 @@ the frame, so these add no new width risk. Emoji stay out (ADR 0028).
 ## Consequences
 
 - Most rows carry no number; the few that do are the ones worth reading.
-- `space` changes meaning (expand/collapse → check and advance). Anyone
-  with the old habit gets a checked mark instead of a fold; `enter`
-  still folds.
+- `space` on a symbol row changes meaning (a no-op before, since a
+  symbol row has nothing to fold; now check and advance). On every other
+  row it still folds.
 - `tests:0` is only visible in the Detail pane, and a file's line count
   only on files past the warn threshold.
 - A directory below a top-level divider has no row, so it cannot be

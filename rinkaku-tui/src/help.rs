@@ -479,6 +479,10 @@ fn marker_legend(locale: Locale) -> Vec<MarkerLegendEntry> {
             explanation: rust_i18n::t!("help.marker.review_note", locale = tag).into_owned(),
         },
         MarkerLegendEntry {
+            swatch: "✓",
+            explanation: rust_i18n::t!("help.marker.checked", locale = tag).into_owned(),
+        },
+        MarkerLegendEntry {
             swatch: "[test] (N symbols)",
             explanation: rust_i18n::t!("help.marker.whole_test_file_badge", locale = tag)
                 .into_owned(),

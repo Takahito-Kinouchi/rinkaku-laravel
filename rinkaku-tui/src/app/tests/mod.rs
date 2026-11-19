@@ -49,6 +49,7 @@ use rinkaku_core::graph::SymbolGraph;
 use rinkaku_core::render::{FileReport, Report};
 
 mod basics;
+mod check;
 mod focus;
 mod help_overlay;
 mod jump;

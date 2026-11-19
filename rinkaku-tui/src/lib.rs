@@ -42,6 +42,7 @@ rust_i18n::i18n!("locales", fallback = "en");
 pub mod annotation_markers;
 pub mod app;
 pub mod blast_radius;
+pub mod checklist;
 pub mod connections;
 pub mod dependency_update;
 pub mod detail;

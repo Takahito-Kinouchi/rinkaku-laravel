@@ -63,7 +63,8 @@ pub(crate) const DIFF_PANE_TITLE: &str = " Diff ";
 ///   basename is the informative tail.
 /// - Line 2 (only when `used_by` is non-empty): `↑ N: a · b ×2 · ...`, the
 ///   production symbols that use this one — the same set behind the tree
-///   row's flush-right count (`crate::row_view::row_uses_count`).
+///   row's flush-right count (`crate::row_view::row_uses_count`) — with
+///   `(M unchecked)` after `N` once some of them are checked off.
 ///
 /// The `range: 23-73, ...` line this header used to carry is gone: it
 /// listed the whole file's hunks, so it read the same for every symbol in
@@ -73,6 +74,7 @@ pub(crate) fn diff_pane_header_lines(
     selection_name: Option<&str>,
     path: &str,
     used_by: &[String],
+    unchecked_users: usize,
     width: usize,
 ) -> Vec<Line<'static>> {
     let identification = match selection_name {
@@ -93,9 +95,17 @@ pub(crate) fn diff_pane_header_lines(
     let mut lines = vec![Line::from(first_line)];
 
     if !used_by.is_empty() {
+        // How many are left to read only once the reviewer has started
+        // checking them off (ADR 0099 decision 5): before that it would
+        // just repeat the total.
+        let progress = if unchecked_users == used_by.len() {
+            String::new()
+        } else {
+            format!(" ({unchecked_users} unchecked)")
+        };
         let users = Line::from(vec![
             Span::styled(
-                format!("{} {}: ", crate::glyph::USED_BY, used_by.len()),
+                format!("{} {}{progress}: ", crate::glyph::USED_BY, used_by.len()),
                 crate::glyph::selection(),
             ),
             Span::raw(users_summary(used_by)),
@@ -235,11 +245,22 @@ pub(crate) fn draw_diff_pane(
     } else {
         None
     };
+    let user_ids = app
+        .selected_symbol_id()
+        .map(|id| app.edges().users_of(id))
+        .unwrap_or(&[]);
+    let unchecked_users = user_ids.iter().filter(|id| !app.is_checked(id)).count();
+    let mut users: Vec<String> = user_ids
+        .iter()
+        .map(|id| app.edges().name_of(id).to_string())
+        .collect();
+    users.sort();
     let mut header_lines = diff_pane_header_lines(
         selected_row_mark(app),
         selection_name,
         path,
-        selected_symbol_users(app, report),
+        &users,
+        unchecked_users,
         header_width,
     );
     // ADR 0044 decision 7: the toggle stays flipped even when the pane is
@@ -414,22 +435,6 @@ fn selected_row_mark(app: &App) -> Option<Span<'static>> {
         NodeKind::Symbol(symbol_ref) => Some(symbol_marker_span(symbol_ref, &row.node.badges)),
         _ => None,
     }
-}
-
-/// The production symbols using the symbol under the cursor —
-/// `report.fan_ins`' own list, the same source as `Badges::fan_in` and so
-/// as the tree row's count. Empty on a non-symbol row or for a symbol
-/// below the fan-in threshold.
-fn selected_symbol_users<'a>(app: &App, report: &'a Report) -> &'a [String] {
-    let Some(id) = app.selected_symbol_id() else {
-        return &[];
-    };
-    report
-        .fan_ins
-        .iter()
-        .find(|fan_in| fan_in.id == id)
-        .map(|fan_in| fan_in.used_by.as_slice())
-        .unwrap_or(&[])
 }
 
 /// Formats `hunks` into styled lines (ADR 0072: original `git diff` order,

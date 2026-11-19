@@ -26,6 +26,8 @@ pub(crate) const USES: &str = "↓";
 /// A Blast-radius entry: "the pivot reaches this".
 pub(crate) const REACHES: &str = "↓";
 pub(crate) const NOTE: &str = "✎";
+/// Checked off by the reviewer (ADR 0099 decision 4).
+pub(crate) const CHECKED: &str = "✓";
 pub(crate) const EXPANDED: &str = "▾";
 pub(crate) const COLLAPSED: &str = "▸";
 pub(crate) const MORE_ABOVE: &str = "▲";

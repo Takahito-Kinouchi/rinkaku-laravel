@@ -9,6 +9,7 @@
 //! `crossterm::event::KeyEvent` into this module's [`InputKey`] and calls
 //! into `ratatui` to draw.
 
+mod check;
 mod handle_key;
 mod input_key;
 mod jump;
